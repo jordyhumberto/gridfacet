@@ -1,0 +1,382 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Novoxel</title>
+    <link rel="icon" href="data:," />
+    <style>
+      html, body { margin: 0; height: 100%; overflow: hidden; background: #1c1f26; font-family: system-ui, sans-serif; color: #e6e8ee; }
+      #app { position: fixed; inset: 0; }
+      #hud { position: fixed; top: 8px; left: 8px; display: flex; flex-direction: column; gap: 6px; padding: 6px; width: min(300px, calc(100vw - 16px)); box-sizing: border-box; background: rgba(20, 22, 28, 0.85); border: 1px solid #343944; border-radius: 8px; font-size: 12px; }
+      #hud .row[hidden] { display: none; }
+      #hud .row { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
+      #hud button, #hud select { background: #2a2f3a; color: inherit; border: 1px solid #3d4452; border-radius: 6px; padding: 4px 8px; font-size: 12px; cursor: pointer; }
+      #hud button.active { background: #3b6fd4; border-color: #6c98ee; }
+      #hud input[type="color"] { width: 28px; height: 24px; padding: 0; border: 1px solid #3d4452; border-radius: 6px; background: none; cursor: pointer; }
+      #hud small { color: #9aa1b2; line-height: 1.5; }
+      #marquee { position: fixed; display: none; pointer-events: none; border: 1px solid #6c98ee; background: rgba(108, 152, 238, 0.18); z-index: 5; }
+      #hud #hudHead { justify-content: space-between; flex-wrap: nowrap; }
+      #fileName { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+      #hudBody { display: flex; flex-direction: column; gap: 6px; }
+      #hudBody[hidden] { display: none; }
+      #hud { max-height: calc(100vh - 16px); overflow-y: auto; }
+      #helpModal { position: fixed; inset: 0; z-index: 20; display: flex; align-items: center; justify-content: center; padding: 16px; box-sizing: border-box; background: rgba(0, 0, 0, 0.6); }
+      #helpModal[hidden] { display: none; }
+      #helpBox { background: #20242d; border: 1px solid #3d4452; border-radius: 10px; width: min(640px, 100%); max-height: 100%; display: flex; flex-direction: column; font-size: 13px; line-height: 1.5; }
+      #helpBox header { display: flex; justify-content: space-between; align-items: center; padding: 10px 14px; border-bottom: 1px solid #343944; font-weight: 600; }
+      #helpBox header button { background: #2a2f3a; color: inherit; border: 1px solid #3d4452; border-radius: 6px; padding: 4px 10px; cursor: pointer; }
+      #helpBody { overflow-y: auto; padding: 4px 14px 14px; }
+      #helpBody h3 { margin: 14px 0 4px; font-size: 13px; color: #ffb020; }
+      #helpBody dl { margin: 0; display: grid; grid-template-columns: max-content 1fr; gap: 3px 12px; }
+      #helpBody dt { color: #9aa1b2; white-space: nowrap; }
+      #helpBody dd { margin: 0; }
+      #helpBody kbd { background: #2a2f3a; border: 1px solid #3d4452; border-radius: 4px; padding: 0 5px; font-family: inherit; font-size: 12px; }
+      #shapeActions input[type=number] { width: 52px; background: #2a2f3a; color: inherit; border: 1px solid #3d4452; border-radius: 6px; padding: 2px 4px; font-size: 12px; }
+      #inspector input[type=number], #inspector #rotAngle { width: 54px; background: #2a2f3a; color: inherit; border: 1px solid #3d4452; border-radius: 6px; padding: 2px 4px; font-size: 12px; }
+      #inspector .row { gap: 6px; }
+      #groupList { display: flex; flex-direction: column; gap: 3px; max-height: 140px; overflow-y: auto; }
+      #groupList .grow { display: flex; gap: 4px; }
+      #groupList .grow button:first-child { flex: 1; text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      #groupList .grow.hiddenGroup button:first-child { opacity: 0.5; }
+      #groupNameInput { width: 130px; background: #2a2f3a; color: inherit; border: 1px solid #3d4452; border-radius: 6px; padding: 2px 6px; font-size: 12px; }
+      #inspector small { width: 44px; }
+      #faceActions input[type=number], #triRow input[type=number], #repeatRow input[type=number] { width: 48px; background: #2a2f3a; color: inherit; border: 1px solid #3d4452; border-radius: 6px; padding: 2px 4px; font-size: 12px; }
+      #faceActions select { background: #2a2f3a; color: inherit; border: 1px solid #3d4452; border-radius: 6px; padding: 2px 4px; font-size: 12px; }
+      #repeatRow input[type=number] { width: 40px; }
+      #recentColors { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; margin: 8px 0 4px; }
+      #recentColors button { height: 22px; padding: 0; border: 1px solid #3d4452; border-radius: 6px; cursor: pointer; }
+      #recentColors button:disabled { background: none; border-style: dashed; opacity: 0.4; cursor: default; }
+      #recentColors button.active { outline: 2px solid #fff; outline-offset: 1px; }
+      #faceActions label[hidden] { display: none; }
+      #bevelActions input[type=number] { width: 56px; background: #2a2f3a; color: inherit; border: 1px solid #3d4452; border-radius: 6px; padding: 2px 4px; font-size: 12px; }
+      #planeRow input[type=number] { width: 56px; background: #2a2f3a; color: inherit; border: 1px solid #3d4452; border-radius: 6px; padding: 2px 4px; font-size: 12px; }
+      #planeRow select { padding: 3px 4px; }
+      #symRow input[type=number] { width: 48px; background: #2a2f3a; color: inherit; border: 1px solid #3d4452; border-radius: 6px; padding: 2px 4px; font-size: 12px; }
+      #sizeRow input[type=number] { width: 52px; background: #2a2f3a; color: inherit; border: 1px solid #3d4452; border-radius: 6px; padding: 2px 4px; font-size: 12px; }
+      #symRow label { display: flex; align-items: center; gap: 2px; }
+      #hud section { display: flex; flex-direction: column; gap: 5px; padding-top: 7px; border-top: 1px solid #343944; }
+      #hud h4 { margin: 0; display: flex; align-items: center; justify-content: space-between; font-size: 10px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: #8a92a6; }
+      #hud .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; }
+      #hud .grid button { padding: 5px 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      #hud #hudHead button { padding: 3px 8px; }
+      #hud button:hover:not(.active) { background: #343b49; }
+      #hud label { display: flex; align-items: center; gap: 3px; }
+      #exportMode { flex: 1; min-width: 0; }
+      #hint { position: fixed; left: 50%; bottom: 14px; transform: translateX(-50%); z-index: 6; display: flex; align-items: center; gap: 10px; max-width: min(900px, calc(100vw - 340px)); min-width: 260px; padding: 9px 14px; box-sizing: border-box; background: rgba(20, 22, 28, 0.92); border: 1px solid #343944; border-left: 5px solid var(--mode, #3b6fd4); border-radius: 8px; font-size: 14px; line-height: 1.35; pointer-events: none; }
+      #hint b { flex: none; padding: 2px 8px; border-radius: 5px; background: var(--mode, #3b6fd4); color: #101216; font-size: 12px; letter-spacing: 0.04em; text-transform: uppercase; }
+      #hint[hidden] { display: none; }
+      #hud { border-color: var(--mode, #343944); }
+      #helpFloat { position: fixed; top: 8px; right: 8px; z-index: 6; width: 32px; height: 32px; border-radius: 50%; background: rgba(20, 22, 28, 0.9); color: #e6e8ee; border: 1px solid #3d4452; font-size: 16px; cursor: pointer; }
+      #helpFloat:hover { background: #343b49; }
+      #hud section[hidden] { display: none; }
+      #hud section.collapsed > :not(h4) { display: none; }
+      #hud h4 { cursor: pointer; user-select: none; }
+      #hud h4::before { content: '▾'; margin-right: 5px; }
+      #hud section.collapsed h4::before { content: '▸'; }
+      #hud h4 .title { flex: 1; }
+      @media (max-width: 760px) { #hint { max-width: calc(100vw - 24px); bottom: 8px; font-size: 13px; } }
+      #status { color: #ffb020; }
+      #status:empty { display: none; }
+      #hud details > summary { cursor: pointer; color: #9aa1b2; user-select: none; }
+      #hud details[open] > summary { margin-bottom: 6px; }
+      #hud details .row { margin-bottom: 6px; }
+    </style>
+  </head>
+  <body>
+    <div id="app"></div>
+    <div id="marquee"></div>
+    <div id="hint"></div>
+    <button id="helpFloat" title="Ayuda y atajos (?)">?</button>
+    <div id="hud">
+      <div class="row" id="hudHead">
+        <span id="fileName" title="Archivo del proyecto">Sin título</span>
+        <button id="hudToggle" title="Ocultar o mostrar el menú (H)">Ocultar menú</button>
+      </div>
+      <div id="hudBody">
+        <section>
+          <h4><span class="title">Archivo</span></h4>
+          <div class="row">
+            <button id="open" title="Ctrl+O">Abrir</button>
+            <button id="save" title="Ctrl+S">Guardar</button>
+            <button id="saveAs" title="Ctrl+Mayús+S">Guardar como…</button>
+            <input type="file" id="openFile" accept=".json,application/json" hidden />
+          </div>
+          <div class="row">
+            <select id="exportMode" title="Cómo se agrupan las piezas en el GLB">
+              <option value="merged">Unión por color (sin interior)</option>
+              <option value="perPiece">Una pieza por objeto</option>
+            </select>
+            <button id="export">Exportar GLB</button>
+          </div>
+        </section>
+        <section>
+          <h4><span class="title">Piezas</span><input type="color" id="color" value="#d9534f" title="Color de la pieza" /></h4>
+          <div class="row grid" id="pieces"></div>
+          <div id="recentColors" title="Últimos 10 colores usados: clic para volver a elegir uno"></div>
+          <div class="row" id="triRow">
+            <small id="triStats"></small>
+            <label title="Presupuesto de triángulos: se pone en rojo al pasarlo (un personaje PS1 ronda 300–800)">Máx <input type="number" id="triBudget" min="0" step="100" value="800" /></label>
+          </div>
+        </section>
+        <section>
+          <h4><span class="title">Herramientas</span></h4>
+          <div class="row grid" id="tools"></div>
+          <div class="row" id="selActions" hidden>
+            <button data-sel="hide" title="O">Ocultar (O)</button>
+            <button data-sel="isolate" title="I">Aislar (I)</button>
+            <button data-sel="group" title="Ctrl+G">Agrupar</button>
+            <button data-sel="ungroup" title="Ctrl+Mayús+G">Desagrupar</button>
+            <button data-sel="connected" title="K">Conectadas (K)</button>
+            <button data-sel="excavate" title="Resta la selección de las piezas que toca (cráteres, agujeros)">Excavar</button>
+            <button data-sel="merge" title="Une las piezas en una si la unión es convexa">Fusionar</button>
+            <button data-sel="copy" title="Ctrl+C">Copiar</button>
+            <button data-sel="paste" title="Ctrl+V">Pegar</button>
+            <button data-sel="mirror-x" title="M">Espejo X (M)</button>
+            <button data-sel="mirror-z" title="N">Espejo Z (N)</button>
+            <button data-sel="mirror-y" title="U">Espejo Y (U)</button>
+            <button data-sel="delete" title="Supr">Borrar (Supr)</button>
+          </div>
+          <div class="row" id="cutActions" hidden>
+            <button data-cut="close">Cerrar región</button>
+            <button data-cut="undo">Quitar punto (Ctrl+Z)</button>
+            <button data-cut="flip">Cambiar lado (F)</button>
+            <button data-cut="apply">Cortar (Enter)</button>
+            <button data-cut="cancel">Cancelar (Esc)</button>
+            <label><input type="checkbox" id="keepBoth" /> Conservar la otra mitad</label>
+          </div>
+          <div class="row" id="vertexActions" hidden>
+            <button data-vertex="less" title="Menos puntos por arista">− puntos</button>
+            <small id="vertexInfo"></small>
+            <button data-vertex="more" title="Más puntos por arista">+ puntos</button>
+            <label title="Cuadrícula de puntos dentro de cada cara"><input type="checkbox" id="vertexFaces" /> Caras</label>
+            <button data-vertex="done">Listo (Esc)</button>
+          </div>
+          <div class="row" id="shapeActions" hidden>
+            <select id="shapeKind" title="Forma"></select>
+            <label title="Ancho (celdas)">X <input type="number" id="shapeW" min="0.25" step="0.25" value="1" /></label>
+            <label title="Alto (celdas)">Y <input type="number" id="shapeH" min="0.25" step="0.25" value="1" /></label>
+            <label title="Fondo (celdas)">Z <input type="number" id="shapeD" min="0.25" step="0.25" value="1" /></label>
+            <label title="Lados: pocos dan un prisma o una pirámide, muchos una forma redonda">Lados <input type="number" id="shapeSides" min="3" max="20" step="1" value="12" /></label>
+          </div>
+          <div class="row" id="bevelActions" hidden>
+            <label title="Distancia de la arista a cada lado del chaflán, en celdas">Tamaño <input type="number" id="bevelSize" min="0.02" step="0.05" value="0.25" /></label>
+            <small>Clic en una arista la corta en chaflán</small>
+          </div>
+          <div class="row" id="faceActions" hidden>
+            <select id="faceOp" title="Qué hacer con la cara">
+              <option value="extrude">Extruir / cavar</option>
+              <option value="split">Dividir</option>
+            </select>
+            <label title="Celdas que sale la cara; con signo negativo cava hacia dentro">Dist. <input type="number" id="faceDist" step="0.25" value="0.5" /></label>
+            <label title="Tamaño del extremo respecto a la cara: 1 recto, 0,5 estrecho, 0 en punta">Punta <input type="number" id="faceTaper" min="0" max="3" step="0.1" value="1" /></label>
+            <label title="Cuánto se separa del borde de la cara (0 a 0,9): deja un reborde alrededor del cráter o del saliente">Borde <input type="number" id="faceInset" min="0" max="0.9" step="0.05" value="0" /></label>
+            <label title="Dónde corta, contando desde la cara: 0,5 es por la mitad">Corte <input type="number" id="faceFraction" min="0.05" max="0.95" step="0.05" value="0.5" /></label>
+          </div>
+          <div class="row" id="fillActions" hidden>
+            <button data-fill="undo">Quitar punto (Ctrl+Z)</button>
+            <button data-fill="apply">Rellenar (Enter)</button>
+            <button data-fill="cancel">Cancelar (Esc)</button>
+          </div>
+          <small id="status"></small>
+          <div class="row" id="planeRow" title="Marca los puntos de Cortar y Rellenar sobre un plano, también en el aire">
+            <small>Plano:</small>
+            <select id="planeAxis">
+              <option value="">Ninguno</option>
+              <option value="x">X =</option>
+              <option value="y">Y =</option>
+              <option value="z">Z =</option>
+            </select>
+            <button data-plane="-" title="Bajar medio paso">−</button>
+            <input type="number" id="planeValue" step="0.5" />
+            <button data-plane="+" title="Subir medio paso">+</button>
+          </div>
+        </section>
+        <section id="groups" hidden>
+          <h4><span class="title">Grupos</span></h4>
+          <div id="groupList"></div>
+          <div class="row" id="groupName" hidden>
+            <label title="Nombre del grupo elegido; se usa para nombrar los objetos del GLB">Nombre <input type="text" id="groupNameInput" maxlength="40" /></label>
+          </div>
+        </section>
+        <section id="inspector" hidden>
+          <h4><span class="title">Selección</span></h4>
+          <div class="row" id="inspectorPos" title="Centro de la selección, en celdas">
+            <small>Centro</small>
+            <label>X <input type="number" data-ins="px" step="0.25" /></label>
+            <label>Y <input type="number" data-ins="py" step="0.25" /></label>
+            <label>Z <input type="number" data-ins="pz" step="0.25" /></label>
+          </div>
+          <div class="row" id="inspectorSize" title="Tamaño de la caja de la selección, en celdas; al cambiarlo se escala">
+            <small>Tamaño</small>
+            <label>X <input type="number" data-ins="sx" min="0.01" step="0.25" /></label>
+            <label>Y <input type="number" data-ins="sy" min="0.01" step="0.25" /></label>
+            <label>Z <input type="number" data-ins="sz" min="0.01" step="0.25" /></label>
+          </div>
+          <div class="row" id="inspectorRot" title="Gira la selección ese ángulo alrededor de su centro">
+            <small>Girar</small>
+            <button data-rot="x" title="Alrededor de X">X</button>
+            <button data-rot="y" title="Alrededor de Y (vertical)">Y</button>
+            <button data-rot="z" title="Alrededor de Z">Z</button>
+            <input type="number" id="rotAngle" value="15" step="5" />°
+            <button data-rot-sign="-1" title="Sentido contrario">±</button>
+          </div>
+          <div class="row" id="repeatRow" title="Copia la selección en serie: cada copia suma otro desplazamiento, giro y escala">
+            <small>Repetir</small>
+            <label>× <input type="number" data-rep="n" min="1" max="60" step="1" value="3" /></label>
+            <label>Mover <input type="number" data-rep="mx" step="0.25" value="1" /><input type="number" data-rep="my" step="0.25" value="0" /><input type="number" data-rep="mz" step="0.25" value="0" /></label>
+            <label>Girar° <input type="number" data-rep="rx" step="5" value="0" /><input type="number" data-rep="ry" step="5" value="0" /><input type="number" data-rep="rz" step="5" value="0" /></label>
+            <label>Escala <input type="number" data-rep="s" min="0.1" step="0.05" value="1" /></label>
+            <button>Repetir</button>
+          </div>
+        </section>
+        <section>
+          <h4><span class="title">Vista</span></h4>
+          <div class="row" id="views">
+            <button data-view="+x">+X</button><button data-view="-x">−X</button>
+            <button data-view="+y">+Y</button><button data-view="-y">−Y</button>
+            <button data-view="+z">+Z</button><button data-view="-z">−Z</button>
+          </div>
+          <div class="row">
+            <label><input type="checkbox" id="gridToggle" checked /> Malla</label>
+            <button id="showHidden" hidden title="Mayús+O">Mostrar ocultas</button>
+            <label title="Solo aristas y vértices, sin caras (W)"><input type="checkbox" id="wireToggle" /> Solo líneas</label>
+            <label title="Redondea el aspecto de las formas curvas (no cambia la geometría ni el GLB)"><input type="checkbox" id="smoothToggle" /> Suave</label>
+          </div>
+          <div class="row" id="sizeRow" title="Tamaño de la sala: celdas por lado">
+            <small>Tamaño:</small>
+            <button data-size="-" title="Más pequeña">−</button>
+            <input type="number" id="gridSize" min="4" max="128" step="2" />
+            <button data-size="+" title="Más grande">+</button>
+            <small id="sizeLabel"></small>
+          </div>
+        </section>
+        <section>
+          <h4><span class="title">Simetría</span></h4>
+          <div class="row" id="symRow" title="Lo que hagas se repite reflejado en los ejes activos">
+            <label><input type="checkbox" data-sym="x" /> X</label><input type="number" data-symc="x" step="0.5" title="Posición del plano X" />
+            <label><input type="checkbox" data-sym="y" /> Y</label><input type="number" data-symc="y" step="0.5" title="Altura del plano Y" />
+            <label><input type="checkbox" data-sym="z" /> Z</label><input type="number" data-symc="z" step="0.5" title="Posición del plano Z" />
+          </div>
+        </section>
+        <div class="row"><button id="helpOpen" title="Atajos y funciones (tecla ?)">Ayuda y atajos (?)</button></div>
+      </div>
+    </div>
+    <div id="helpModal" hidden role="dialog" aria-modal="true" aria-label="Ayuda y atajos">
+      <div id="helpBox">
+        <header><span>Ayuda y atajos</span><button id="helpClose">Cerrar (Esc)</button></header>
+        <div id="helpBody">
+        <h3>Colocar y borrar</h3>
+        <dl>
+          <dt><kbd>1</kbd>–<kbd>8</kbd></dt><dd>Elegir pieza. Clic coloca; <kbd>R</kbd> la rota antes de colocar.</dd>
+          <dt>Esquina interior, Arco</dt><dd>Se componen de varias piezas convexas (se seleccionan y borran de una en una).</dd>
+          <dt><kbd>B</kbd> Borrar</dt><dd>Clic en una pieza la borra; la pieza bajo el ratón se marca en rojo. También <kbd>Shift</kbd>+clic al colocar.</dd>
+          <dt><kbd>G</kbd> Crecer</dt><dd>Clic en una cara la hace crecer (1 celda, o 1 placa en vertical); arrastrar elige cuánto. <kbd>Esc</kbd> cancela.</dd>
+        </dl>
+        <h3>Chaflán</h3>
+        <dl>
+          <dt><kbd>J</kbd> Chaflán</dt><dd>Apunta a una arista de una pieza (se marca en amarillo) y haz clic: se corta en diagonal a la distancia que indica “Tamaño”, sobre cada una de sus dos caras. Sirve para redondear esquinas sin marcar tres puntos. Respeta la simetría y se puede repetir sobre el mismo borde para suavizarlo más.</dd>
+        </dl>
+        <h3>Modelar caras y huecos</h3>
+        <dl>
+          <dt><kbd>F</kbd> Cara</dt><dd>Apunta a una cara y haz clic. <b>Extruir</b>: con distancia positiva sale un cuerpo nuevo pegado a la cara; con distancia negativa se cava hacia dentro. “Punta” estrecha el extremo (0,5 = mitad, 0 = en punta) y “Borde” deja un reborde alrededor, así salen cráteres de paredes inclinadas, pirámides y muñones. <b>Dividir</b>: parte la pieza en dos con un plano paralelo a la cara (“Corte” 0,5 es por la mitad).</dd>
+          <dt>Excavar</dt><dd>Con una pieza elegida (por ejemplo una forma colocada dentro de otra), el botón <i>Excavar</i> la resta de las demás piezas que toca y la borra. Sirve para agujeros, ventanas, bocas y cráteres. Las piezas cavadas se reparten en varias convexas.</dd>
+          <dt>Fusionar</dt><dd>Une las piezas elegidas en una sola cuando su unión es convexa (baja la cuenta de piezas y triángulos). Si no lo es, avisa.</dd>
+          <dt>Repetir</dt><dd>En “Selección”: copia lo elegido N veces; cada copia suma otro desplazamiento, giro (grados) y escala. Escaleras, dientes, escamas, ramas, espirales.</dd>
+          <dt>Triángulos</dt><dd>En “Piezas” se cuentan los triángulos de todas las piezas y se compara con el máximo que pongas (se pone en rojo al pasarlo). Es un conteo de las piezas; el modo fusionado del GLB suele quitar caras interiores.</dd>
+        </dl>
+        <h3>Formas redondeadas</h3>
+        <dl>
+          <dt><kbd>T</kbd> Forma</dt><dd>Esfera, cilindro, cono o cápsula con las medidas (X, Y, Z en celdas) y los lados que elijas. Pocos lados dan un prisma o una pirámide; muchos, una forma redonda. Clic la apoya sobre lo que apuntas (suelo, cara de una pieza o pared) con su caja justo en contacto. Respeta la simetría y el color elegido.</dd>
+          <dt>Piezas convexas</dt><dd>Cada forma es una pieza convexa más: se puede elegir, mover, pintar, cortar y agrupar como las demás.</dd>
+        </dl>
+        <h3>Marcar puntos con precisión</h3>
+        <dl>
+          <dt>Ajuste</dt><dd>Al marcar en Cortar o Rellenar el punto se pega al candidato más cercano: vértice, punto medio de una arista, centro de una cara, punto de referencia o cruce entre piezas. La línea de estado muestra sus coordenadas antes de hacer clic.</dd>
+          <dt><kbd>Alt</kbd></dt><dd>Mantenlo pulsado para marcar libremente sobre la arista más cercana.</dd>
+          <dt>Plano de trabajo</dt><dd>Elige un eje y un valor (junto a las herramientas): los puntos se marcan sobre ese plano, aunque no haya ninguna pieza, con ajuste a media celda y a los vértices que estén en él. Sirve para marcar en el aire.</dd>
+          <dt>Cerrar la región</dt><dd>Clic cerca del primer punto (a menos de unos 14 píxeles en pantalla) o <kbd>Enter</kbd>.</dd>
+        </dl>
+        <h3>Mover, escalar y girar con precisión</h3>
+        <dl>
+          <dt>Sección “Selección”</dt><dd>Aparece al elegir piezas. <b>Centro</b> mueve la selección hasta ese punto; <b>Tamaño</b> la escala (estira o encoge) respecto a su centro; <b>Girar</b> la gira el ángulo indicado alrededor del eje X, Y o Z (el botón ± invierte el sentido). Funcionan con cualquier ángulo y se pueden deshacer.</dd>
+          <dt>Giro libre</dt><dd>Los giros de 90° con <kbd>R</kbd> siguen igual; con un ángulo distinto las piezas dejan de alinearse a la rejilla.</dd>
+        </dl>
+        <h3>Ocultar, aislar y grupos con nombre</h3>
+        <dl>
+          <dt><kbd>O</kbd> Ocultar</dt><dd>Esconde las piezas elegidas para trabajar en lo que queda detrás. Ocultas no se ven ni se pueden apuntar con el ratón, pero siguen en el modelo y se exportan. <kbd>Mayús</kbd>+<kbd>O</kbd> o el botón “Mostrar ocultas” las devuelve. No se guarda en el proyecto.</dd>
+          <dt><kbd>I</kbd> Aislar</dt><dd>Oculta todo menos la selección; otra pulsación de <kbd>I</kbd> (sin selección) muestra todo.</dd>
+          <dt>Sección “Grupos”</dt><dd>Lista los grupos del modelo: un clic en el nombre elige el grupo, el botón “ojo” lo oculta o muestra (como una capa). Con un grupo elegido puedes darle nombre; ese nombre se usa en los objetos del GLB con “Una pieza por objeto” (por ejemplo <code>Cola_12</code>), útil para reconocer las partes en Blender. Se guarda en el proyecto.</dd>
+        </dl>
+        <h3>Grupos y medidas</h3>
+        <dl>
+          <dt><kbd>Ctrl</kbd>+<kbd>G</kbd> Agrupar</dt><dd>Une las piezas elegidas: desde entonces un clic elige el grupo entero, y mover, girar, copiar, espejo y borrar actúan sobre todo el grupo. Cortar conserva el grupo en los trozos. Se guarda en el proyecto.</dd>
+          <dt><kbd>Ctrl</kbd>+<kbd>Mayús</kbd>+<kbd>G</kbd></dt><dd>Deshace el grupo de las piezas elegidas.</dd>
+          <dt><kbd>K</kbd> Conectadas</dt><dd>Suma a la selección todas las piezas que tocan a las elegidas por una cara (o se solapan), una detrás de otra. Dos piezas que solo comparten una arista o una esquina no cuentan.</dd>
+          <dt>Medidas</dt><dd>Con piezas elegidas, la línea de estado muestra el tamaño de la caja que ocupan: ancho (X) × fondo (Z) en celdas y alto en placas (3 placas = 1 celda).</dd>
+        </dl>
+        <h3>Pintar</h3>
+        <dl>
+          <dt><kbd>P</kbd> Pintar</dt><dd>Elige el color (selector junto a “Piezas”) y haz clic en una cara para pintarla. <kbd>Shift</kbd>+clic pinta toda la pieza. <kbd>Alt</kbd>+clic toma el color de la cara (cuentagotas). Respeta la simetría y se deshace con <kbd>Ctrl</kbd>+<kbd>Z</kbd>.</dd>
+          <dt>Al exportar</dt><dd>Con “Unión por color” cada color es un material del GLB. Con “Una pieza por objeto”, una pieza con caras de varios colores sale como varios objetos <code>Pieza_n_color</code>. Cortar, espejo y mover conservan los colores de las caras.</dd>
+        </dl>
+        <h3>Cortar y rellenar</h3>
+        <dl>
+          <dt><kbd>C</kbd> Cortar</dt><dd>Los puntos se ajustan a vértices, a la rejilla y también a los puntos donde una pieza atraviesa a otra (el cruce de una arista con una cara). <kbd>Shift</kbd>+clic en una cara usa esa cara como plano y región de corte: solo se cortan las piezas apoyadas en ella. Marca los puntos de una región; clic en el primero (o <kbd>Enter</kbd>) la cierra. <kbd>F</kbd> cambia el lado que se borra (el rojo). <kbd>Enter</kbd> corta. Solo se cortan las piezas que la región toca; con selección, solo la selección.</dd>
+          <dt><kbd>L</kbd> Rellenar</dt><dd>Marca 4 o más puntos que no estén en un plano; clic en el primero (o <kbd>Enter</kbd>) crea la pieza que los une.</dd>
+          <dt><kbd>Ctrl</kbd>+<kbd>Z</kbd> al marcar</dt><dd>Con puntos marcados quita el último punto, no el último bloque.</dd>
+        </dl>
+        <h3>Seleccionar y mover</h3>
+        <dl>
+          <dt><kbd>S</kbd> Elegir</dt><dd>Clic elige una pieza. <kbd>Shift</kbd>+clic suma o quita. <kbd>Shift</kbd>+arrastrar en un hueco dibuja un recuadro que suma las piezas de dentro. <kbd>Ctrl</kbd>+<kbd>A</kbd> elige todo.</dd>
+          <dt>Arrastrar una pieza</dt><dd>Mueve la selección. <kbd>Alt</kbd>: en vertical. <kbd>Shift</kbd>: paso doble. <kbd>Esc</kbd> cancela.</dd>
+          <dt>Flechas</dt><dd>Con selección mueven media celda. <kbd>Re Pág</kbd>/<kbd>Av Pág</kbd> (o <kbd>E</kbd>/<kbd>Q</kbd>) suben y bajan media placa. <kbd>Shift</kbd> duplica el paso.</dd>
+          <dt><kbd>R</kbd></dt><dd>Con selección la gira 90° (<kbd>Shift</kbd>+<kbd>R</kbd> al revés).</dd>
+          <dt><kbd>M</kbd> / <kbd>N</kbd> / <kbd>U</kbd></dt><dd>Espejo de la selección en X / Z / Y, sobre su propio centro.</dd>
+          <dt><kbd>Ctrl</kbd>+<kbd>C</kbd> / <kbd>V</kbd> / <kbd>D</kbd></dt><dd>Copiar, pegar y duplicar. Lo pegado queda seleccionado para moverlo.</dd>
+          <dt><kbd>Supr</kbd></dt><dd>Borra la selección.</dd>
+        </dl>
+        <h3>Vértices de referencia</h3>
+        <dl>
+          <dt><kbd>V</kbd> Vértice</dt><dd>Elige antes (<kbd>S</kbd>) la pieza o piezas, y pulsa <kbd>V</kbd>. Sobre ellas aparecen puntos amarillos con las posiciones válidas: subdivisiones de las aristas, los cruces con otras piezas y, con la casilla “Caras”, una cuadrícula dentro de cada cara. Clic en uno crea el vértice.</dd>
+          <dt>− puntos / + puntos</dt><dd>Cambian en cuántas partes se divide cada arista (×2, ×4, ×6, ×8, ×12).</dd>
+          <dt><kbd>Alt</kbd></dt><dd>Libre sobre la arista: el punto se desliza por la arista bajo el cursor en cualquier posición.</dd>
+          <dt>Qué es</dt><dd>Un punto de referencia (azul claro): no cambia la forma de la pieza ni se exporta al GLB. Al marcar puntos en Cortar o Rellenar se ofrece como un vértice más. Se borra con <kbd>B</kbd>, se deshace con <kbd>Ctrl</kbd>+<kbd>Z</kbd>, se guarda en el proyecto y respeta la simetría.</dd>
+        </dl>
+        <h3>Simetría</h3>
+        <dl>
+          <dt>Casillas X / Y / Z</dt><dd>Con un eje activo, todo lo que colocas, borras, haces crecer, rellenas o cortas se repite reflejado al otro lado del plano de ese eje. Con varios ejes activos salen todas las combinaciones (X y Z: 4 copias; X, Y y Z: 8).</dd>
+          <dt><kbd>X</kbd> / <kbd>Y</kbd> / <kbd>Z</kbd></dt><dd>Activan o desactivan cada eje desde el teclado.</dd>
+          <dt>Números junto a cada eje</dt><dd>Posición del plano de espejo (0 en X y Z es el centro del suelo; en Y es la altura). Cada plano activo se ve como un velo de color.</dd>
+          <dt>Qué no refleja</dt><dd>Mover, rotar, pegar y los botones de espejo (<kbd>M</kbd> <kbd>N</kbd> <kbd>U</kbd>) actúan solo sobre lo elegido. Al cortar con selección, solo se cortan las piezas elegidas.</dd>
+        </dl>
+        <h3>Cámara y vista</h3>
+        <dl>
+          <dt>Suave</dt><dd>Sombreado suave: las caras vecinas que forman menos de 45° comparten normales y las formas curvas (esferas, cilindros, conos) se ven redondas. Las aristas vivas, como las esquinas de un cubo, no se tocan. Solo cambia cómo se ve; la geometría y el GLB exportado no cambian.</dd>
+          <dt>Solo líneas (<kbd>W</kbd>)</dt><dd>Oculta las caras y deja solo las aristas (con el color de cada pieza) y los vértices como puntos, para ver la estructura. Se puede seguir apuntando y editando como siempre.</dd>
+        </dl>
+        <dl>
+          <dt>Malla (− / +)</dt><dd>Cambia el tamaño de la sala en celdas por lado (de 4 a 128, siempre par), en pasos de 2. Las piezas que queden fuera se conservan. Se ve al lado de “Malla:” en el menú.</dd>
+        </dl>
+        <dl>
+          <dt>Arrastrar / clic derecho</dt><dd>Orbitar / mover la vista.</dd>
+          <dt>Flechas (sin selección)</dt><dd>Desplazan la cámara por la pantalla, con suavidad. <kbd>Shift</kbd> más rápido.</dd>
+          <dt>Botones +X … −Z</dt><dd>Miran la escena desde cada eje.</dd>
+          <dt>Casilla Malla</dt><dd>Oculta o muestra la cuadrícula del suelo y las paredes.</dd>
+          <dt><kbd>H</kbd></dt><dd>Oculta o muestra el menú.</dd>
+        </dl>
+        <h3>Archivo</h3>
+        <dl>
+          <dt><kbd>Ctrl</kbd>+<kbd>S</kbd></dt><dd>Guardar. La primera vez abre el diálogo para elegir carpeta y nombre; después sobrescribe ese mismo archivo. Un ● junto al nombre indica cambios sin guardar.</dd>
+          <dt><kbd>Ctrl</kbd>+<kbd>Mayús</kbd>+<kbd>S</kbd></dt><dd>Guardar como…: elige otra carpeta o nombre.</dd>
+          <dt><kbd>Ctrl</kbd>+<kbd>O</kbd></dt><dd>Abrir un proyecto (.json). Si lo abres con el diálogo del sistema, Guardar escribe encima de ese archivo.</dd>
+          <dt>Navegador</dt><dd>El diálogo para elegir carpeta existe en Chrome y Edge. En otros navegadores el archivo se descarga a la carpeta de descargas.</dd>
+          <dt><kbd>Ctrl</kbd>+<kbd>Z</kbd> / <kbd>Y</kbd></dt><dd>Deshacer / rehacer.</dd>
+          <dt>Exportar GLB</dt><dd>“Unión por color” funde las piezas que se tocan sin caras interiores; “Una pieza por objeto” deja cada pieza como objeto aparte (útil para rigging).</dd>
+        </dl>
+        </div>
+      </div>
+    </div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
