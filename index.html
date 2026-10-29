@@ -209,7 +209,7 @@
             <button data-grow-amount="0.5">½</button>
             <button data-grow-amount="1">1</button>
             <input type="number" id="growAmount" min="0.05" step="0.05" placeholder="otro" title="Cantidad exacta en celdas (1 = el ancho de un cubo)" />
-            <label title="Crece toda la cara conectada a la apuntada (por ejemplo un muro de 3×3 cubos) y no solo el cuadrito. Ctrl invierte la opción mientras se hace clic"><input type="checkbox" id="growAll" /> Toda la cara conectada</label>
+            <label title="Crece o hunde toda la cara conectada a la apuntada (por ejemplo un muro de 3×3 cubos) y no solo el cuadrito. Ctrl invierte la opción mientras se hace clic"><input type="checkbox" id="growAll" /> Toda la cara conectada</label>
           </div>
           <div class="row" id="fillActions" hidden>
             <button data-fill="undo">Quitar punto (Ctrl+Z)</button>
@@ -311,6 +311,7 @@
           <dt><kbd>5</kbd> Lámina</dt><dd>Una lámina que crece pegada a la cara que apuntas: desde arriba queda tumbada, desde abajo cuelga, de costado queda de pie como un ladrillito contra la pared (arranca desde la base de esa pieza). Su lado es el “Tamaño” (1, ½, ¼…) y su “Grosor” se elige aparte (⅛, ¼, ⅓, ½ o un valor exacto).</dd>
           <dt>Esquina interior, Arco</dt><dd>Se componen de varias piezas convexas (se seleccionan y borran de una en una).</dd>
           <dt><kbd>B</kbd> Borrar</dt><dd>Clic en una pieza la borra; la pieza bajo el ratón se marca en rojo. También <kbd>Ctrl</kbd>+clic al colocar.</dd>
+          <dt><kbd>D</kbd> Hundir</dt><dd>Lo contrario de Crecer: clic en una cara la hunde hacia dentro lo que elijas en “Cuánto” (el mismo selector que Crecer). Antes de soltar se ve en rojo lo que se va a quitar; arrastrar hacia dentro elige otra profundidad. Con “Toda la cara conectada” (o <kbd>Ctrl</kbd>+clic) hunde de golpe todo el muro. Si la profundidad supera el grosor, atraviesa. <kbd>Esc</kbd> cancela.</dd>
           <dt><kbd>G</kbd> Crecer</dt><dd>Clic en una cara la hace crecer lo que elijas en “Cuánto”: ¼, ⅓, ½, 1 celda (el ancho de un cubo), un valor exacto, o “Auto” (1 celda en horizontal, 1 placa en vertical). Arrastrar elige otra distancia al momento. La casilla “Toda la cara conectada” (o <kbd>Ctrl</kbd>+clic) hace crecer de golpe todas las caras del mismo plano que enlazan con la apuntada, como un muro de 3×3 cubos. <kbd>Esc</kbd> cancela.</dd>
         </dl>
         <h3>Chaflán</h3>

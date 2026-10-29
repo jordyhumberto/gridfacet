@@ -1,5 +1,6 @@
 import type { Change } from './cut';
 import { convexHull } from './hull';
+import type { FaceOf } from './region';
 import { boundsOf } from './transform';
 import {
   clipPiece,
@@ -121,6 +122,31 @@ export function extrudeFaceChange(piece: Piece, faceIndex: number, distance: num
   const parts = subtractConvex(piece, makePiece(faces, piece.color));
   if (!parts) return { added: [], removed: [] };
   return { added: parts, removed: [piece] };
+}
+
+/** Lo que sobresale hacia fuera del cortador de una cara para que el corte atraviese limpio la superficie. */
+const SINK_OVERSHOOT = 0.02;
+
+/** Un prisma bajo cada cara, de `distance` de hondo: el volumen que se quitaría al hundirlas. */
+export function sinkCutters(faces: FaceOf[], distance: number, color = 0xff5a5a): Piece[] {
+  if (!(distance > 0)) return [];
+  const cutters: Piece[] = [];
+  for (const { face } of faces) {
+    const n = unit(faceNormal(face));
+    const hull = convexHull([...face.map((p) => add(p, scale(n, SINK_OVERSHOOT))), ...face.map((p) => sub(p, scale(n, distance)))]);
+    if (hull) cutters.push(makePiece(hull, color));
+  }
+  return cutters;
+}
+
+/**
+ * Hunde caras hacia dentro (lo contrario de crecer): resta de `pieces` un prisma de `distance` bajo cada cara.
+ * Con varias caras (toda la cara conectada de un muro) se hunden a la vez y con la misma profundidad.
+ */
+export function sinkFacesChange(faces: FaceOf[], pieces: Piece[], distance: number): Change {
+  const cutters = sinkCutters(faces, distance);
+  if (cutters.length === 0) return { added: [], removed: [] };
+  return excavateChange(pieces, cutters, true);
 }
 
 /** Parte la pieza en dos con un plano paralelo a una de sus caras, a la fracción `fraction` (0–1) de su fondo contando desde ella. */

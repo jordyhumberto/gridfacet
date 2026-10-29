@@ -8,6 +8,7 @@ import {
   mergeChange,
   repeatChange,
   splitFaceChange,
+  sinkFacesChange,
   subtractConvex,
   triangleCount,
 } from './modeling';
@@ -198,5 +199,45 @@ describe('contador de triángulos', () => {
 
   it('suma varias piezas', () => {
     expect(triangleCount([cube(), cube()])).toBe(24);
+  });
+});
+
+describe('hundir caras', () => {
+  const faceOf = (piece: Piece, index: number) => ({ piece, face: piece.faces[index] });
+
+  it('hundir la cara de arriba de un cubo quita una capa', () => {
+    const c = cube();
+    const change = sinkFacesChange([faceOf(c, topFace(c))], [c], 0.25);
+    expect(change.removed).toEqual([c]);
+    expect(total(change.added)).toBeCloseTo(0.75, 6);
+    expect(boundsOf(change.added)!.max[1]).toBeCloseTo(0.75, 6);
+  });
+
+  it('con una distancia mayor que la pieza, la atraviesa', () => {
+    const c = cube();
+    const change = sinkFacesChange([faceOf(c, topFace(c))], [c], 3);
+    expect(change.added).toHaveLength(0);
+    expect(change.removed).toEqual([c]);
+  });
+
+  it('hunde a la vez varias caras con la misma profundidad', () => {
+    const a = buildPiece(CATALOG[0], 0, 0, 0, 0, 0xff0000);
+    const b = buildPiece(CATALOG[0], 1, 0, 0, 0, 0x00ff00);
+    const change = sinkFacesChange([faceOf(a, topFace(a)), faceOf(b, topFace(b))], [a, b], 0.5);
+    expect(total(change.added)).toBeCloseTo(1, 6);
+    expect(boundsOf(change.added)!.max[1]).toBeCloseTo(0.5, 6);
+  });
+
+  it('no toca las piezas que quedan fuera del hueco', () => {
+    const a = cube();
+    const far = buildPiece(CATALOG[0], 5, 0, 5, 0, 0x0000ff);
+    const change = sinkFacesChange([faceOf(a, topFace(a))], [a, far], 0.5);
+    expect(change.removed).not.toContain(far);
+  });
+
+  it('distancia cero o negativa no hace nada', () => {
+    const c = cube();
+    expect(sinkFacesChange([faceOf(c, topFace(c))], [c], 0)).toEqual({ added: [], removed: [] });
+    expect(sinkFacesChange([faceOf(c, topFace(c))], [c], -1)).toEqual({ added: [], removed: [] });
   });
 });
