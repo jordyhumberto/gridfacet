@@ -504,6 +504,7 @@ function updateHover(event: PointerEvent): void {
  * Coloca una pieza menor que una celda siguiendo al cursor dentro de la cara apuntada, sin saltar de celda en celda:
  * se mueve en pasos de un cuarto de su tamaño, se imanta a las aristas de las piezas cercanas y a la rejilla, y no se sale de la superficie que la recibe.
  * En el eje de la cara queda a ras de ella. En una pared también se mueve en vertical.
+ * Las piezas de una celda o más solo se sueltan de la rejilla sobre una superficie de varias figuras en la que caben.
  */
 function freePlacement(hit: THREE.Intersection, footW: number, footD: number, scale: number): void {
   const n = hit.face!.normal;
@@ -521,18 +522,20 @@ function freePlacement(hit: THREE.Intersection, footW: number, footD: number, sc
     if (axis === a) return sign > 0 ? Math.round(point[a] * 1e4) / 1e4 : Math.round(point[a] * 1e4) / 1e4 - size;
     return snapSpan(point[a], size, magnetLines(others, a, point, size + 0.6), hostBox?.min[a], hostBox?.max[a]);
   };
-  if (footW < 1) {
+  // Una pieza de una celda o más también se mueve libre sobre una superficie formada por varias figuras, si cabe en ella.
+  const fits = (a: 0 | 1 | 2, size: number): boolean => flat !== null && (axis === a || flat.max[a] - flat.min[a] >= size - 1e-6);
+  if (footW < 1 || fits(0, footW)) {
     const start = place(0, footW);
     target.cx = Math.floor(start + 1e-6);
     target.ox = start - target.cx;
   }
-  if (footD < 1) {
+  if (footD < 1 || fits(2, footD)) {
     const start = place(2, footD);
     target.cz = Math.floor(start + 1e-6);
     target.oz = start - target.cz;
   }
-  if (scale < 1 && axis !== 1) {
-    const height = (CATALOG[selected].heightPlates / 3) * scale;
+  const height = (CATALOG[selected].heightPlates / 3) * scale;
+  if (axis !== 1 && (scale < 1 || fits(1, height))) {
     const start = snapSpan(point[1], height, magnetLines(others, 1, point, height + 0.6), hostBox?.min[1], hostBox?.max[1]);
     target.cy = start * 3;
   }
