@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { buildPieces, buildSlab, CATALOG, SLAB_THICKNESS } from './catalog';
-import { clearanceLift } from './placement';
+import { clearanceLift, flatSurface, magnetLines, snapSpan } from './placement';
 import { volume } from './piece';
 import { boundsOf } from './transform';
 
@@ -87,5 +87,74 @@ describe('lámina que crece desde una cara', () => {
     expect(box.max[0]).toBeCloseTo(4);
     expect(box.min[2]).toBeCloseTo(-4);
     expect(box.max[2]).toBeCloseTo(-3);
+  });
+});
+
+describe('mover una pieza pequeña dentro de una cara', () => {
+  it('sin nada cerca sigue al cursor en pasos de un cuarto de su tamaño', () => {
+    // Medio de lado: pasos de 0,125, con el cursor en el centro de la pieza.
+    expect(snapSpan(2.37, 0.5, [])).toBeCloseTo(2.125);
+    expect(snapSpan(2.45, 0.5, [])).toBeCloseTo(2.25);
+  });
+
+  it('con el tamaño más pequeño también se mueve en pasos propios', () => {
+    expect(snapSpan(1.5, 0.25, [])).toBeCloseTo(1.375);
+    expect(snapSpan(1.56, 0.25, [])).toBeCloseTo(1.4375);
+  });
+
+  it('se imanta con su borde o su centro a una línea cercana', () => {
+    expect(snapSpan(2.28, 0.5, [2])).toBeCloseTo(2); // borde menor sobre la línea
+    expect(snapSpan(1.72, 0.5, [2])).toBeCloseTo(1.5); // borde mayor sobre la línea
+    expect(snapSpan(2.02, 0.5, [2])).toBeCloseTo(1.75); // centro sobre la línea
+  });
+
+  it('no se imanta a líneas lejanas', () => {
+    expect(snapSpan(2.6, 0.5, [2])).toBeCloseTo(2.375);
+  });
+
+  it('se queda dentro de la cara que lo recibe', () => {
+    expect(snapSpan(0.05, 0.5, [], 0, 1)).toBeCloseTo(0);
+    expect(snapSpan(1.2, 0.5, [], 0, 1)).toBeCloseTo(0.5);
+  });
+
+  it('las líneas incluyen los bordes de las piezas próximas y la rejilla', () => {
+    const [cube] = at('cube', 1.1, 0, 0, 0.8);
+    const lines = magnetLines([cube], 0, [1.5, 0.1, 0.4], 0.6);
+    expect(lines.some((l) => Math.abs(l - 1.1) < 1e-6)).toBe(true);
+    expect(lines.some((l) => Math.abs(l - 1.9) < 1e-6)).toBe(true);
+    expect(lines).toContain(1);
+    expect(lines).toContain(2);
+  });
+
+  it('una pieza lejana no aporta sus bordes', () => {
+    const [far] = at('cube', 8, 0, 8);
+    expect(magnetLines([far], 0, [1.5, 0.1, 0.4], 0.6)).not.toContain(8);
+  });
+});
+
+describe('superficie continua', () => {
+  const cube = (x: number, y: number) => at('cube', x, y * 3, 0)[0];
+  it('cuatro cubos juntos forman una sola pared', () => {
+    const wall = [cube(0, 0), cube(1, 0), cube(0, 1), cube(1, 1)];
+    const surface = flatSurface(wall, 2, 1, [0.5, 0.5, 1])!;
+    expect(surface.min[0]).toBeCloseTo(0);
+    expect(surface.max[0]).toBeCloseTo(2);
+    expect(surface.min[1]).toBeCloseTo(0);
+    expect(surface.max[1]).toBeCloseTo(2);
+  });
+
+  it('un cubo separado no se suma a la superficie', () => {
+    const surface = flatSurface([cube(0, 0), cube(1, 0), cube(5, 0)], 2, 1, [0.5, 0.5, 1])!;
+    expect(surface.max[0]).toBeCloseTo(2);
+  });
+
+  it('un escalón en otra profundidad no cuenta como la misma cara', () => {
+    const behind = at('cube', 1, 0, -1)[0];
+    const surface = flatSurface([cube(0, 0), behind], 2, 1, [0.5, 0.5, 1])!;
+    expect(surface.max[0]).toBeCloseTo(1);
+  });
+
+  it('sin cara bajo el cursor devuelve null', () => {
+    expect(flatSurface([cube(0, 0)], 2, 1, [3, 0.5, 1])).toBeNull();
   });
 });
