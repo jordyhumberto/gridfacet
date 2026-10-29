@@ -297,7 +297,7 @@ export class CutTool {
   private hint(): string {
     const n = this.points.length;
     if (this.closed) return 'Región cerrada: se borra lo rojo · F: cambiar de lado · Enter: cortar · Esc: cancelar';
-    if (n === 0) return `Cortar ${this.scopeLabel()}: clic en los puntos de la región, o Shift+clic en una cara para cortar con su plano`;
+    if (n === 0) return `Cortar ${this.scopeLabel()}: clic en los puntos de la región, o Ctrl+clic en una cara para cortar con su plano`;
     if (n < 3) return `Punto ${n}. Sigue marcando (mínimo 3 puntos)`;
     return `Punto ${n}. Clic en el primero (o Enter) para cerrar la región`;
   }

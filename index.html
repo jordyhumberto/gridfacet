@@ -67,9 +67,16 @@
       #hud button:hover:not(.active) { background: #343b49; }
       #hud label { display: flex; align-items: center; gap: 3px; }
       #exportMode { flex: 1; min-width: 0; }
-      #hint { position: fixed; left: 50%; bottom: 14px; transform: translateX(-50%); z-index: 6; display: flex; align-items: center; gap: 10px; max-width: min(900px, calc(100vw - 340px)); min-width: 260px; padding: 9px 14px; box-sizing: border-box; background: rgba(20, 22, 28, 0.92); border: 1px solid #343944; border-left: 5px solid var(--mode, #3b6fd4); border-radius: 8px; font-size: 14px; line-height: 1.35; pointer-events: none; }
+      #hint { position: fixed; left: calc(50% + 170px); bottom: 14px; transform: translateX(-50%); z-index: 6; display: flex; flex-direction: column; gap: 8px; max-width: min(900px, calc(100vw - 400px)); min-width: 260px; max-height: 55vh; overflow: hidden; padding: 9px 14px; box-sizing: border-box; background: rgba(20, 22, 28, 0.92); border: 1px solid #343944; border-left: 5px solid var(--mode, #3b6fd4); border-radius: 8px; font-size: 14px; line-height: 1.35; pointer-events: none; }
       #hint b { flex: none; padding: 2px 8px; border-radius: 5px; background: var(--mode, #3b6fd4); color: #101216; font-size: 12px; letter-spacing: 0.04em; text-transform: uppercase; }
       #hint[hidden] { display: none; }
+      #hint .head { display: flex; align-items: center; gap: 10px; }
+      #hint .now { flex: 1; }
+      #hint button { pointer-events: auto; flex: none; margin-left: auto; background: #2a2f3a; color: inherit; border: 1px solid #3d4452; border-radius: 6px; padding: 2px 8px; font-size: 12px; cursor: pointer; }
+      #hint button:hover { background: #343b49; }
+      #hint.min { min-width: 0; padding: 5px 8px 5px 10px; }
+      #hint .guide { overflow-y: auto; pointer-events: auto; min-height: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 3px 18px; font-size: 13px; color: #c9ced9; }
+      #hint kbd { background: #2a2f3a; border: 1px solid #3d4452; border-radius: 4px; padding: 0 5px; font-family: inherit; font-size: 12px; color: #e6e8ee; }
       #hud { border-color: var(--mode, #343944); }
       #helpFloat { position: fixed; top: 8px; right: 8px; z-index: 6; width: 32px; height: 32px; border-radius: 50%; background: rgba(20, 22, 28, 0.9); color: #e6e8ee; border: 1px solid #3d4452; font-size: 16px; cursor: pointer; }
       #helpFloat:hover { background: #343b49; }
@@ -79,7 +86,7 @@
       #hud h4::before { content: '▾'; margin-right: 5px; }
       #hud section.collapsed h4::before { content: '▸'; }
       #hud h4 .title { flex: 1; }
-      @media (max-width: 760px) { #hint { max-width: calc(100vw - 24px); bottom: 8px; font-size: 13px; } }
+      @media (max-width: 760px) { #hint { left: 50%; max-width: calc(100vw - 24px); bottom: 8px; font-size: 13px; } }
       #status { color: #ffb020; }
       #status:empty { display: none; }
       #hud details > summary { cursor: pointer; color: #9aa1b2; user-select: none; }
@@ -103,7 +110,7 @@
           <div class="row">
             <button id="open" title="Ctrl+O">Abrir</button>
             <button id="save" title="Ctrl+S">Guardar</button>
-            <button id="saveAs" title="Ctrl+Mayús+S">Guardar como…</button>
+            <button id="saveAs" title="Ctrl+Alt+S">Guardar como…</button>
             <input type="file" id="openFile" accept=".json,application/json" hidden />
           </div>
           <div class="row">
@@ -147,7 +154,7 @@
             <button data-sel="hide" title="O">Ocultar (O)</button>
             <button data-sel="isolate" title="I">Aislar (I)</button>
             <button data-sel="group" title="Ctrl+G">Agrupar</button>
-            <button data-sel="ungroup" title="Ctrl+Mayús+G">Desagrupar</button>
+            <button data-sel="ungroup" title="Ctrl+Alt+G">Desagrupar</button>
             <button data-sel="connected" title="K">Conectadas (K)</button>
             <button data-sel="excavate" title="Resta la selección de las piezas que toca (cráteres, agujeros)">Excavar</button>
             <button data-sel="merge" title="Une las piezas en una si la unión es convexa">Fusionar</button>
@@ -202,7 +209,7 @@
             <button data-grow-amount="0.5">½</button>
             <button data-grow-amount="1">1</button>
             <input type="number" id="growAmount" min="0.05" step="0.05" placeholder="otro" title="Cantidad exacta en celdas (1 = el ancho de un cubo)" />
-            <label title="Crece toda la cara conectada a la apuntada (por ejemplo un muro de 3×3 cubos) y no solo el cuadrito. Mayús invierte la opción mientras se hace clic"><input type="checkbox" id="growAll" /> Toda la cara conectada</label>
+            <label title="Crece toda la cara conectada a la apuntada (por ejemplo un muro de 3×3 cubos) y no solo el cuadrito. Ctrl invierte la opción mientras se hace clic"><input type="checkbox" id="growAll" /> Toda la cara conectada</label>
           </div>
           <div class="row" id="fillActions" hidden>
             <button data-fill="undo">Quitar punto (Ctrl+Z)</button>
@@ -270,7 +277,7 @@
           </div>
           <div class="row">
             <label><input type="checkbox" id="gridToggle" checked /> Malla</label>
-            <button id="showHidden" hidden title="Mayús+O">Mostrar ocultas</button>
+            <button id="showHidden" hidden title="Alt+O">Mostrar ocultas</button>
             <label title="Solo aristas y vértices, sin caras (W)"><input type="checkbox" id="wireToggle" /> Solo líneas</label>
             <label title="Redondea el aspecto de las formas curvas (no cambia la geometría ni el GLB)"><input type="checkbox" id="smoothToggle" /> Suave</label>
           </div>
@@ -303,8 +310,8 @@
           <dt>Tamaño</dt><dd>Debajo de las piezas eliges la escala al colocar: 1, ¾, ½, ⅓, ¼ o un valor exacto. Una pieza menor que una celda se centra en el cursor y salta de medio en medio tamaño dentro de la celda (una de ½ cabe en las esquinas y también en el centro), y, sobre una cara plana, se apoya justo encima de ella aunque sea una lámina fina.</dd>
           <dt><kbd>5</kbd> Lámina</dt><dd>Una lámina que crece pegada a la cara que apuntas: desde arriba queda tumbada, desde abajo cuelga, de costado queda de pie como un ladrillito contra la pared (arranca desde la base de esa pieza). Su lado es el “Tamaño” (1, ½, ¼…) y su “Grosor” se elige aparte (⅛, ¼, ⅓, ½ o un valor exacto).</dd>
           <dt>Esquina interior, Arco</dt><dd>Se componen de varias piezas convexas (se seleccionan y borran de una en una).</dd>
-          <dt><kbd>B</kbd> Borrar</dt><dd>Clic en una pieza la borra; la pieza bajo el ratón se marca en rojo. También <kbd>Shift</kbd>+clic al colocar.</dd>
-          <dt><kbd>G</kbd> Crecer</dt><dd>Clic en una cara la hace crecer lo que elijas en “Cuánto”: ¼, ⅓, ½, 1 celda (el ancho de un cubo), un valor exacto, o “Auto” (1 celda en horizontal, 1 placa en vertical). Arrastrar elige otra distancia al momento. La casilla “Toda la cara conectada” (o <kbd>Mayús</kbd>) hace crecer de golpe todas las caras del mismo plano que enlazan con la apuntada, como un muro de 3×3 cubos. <kbd>Esc</kbd> cancela.</dd>
+          <dt><kbd>B</kbd> Borrar</dt><dd>Clic en una pieza la borra; la pieza bajo el ratón se marca en rojo. También <kbd>Ctrl</kbd>+clic al colocar.</dd>
+          <dt><kbd>G</kbd> Crecer</dt><dd>Clic en una cara la hace crecer lo que elijas en “Cuánto”: ¼, ⅓, ½, 1 celda (el ancho de un cubo), un valor exacto, o “Auto” (1 celda en horizontal, 1 placa en vertical). Arrastrar elige otra distancia al momento. La casilla “Toda la cara conectada” (o <kbd>Ctrl</kbd>+clic) hace crecer de golpe todas las caras del mismo plano que enlazan con la apuntada, como un muro de 3×3 cubos. <kbd>Esc</kbd> cancela.</dd>
         </dl>
         <h3>Chaflán</h3>
         <dl>
@@ -337,34 +344,34 @@
         </dl>
         <h3>Ocultar, aislar y grupos con nombre</h3>
         <dl>
-          <dt><kbd>O</kbd> Ocultar</dt><dd>Esconde las piezas elegidas para trabajar en lo que queda detrás. Ocultas no se ven ni se pueden apuntar con el ratón, pero siguen en el modelo y se exportan. <kbd>Mayús</kbd>+<kbd>O</kbd> o el botón “Mostrar ocultas” las devuelve. No se guarda en el proyecto.</dd>
+          <dt><kbd>O</kbd> Ocultar</dt><dd>Esconde las piezas elegidas para trabajar en lo que queda detrás. Ocultas no se ven ni se pueden apuntar con el ratón, pero siguen en el modelo y se exportan. <kbd>Alt</kbd>+<kbd>O</kbd> o el botón “Mostrar ocultas” las devuelve. No se guarda en el proyecto.</dd>
           <dt><kbd>I</kbd> Aislar</dt><dd>Oculta todo menos la selección; otra pulsación de <kbd>I</kbd> (sin selección) muestra todo.</dd>
           <dt>Sección “Grupos”</dt><dd>Lista los grupos del modelo: un clic en el nombre elige el grupo, el botón “ojo” lo oculta o muestra (como una capa). Con un grupo elegido puedes darle nombre; ese nombre se usa en los objetos del GLB con “Una pieza por objeto” (por ejemplo <code>Cola_12</code>), útil para reconocer las partes en Blender. Se guarda en el proyecto.</dd>
         </dl>
         <h3>Grupos y medidas</h3>
         <dl>
           <dt><kbd>Ctrl</kbd>+<kbd>G</kbd> Agrupar</dt><dd>Une las piezas elegidas: desde entonces un clic elige el grupo entero, y mover, girar, copiar, espejo y borrar actúan sobre todo el grupo. Cortar conserva el grupo en los trozos. Se guarda en el proyecto.</dd>
-          <dt><kbd>Ctrl</kbd>+<kbd>Mayús</kbd>+<kbd>G</kbd></dt><dd>Deshace el grupo de las piezas elegidas.</dd>
+          <dt><kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>G</kbd></dt><dd>Deshace el grupo de las piezas elegidas.</dd>
           <dt><kbd>K</kbd> Conectadas</dt><dd>Suma a la selección todas las piezas que tocan a las elegidas por una cara (o se solapan), una detrás de otra. Dos piezas que solo comparten una arista o una esquina no cuentan.</dd>
           <dt>Medidas</dt><dd>Con piezas elegidas, la línea de estado muestra el tamaño de la caja que ocupan: ancho (X) × fondo (Z) en celdas y alto en placas (3 placas = 1 celda).</dd>
         </dl>
         <h3>Pintar</h3>
         <dl>
-          <dt><kbd>P</kbd> Pintar</dt><dd>Elige el color (selector junto a “Piezas”) y haz clic en una cara para pintarla. <kbd>Shift</kbd>+clic pinta toda la pieza. <kbd>Alt</kbd>+clic toma el color de la cara (cuentagotas). Respeta la simetría y se deshace con <kbd>Ctrl</kbd>+<kbd>Z</kbd>.</dd>
+          <dt><kbd>P</kbd> Pintar</dt><dd>Elige el color (selector junto a “Piezas”) y haz clic en una cara para pintarla. <kbd>Ctrl</kbd>+clic pinta toda la pieza. <kbd>Alt</kbd>+clic toma el color de la cara (cuentagotas). Respeta la simetría y se deshace con <kbd>Ctrl</kbd>+<kbd>Z</kbd>.</dd>
           <dt>Al exportar</dt><dd>Con “Unión por color” cada color es un material del GLB. Con “Una pieza por objeto”, una pieza con caras de varios colores sale como varios objetos <code>Pieza_n_color</code>. Cortar, espejo y mover conservan los colores de las caras.</dd>
         </dl>
         <h3>Cortar y rellenar</h3>
         <dl>
-          <dt><kbd>C</kbd> Cortar</dt><dd>Los puntos se ajustan a vértices, a la rejilla y también a los puntos donde una pieza atraviesa a otra (el cruce de una arista con una cara). <kbd>Shift</kbd>+clic en una cara usa esa cara como plano y región de corte: solo se cortan las piezas apoyadas en ella. Marca los puntos de una región; clic en el primero (o <kbd>Enter</kbd>) la cierra. <kbd>F</kbd> cambia el lado que se borra (el rojo). <kbd>Enter</kbd> corta. Solo se cortan las piezas que la región toca; con selección, solo la selección.</dd>
+          <dt><kbd>C</kbd> Cortar</dt><dd>Los puntos se ajustan a vértices, a la rejilla y también a los puntos donde una pieza atraviesa a otra (el cruce de una arista con una cara). <kbd>Ctrl</kbd>+clic en una cara usa esa cara como plano y región de corte: solo se cortan las piezas apoyadas en ella. Marca los puntos de una región; clic en el primero (o <kbd>Enter</kbd>) la cierra. <kbd>F</kbd> cambia el lado que se borra (el rojo). <kbd>Enter</kbd> corta. Solo se cortan las piezas que la región toca; con selección, solo la selección.</dd>
           <dt><kbd>L</kbd> Rellenar</dt><dd>Marca 4 o más puntos que no estén en un plano; clic en el primero (o <kbd>Enter</kbd>) crea la pieza que los une.</dd>
           <dt><kbd>Ctrl</kbd>+<kbd>Z</kbd> al marcar</dt><dd>Con puntos marcados quita el último punto, no el último bloque.</dd>
         </dl>
         <h3>Seleccionar y mover</h3>
         <dl>
-          <dt><kbd>S</kbd> Elegir</dt><dd>Clic elige una pieza. <kbd>Shift</kbd>+clic suma o quita. <kbd>Shift</kbd>+arrastrar en un hueco dibuja un recuadro que suma las piezas de dentro. <kbd>Ctrl</kbd>+<kbd>A</kbd> elige todo.</dd>
-          <dt>Arrastrar una pieza</dt><dd>Mueve la selección. <kbd>Alt</kbd>: en vertical. <kbd>Shift</kbd>: paso doble. <kbd>Esc</kbd> cancela.</dd>
-          <dt>Flechas</dt><dd>Con selección mueven media celda. <kbd>Re Pág</kbd>/<kbd>Av Pág</kbd> (o <kbd>E</kbd>/<kbd>Q</kbd>) suben y bajan media placa. <kbd>Shift</kbd> duplica el paso.</dd>
-          <dt><kbd>R</kbd></dt><dd>Con selección la gira 90° (<kbd>Shift</kbd>+<kbd>R</kbd> al revés).</dd>
+          <dt><kbd>S</kbd> Elegir</dt><dd>Clic elige una pieza. <kbd>Ctrl</kbd>+clic suma o quita. <kbd>Ctrl</kbd>+arrastrar en un hueco dibuja un recuadro que suma las piezas de dentro. <kbd>Ctrl</kbd>+<kbd>A</kbd> elige todo.</dd>
+          <dt>Arrastrar una pieza</dt><dd>Mueve la selección. <kbd>Alt</kbd>: en vertical. <kbd>Ctrl</kbd>: paso doble. <kbd>Esc</kbd> cancela.</dd>
+          <dt>Flechas</dt><dd>Con selección mueven media celda. <kbd>Re Pág</kbd>/<kbd>Av Pág</kbd> (o <kbd>E</kbd>/<kbd>Q</kbd>) suben y bajan media placa. <kbd>Ctrl</kbd> duplica el paso.</dd>
+          <dt><kbd>R</kbd></dt><dd>Con selección la gira 90° (<kbd>Alt</kbd>+<kbd>R</kbd> al revés).</dd>
           <dt><kbd>M</kbd> / <kbd>N</kbd> / <kbd>U</kbd></dt><dd>Espejo de la selección en X / Z / Y, sobre su propio centro.</dd>
           <dt><kbd>Ctrl</kbd>+<kbd>C</kbd> / <kbd>V</kbd> / <kbd>D</kbd></dt><dd>Copiar, pegar y duplicar. Lo pegado queda seleccionado para moverlo.</dd>
           <dt><kbd>Supr</kbd></dt><dd>Borra la selección.</dd>
@@ -393,15 +400,16 @@
         </dl>
         <dl>
           <dt>Arrastrar / clic derecho</dt><dd>Orbitar / mover la vista.</dd>
-          <dt>Flechas (sin selección)</dt><dd>Desplazan la cámara por la pantalla, con suavidad. <kbd>Shift</kbd> más rápido.</dd>
+          <dt>Flechas (sin selección)</dt><dd>Desplazan la cámara por la pantalla, con suavidad. <kbd>Ctrl</kbd> más rápido.</dd>
           <dt>Botones +X … −Z</dt><dd>Miran la escena desde cada eje.</dd>
           <dt>Casilla Malla</dt><dd>Oculta o muestra la cuadrícula del suelo y las paredes.</dd>
           <dt><kbd>H</kbd></dt><dd>Oculta o muestra el menú.</dd>
+          <dt><kbd>A</kbd> Guía</dt><dd>Oculta o muestra la guía de la barra inferior (también con su botón). La guía lista todo lo que se puede hacer con ratón y teclado en la herramienta activa.</dd>
         </dl>
         <h3>Archivo</h3>
         <dl>
           <dt><kbd>Ctrl</kbd>+<kbd>S</kbd></dt><dd>Guardar. La primera vez abre el diálogo para elegir carpeta y nombre; después sobrescribe ese mismo archivo. Un ● junto al nombre indica cambios sin guardar.</dd>
-          <dt><kbd>Ctrl</kbd>+<kbd>Mayús</kbd>+<kbd>S</kbd></dt><dd>Guardar como…: elige otra carpeta o nombre.</dd>
+          <dt><kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>S</kbd></dt><dd>Guardar como…: elige otra carpeta o nombre.</dd>
           <dt><kbd>Ctrl</kbd>+<kbd>O</kbd></dt><dd>Abrir un proyecto (.json). Si lo abres con el diálogo del sistema, Guardar escribe encima de ese archivo.</dd>
           <dt>Navegador</dt><dd>El diálogo para elegir carpeta existe en Chrome y Edge. En otros navegadores el archivo se descarga a la carpeta de descargas.</dd>
           <dt><kbd>Ctrl</kbd>+<kbd>Z</kbd> / <kbd>Y</kbd></dt><dd>Deshacer / rehacer.</dd>

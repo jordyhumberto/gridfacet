@@ -342,6 +342,11 @@ function addToolPoint(tool: CutTool | FillTool, point: Vec3, minToClose: number,
   tool.addPoint(point);
 }
 
+/** Ctrl (o Cmd en Mac) pulsado: el modificador de los clics (sumar a la selección, borrar al colocar, toda la pieza, etc.). */
+function withCtrl(event: { ctrlKey: boolean; metaKey: boolean }): boolean {
+  return event.ctrlKey || event.metaKey;
+}
+
 function updateHover(event: PointerEvent): void {
   if (mode === 'vertex' && !marquee && !drag && !growDrag) {
     const rect = renderer.domElement.getBoundingClientRect();
@@ -371,7 +376,7 @@ function updateHover(event: PointerEvent): void {
     snapped = markTarget(event, hit);
     showPointInfo(snapped);
     cutTool.setHover(snapped);
-    setFaceHover(event.shiftKey && hit && !backdrops.includes(hit.object) ? findFace(hit) : undefined);
+    setFaceHover(withCtrl(event) && hit && !backdrops.includes(hit.object) ? findFace(hit) : undefined);
     return;
   }
   if (mode === 'fill') {
@@ -387,7 +392,7 @@ function updateHover(event: PointerEvent): void {
   if (mode === 'paint') {
     const found = hit && !backdrops.includes(hit.object) ? findFace(hit) : undefined;
     setFaceHover(found);
-    statusEl.textContent = found ? 'Clic: pintar la cara · Shift: toda la pieza · Alt: tomar su color' : '';
+    statusEl.textContent = found ? 'Clic: pintar la cara · Ctrl: toda la pieza · Alt: tomar su color' : '';
     return;
   }
   if (mode === 'face') {
@@ -715,14 +720,14 @@ function selectionLabel(): string {
   return `${selection.size} seleccionada(s) · ${round(size[0])} × ${round(size[2])} celdas, alto ${round(size[1] * 3)} placas (X × Z, Y)`;
 }
 
-/** Clic elige una pieza (y su grupo); Shift+clic la añade o quita; clic en vacío limpia la selección. */
+/** Clic elige una pieza (y su grupo); Ctrl+clic la añade o quita; clic en vacío limpia la selección. */
 function selectAt(event: PointerEvent): void {
   const id = pieceIdOf(castRay(event, false));
   if (id === undefined) {
-    if (!event.shiftKey) selection.clear();
+    if (!withCtrl(event)) selection.clear();
     return;
   }
-  if (event.shiftKey) toggleGroup(id);
+  if (withCtrl(event)) toggleGroup(id);
   else selection.set(groupIds(id));
 }
 
@@ -867,7 +872,7 @@ interface Marquee {
 let marquee: Marquee | null = null;
 const marqueeEl = document.getElementById('marquee')!;
 
-/** Shift + arrastrar desde un hueco dibuja un recuadro; al soltar se suman a la selección las piezas cuyo centro queda dentro. */
+/** Ctrl + arrastrar desde un hueco dibuja un recuadro; al soltar se suman a la selección las piezas cuyo centro queda dentro. */
 function startMarquee(event: PointerEvent): void {
   controls.enabled = false;
   try {
@@ -1300,7 +1305,7 @@ const faceCentre = (face: Vec3[]): Vec3 => [
   face.reduce((s, p) => s + p[2], 0) / face.length,
 ];
 
-/** Clic en modo pintar: pinta la cara; con Shift, toda la pieza; con Alt, toma su color como color actual. */
+/** Clic en modo pintar: pinta la cara; con Ctrl, toda la pieza; con Alt, toma su color como color actual. */
 function paintAt(event: PointerEvent): void {
   const hit = castRay(event, false);
   const found = hit ? findFace(hit) : undefined;
@@ -1309,7 +1314,7 @@ function paintAt(event: PointerEvent): void {
     setColor(faceColorOf(found.piece, found.piece.faces.indexOf(found.face)));
     return;
   }
-  model.apply(paintChange(paintTargets(found, event.shiftKey), color));
+  model.apply(paintChange(paintTargets(found, withCtrl(event)), color));
   useColor(color);
   setFaceHover(undefined);
   updateHover(event);
@@ -1336,8 +1341,8 @@ function setFaceHover(found: FaceHit | undefined, whole = false): void {
 const growAllEl = document.getElementById('growAll') as HTMLInputElement;
 const growActionsEl = document.getElementById('growActions')!;
 growAllEl.addEventListener('change', () => growAllEl.blur());
-/** ¿Crece toda la cara conectada? La casilla lo decide y Mayús lo invierte mientras se pulsa. */
-const growWhole = (event: { shiftKey: boolean }): boolean => growAllEl.checked !== event.shiftKey;
+/** ¿Crece toda la cara conectada? La casilla lo decide y Ctrl lo invierte mientras se pulsa. */
+const growWhole = (event: { ctrlKey: boolean; metaKey: boolean }): boolean => growAllEl.checked !== withCtrl(event);
 /** La cara apuntada, o toda la cara conectada (las caras del mismo plano que enlazan con ella y están a la vista). */
 function growFaces(found: FaceHit, whole: boolean): FaceOf[] {
   return whole ? coplanarRegion({ piece: found.piece, face: found.face }, model.all()) : [{ piece: found.piece, face: found.face }];
@@ -1474,7 +1479,7 @@ function finishGrow(commit: boolean): void {
 function startDrag(event: PointerEvent): void {
   startGrow(event);
   if (mode !== 'select' || event.button !== 0) return;
-  if (event.shiftKey && pieceIdOf(castRay(event, false)) === undefined) {
+  if (withCtrl(event) && pieceIdOf(castRay(event, false)) === undefined) {
     startMarquee(event);
     return;
   }
@@ -1484,7 +1489,7 @@ function startDrag(event: PointerEvent): void {
 
   const wasSelected = selection.has(id);
   if (!wasSelected) {
-    if (event.shiftKey) toggleGroup(id);
+    if (withCtrl(event)) toggleGroup(id);
     else selection.set(groupIds(id));
   }
 
@@ -1530,9 +1535,9 @@ function updateDrag(event: PointerEvent): void {
   drag.moved = true;
   const delta = point.sub(drag.origin);
   if (drag.vertical) {
-    drag.offset.set(0, snapTo(delta.y, event.shiftKey ? 2 * STEP_Y : STEP_Y), 0);
+    drag.offset.set(0, snapTo(delta.y, withCtrl(event) ? 2 * STEP_Y : STEP_Y), 0);
   } else {
-    const step = event.shiftKey ? 2 * STEP_XZ : STEP_XZ;
+    const step = withCtrl(event) ? 2 * STEP_XZ : STEP_XZ;
     drag.offset.set(snapTo(delta.x, step), 0, snapTo(delta.z, step));
   }
   for (const object of selectedObjects()) object.position.copy(drag.offset);
@@ -1559,7 +1564,7 @@ function finishDrag(commit: boolean, event?: PointerEvent): void {
   }
   // Sin arrastrar fue un clic: sobre una pieza ya elegida, estrecha o alterna la selección.
   if (current.wasSelected) {
-    if (event?.shiftKey) toggleGroup(current.id);
+    if (event && withCtrl(event)) toggleGroup(current.id);
     else selection.set(groupIds(current.id));
   }
 }
@@ -1602,13 +1607,13 @@ renderer.domElement.addEventListener('pointerup', (e) => {
   if (moved > CLICK_MAX_MOVE) return;
   updateHover(e);
   if (mode === 'cut') {
-    if (e.shiftKey) {
+    if (withCtrl(e)) {
       const hit = castRay(e, false);
       const found = hit ? findFace(hit) : undefined;
       if (found) {
         setFaceHover(undefined);
         cutTool.useFace(found.face);
-      } else statusEl.textContent = 'Shift+clic sobre una cara de una pieza para cortar con su plano';
+      } else statusEl.textContent = 'Ctrl+clic sobre una cara de una pieza para cortar con su plano';
       return;
     }
     if (snapped) addToolPoint(cutTool, snapped, 3, e);
@@ -1649,7 +1654,7 @@ renderer.domElement.addEventListener('pointerup', (e) => {
     return;
   }
   if (mode === 'grow') return;
-  if (e.shiftKey) removeAt(e);
+  if (withCtrl(e)) removeAt(e);
   else placePiece();
   updateHover(e);
 });
@@ -2079,44 +2084,166 @@ const MODE_INFO: Record<Mode, { name: string; color: string }> = {
   face: { name: 'Cara', color: '#8ce08c' },
 };
 
+/** Línea de “ahora”: dice qué toca hacer en este momento y cambia con la fase de la herramienta y la selección. */
 function hintText(): string {
   switch (mode) {
     case 'place':
-      if (CATALOG[selected].grows) return 'Clic: la lámina crece pegada a la cara que apuntas (arriba, abajo o de costado) · Shift+clic: borrar';
-      return `Clic: colocar ${CATALOG[selected].name} · R: rotar · Shift+clic: borrar · arrastra para orbitar la vista`;
+      if (CATALOG[selected].grows) return 'Clic: la lámina crece pegada a la cara que apuntas (arriba, abajo o de costado)';
+      return `Clic: colocar ${CATALOG[selected].name}`;
     case 'select':
-      return selection.size === 0
-        ? 'Clic en una pieza para elegirla · Shift+clic suma o quita · Shift+arrastrar en un hueco dibuja un recuadro · Ctrl+A elige todo'
-        : 'Arrastra para mover · flechas, E y Q mueven · R gira · M, N, U espejo · Ctrl+G agrupa · K suma conectadas · Supr borra';
+      return selection.size === 0 ? 'Clic en una pieza para elegirla' : `${selection.size} elegida(s): arrastra para moverlas o usa las teclas de la lista`;
     case 'erase':
-      return 'Clic en la pieza marcada en rojo para borrarla (también puntos de referencia)';
+      return 'Clic en la pieza marcada en rojo para borrarla';
     case 'grow':
-      return (growAllEl.checked ? 'Crece toda la cara conectada (Mayús: solo el cuadrito apuntado)' : 'Clic en una cara la hace crecer (Mayús: toda la cara conectada)') +
-        ` · cantidad ${growAmountOf() === null ? 'automática' : `${+growAmountOf()!.toFixed(3)} celda(s)`} en el panel; arrastra para otra distancia · Esc cancela`;
+      return (growAllEl.checked ? 'Crece toda la cara conectada (Ctrl: solo el cuadrito apuntado)' : 'Clic en una cara la hace crecer (Ctrl: toda la cara conectada)') +
+        ` · cantidad ${growAmountOf() === null ? 'automática' : `${+growAmountOf()!.toFixed(3)} celda(s)`}`;
     case 'bevel':
-      return 'Clic en una arista (marcada en amarillo) para cortarla en chaflán · Tamaño en el panel · Esc sale';
+      return 'Clic en una arista (marcada en amarillo) para cortarla en chaflán';
     case 'face':
-      return 'Clic en una cara: extruir (distancia positiva sale, negativa cava; “Punta” estrecha el extremo) o dividir la pieza · Esc sale';
+      return 'Clic en una cara para extruirla, cavarla o dividir la pieza';
     case 'shape':
-      return `Clic: apoyar ${SHAPES.find((s) => s.kind === shapeSpec.kind)?.name.toLowerCase()} sobre lo que apuntas · cambia medidas y lados en el panel · Esc sale`;
+      return `Clic: apoyar ${SHAPES.find((s) => s.kind === shapeSpec.kind)?.name.toLowerCase()} sobre lo que apuntas`;
     case 'paint':
-      return 'Clic: pintar la cara · Shift+clic: toda la pieza · Alt+clic: tomar su color · el color se elige junto a “Piezas”';
+      return 'Clic en una cara para pintarla con el color elegido';
     case 'vertex':
-      return 'Clic en un punto amarillo para crear un punto de referencia · Alt: libre sobre la arista · + / − puntos cambia la densidad · Esc sale';
+      return 'Clic en un punto amarillo para crear un punto de referencia';
     case 'fill': {
       const n = fillTool.pointCount;
       if (n === 0) return 'Rellenar: marca 4 o más puntos que no estén en un mismo plano; se pegan a vértices y a la rejilla';
-      if (n < 4) return `Rellenar: ${n} punto(s) marcados · faltan ${4 - n} como mínimo · Ctrl+Z quita el último`;
-      return `Rellenar: ${n} puntos · clic en el primero (o Enter) crea la pieza que los une · Ctrl+Z quita el último`;
+      if (n < 4) return `Rellenar: ${n} punto(s) marcados · faltan ${4 - n} como mínimo`;
+      return `Rellenar: ${n} puntos · clic en el primero (o Enter) crea la pieza que los une`;
     }
     case 'cut': {
-      if (cutTool.isClosed) return 'Región cerrada · F cambia el lado que se borra (el rojo) · Enter corta · Ctrl+Z reabre · Esc cancela';
+      if (cutTool.isClosed) return 'Región cerrada · F cambia el lado que se borra (el rojo) · Enter corta';
       const n = cutTool.pointCount;
-      if (n === 0) return 'Cortar: marca los puntos de una región sobre las piezas · Shift+clic en una cara la usa como plano';
-      if (n < 3) return `Cortar: ${n} punto(s) marcados · marca al menos 3 · Ctrl+Z quita el último`;
-      return `Cortar: ${n} puntos · clic en el primero (o Enter) cierra la región · Ctrl+Z quita el último`;
+      if (n === 0) return 'Cortar: marca los puntos de una región sobre las piezas';
+      if (n < 3) return `Cortar: ${n} punto(s) marcados · marca al menos 3`;
+      return `Cortar: ${n} puntos · clic en el primero (o Enter) cierra la región`;
     }
   }
+}
+
+/** Guía completa de cada herramienta: todo lo que se puede hacer con ratón y teclado estando en ella. */
+const VIEW_GUIDE: [string, string][] = [
+  ['Arrastrar en vacío', 'orbitar la vista'],
+  ['Rueda', 'acercar / alejar'],
+  ['Flechas', 'mover la cámara (Ctrl: más rápido)'],
+  ['X / Y / Z', 'simetría en ese eje'],
+  ['W', 'alambre'],
+  ['H', 'ocultar el menú'],
+  ['Ctrl+Z / Ctrl+Y', 'deshacer / rehacer'],
+];
+const GUIDE: Record<Mode, [string, string][]> = {
+  place: [
+    ['Clic', 'colocar la pieza elegida (la lámina crece desde la cara apuntada)'],
+    ['Ctrl+clic', 'borrar la pieza apuntada'],
+    ['R', 'rotar la pieza 90°'],
+    ['1 – 9', 'elegir pieza del catálogo'],
+    ['S · B · C · L', 'elegir · borrar · cortar · rellenar'],
+    ['V · G · P', 'vértice · crecer · pintar'],
+    ['T · J · F', 'forma · chaflán · cara'],
+    ...VIEW_GUIDE,
+  ],
+  select: [
+    ['Clic', 'elegir una pieza (o su grupo entero)'],
+    ['Ctrl+clic', 'sumar o quitar una pieza de la selección'],
+    ['Ctrl+arrastrar', 'desde un hueco: recuadro que suma lo de dentro'],
+    ['Ctrl+A · K · Esc', 'elegir todo · sumar conectadas · quitar selección'],
+    ['Arrastrar pieza', 'mover la selección (Alt: en vertical · Ctrl: paso doble · Esc cancela)'],
+    ['Flechas', 'mover media celda (Ctrl: una celda)'],
+    ['E / Q · Re Pág / Av Pág', 'subir / bajar media placa (Ctrl: una placa)'],
+    ['R · Alt+R', 'girar 90° · girar al revés'],
+    ['M · N · U', 'espejo en X · Z · Y'],
+    ['Ctrl+G · Ctrl+Alt+G', 'agrupar · desagrupar'],
+    ['Ctrl+C · V · D', 'copiar · pegar · duplicar'],
+    ['Supr', 'borrar la selección'],
+    ['O · Alt+O · I', 'ocultar · mostrar ocultas · aislar'],
+    ['Panel “Selección”', 'fusionar, excavar, repetir; centro, tamaño y giro exactos'],
+    ...VIEW_GUIDE.slice(0, 1),
+  ],
+  erase: [
+    ['Clic', 'borrar la pieza marcada en rojo (también los puntos de referencia)'],
+    ['Esc', 'volver a Colocar'],
+    ...VIEW_GUIDE,
+  ],
+  cut: [
+    ['Clic', 'marcar un punto de la región (se pega a vértices y a la rejilla)'],
+    ['Ctrl+clic', 'sobre una cara: cortar con el plano de esa cara'],
+    ['Clic en el primer punto / Enter', 'cerrar la región · con la región cerrada, Enter corta'],
+    ['F', 'cambiar el lado que se borra (el rojo)'],
+    ['Ctrl+Z / Ctrl+Y', 'quitar / reponer el último punto'],
+    ['Esc', 'cancelar el corte'],
+    ['Con selección', 'solo se cortan las piezas elegidas'],
+    ...VIEW_GUIDE.slice(0, 2),
+  ],
+  fill: [
+    ['Clic', 'marcar un punto (4 o más, no todos en un mismo plano)'],
+    ['Clic en el primer punto / Enter', 'crear la pieza que los une'],
+    ['Ctrl+Z / Ctrl+Y', 'quitar / reponer el último punto'],
+    ['Esc', 'cancelar'],
+    ...VIEW_GUIDE.slice(0, 2),
+  ],
+  vertex: [
+    ['Clic', 'crear un punto de referencia en el punto amarillo (no se exporta)'],
+    ['Alt', 'puntos libres sobre la arista'],
+    ['+ / − puntos', 'densidad de puntos sobre cada arista (panel)'],
+    ['B', 'borrar puntos de referencia'],
+    ['Esc', 'volver a Colocar'],
+    ...VIEW_GUIDE.slice(0, 2),
+  ],
+  grow: [
+    ['Clic', 'hacer crecer la cara apuntada la cantidad elegida en el panel'],
+    ['Ctrl+clic', 'invierte “Toda la cara conectada” solo para ese clic'],
+    ['Arrastrar', 'elegir otra distancia al momento'],
+    ['Esc', 'cancelar el arrastre / volver'],
+    ['Panel “Cuánto”', '¼, ⅓, ½, 1 celda, valor exacto o Auto'],
+    ...VIEW_GUIDE.slice(0, 2),
+  ],
+  paint: [
+    ['Clic', 'pintar la cara apuntada'],
+    ['Ctrl+clic', 'pintar toda la pieza'],
+    ['Alt+clic', 'tomar el color de la cara (cuentagotas)'],
+    ['Colores', 'selector junto a “Piezas” y los últimos 10 usados'],
+    ['Esc', 'volver a Colocar'],
+    ...VIEW_GUIDE.slice(0, 2),
+  ],
+  shape: [
+    ['Clic', 'apoyar la forma sobre lo que apuntas'],
+    ['Panel', 'medidas y número de lados'],
+    ['Esc', 'volver a Colocar'],
+    ...VIEW_GUIDE.slice(0, 2),
+  ],
+  bevel: [
+    ['Clic', 'cortar la arista marcada en amarillo en chaflán'],
+    ['Panel', 'tamaño del chaflán'],
+    ['Esc', 'volver a Colocar'],
+    ...VIEW_GUIDE.slice(0, 2),
+  ],
+  face: [
+    ['Clic', 'elegir la cara y abrir sus acciones en el panel'],
+    ['Extruir', 'distancia positiva: sale un cuerpo · negativa: cava; “Punta” estrecha el extremo'],
+    ['Dividir', 'parte la pieza en dos paralelamente a la cara'],
+    ['Esc', 'volver a Colocar'],
+    ...VIEW_GUIDE.slice(0, 2),
+  ],
+};
+
+const HINT_KEY = 'gridfacet.hintHidden';
+let hintHidden = false;
+try {
+  hintHidden = localStorage.getItem(HINT_KEY) === '1';
+} catch {
+  hintHidden = false;
+}
+function setHintHidden(hide: boolean): void {
+  hintHidden = hide;
+  shownHint = '';
+  try {
+    localStorage.setItem(HINT_KEY, hide ? '1' : '0');
+  } catch {
+    // Sin almacenamiento la guía simplemente no recuerda si estaba oculta.
+  }
+  updateHint();
 }
 
 let shownHint = '';
@@ -2124,17 +2251,43 @@ function updateHint(): void {
   const info = MODE_INFO[mode];
   const axes = (['x', 'y', 'z'] as const).filter((axis) => symmetry[axis]).map((axis) => axis.toUpperCase());
   const text = hintText() + (axes.length > 0 ? ` · Simetría ${axes.join(' ')} activa` : '');
-  const key = `${mode}|${text}`;
+  const key = `${mode}|${hintHidden}|${text}`;
   if (key === shownHint) return;
   shownHint = key;
   hintEl.style.setProperty('--mode', info.color);
   document.getElementById('hud')!.style.setProperty('--mode', info.color);
+  hintEl.classList.toggle('min', hintHidden);
   hintEl.replaceChildren();
+
+  const head = document.createElement('div');
+  head.className = 'head';
   const chip = document.createElement('b');
   chip.textContent = info.name;
-  const body = document.createElement('span');
-  body.textContent = text;
-  hintEl.append(chip, body);
+  head.append(chip);
+  if (!hintHidden) {
+    const body = document.createElement('span');
+    body.className = 'now';
+    body.textContent = text;
+    head.append(body);
+  }
+  const toggle = document.createElement('button');
+  toggle.textContent = hintHidden ? 'Guía ▸' : 'Ocultar guía ▾';
+  toggle.title = 'Mostrar u ocultar la guía de esta herramienta (A)';
+  toggle.addEventListener('click', () => setHintHidden(!hintHidden));
+  head.append(toggle);
+  hintEl.append(head);
+  if (hintHidden) return;
+
+  const list = document.createElement('div');
+  list.className = 'guide';
+  for (const [keys, what] of GUIDE[mode]) {
+    const item = document.createElement('div');
+    const k = document.createElement('kbd');
+    k.textContent = keys;
+    item.append(k, ` ${what}`);
+    list.append(item);
+  }
+  hintEl.append(list);
 }
 // Las herramientas cambian de fase con clics y teclas; revisar unas cuantas veces por segundo es más sencillo que enganchar cada cambio.
 setInterval(updateHint, 120);
@@ -2318,17 +2471,20 @@ window.addEventListener('keydown', (e) => {
     e.preventDefault();
     // Con una herramienta a medias, Ctrl+Z retrocede un punto en vez de deshacer el último bloque.
     const tool = mode === 'cut' ? cutTool : mode === 'fill' ? fillTool : null;
-    if (!e.shiftKey && tool?.hasPoints) {
+    if (e.shiftKey) {
+      redo(); // Ctrl+Mayús+Z, el rehacer habitual en otros programas (la ayuda anuncia Ctrl+Y)
+      return;
+    }
+    if (tool?.hasPoints) {
       tool.undoPoint();
       return;
     }
-    if (e.shiftKey) redo();
-    else model.undo();
+    model.undo();
     return;
   }
   if ((e.ctrlKey || e.metaKey) && key === 's') {
     e.preventDefault();
-    void saveProject(e.shiftKey);
+    void saveProject(e.altKey);
     return;
   }
   if ((e.ctrlKey || e.metaKey) && key === 'o') {
@@ -2343,7 +2499,7 @@ window.addEventListener('keydown', (e) => {
   }
   if ((e.ctrlKey || e.metaKey) && key === 'g') {
     e.preventDefault();
-    if (e.shiftKey) ungroupSelected();
+    if (e.altKey) ungroupSelected();
     else groupSelected();
     return;
   }
@@ -2368,7 +2524,11 @@ window.addEventListener('keydown', (e) => {
     pasteClipboard();
     return;
   }
-  if (e.ctrlKey || e.metaKey || e.altKey) return;
+  // Con Ctrl solo siguen las flechas y Re Pág/Av Pág (paso doble); con Alt solo R y O (girar al revés, mostrar ocultas).
+  if (e.ctrlKey || e.metaKey) {
+    if (!/^(arrow|page)/.test(key)) return;
+  } else if (e.altKey && key !== 'r' && key !== 'o') return;
+  const fast = e.ctrlKey || e.metaKey;
 
   if (key === 'escape' && (drag || growDrag || marquee)) {
     finishMarquee(false);
@@ -2381,14 +2541,14 @@ window.addEventListener('keydown', (e) => {
   if (key in PAN_KEYS && (mode === 'cut' || mode === 'fill' || mode === 'vertex' || selection.size === 0)) {
     e.preventDefault();
     panKeys.add(key);
-    panFast = e.shiftKey;
+    panFast = fast;
     return;
   }
 
   if (mode !== 'cut' && mode !== 'fill' && mode !== 'vertex' && selection.size > 0) {
-    // Shift duplica el paso: de media celda a una celda, y de media placa a una placa.
-    const stepXZ = e.shiftKey ? 2 * STEP_XZ : STEP_XZ;
-    const stepY = e.shiftKey ? 2 * STEP_Y : STEP_Y;
+    // Ctrl duplica el paso: de media celda a una celda, y de media placa a una placa.
+    const stepXZ = fast ? 2 * STEP_XZ : STEP_XZ;
+    const stepY = fast ? 2 * STEP_Y : STEP_Y;
     const { forward, right } = cameraAxes();
     const arrows: Record<string, [number, number]> = {
       arrowup: forward,
@@ -2420,7 +2580,7 @@ window.addEventListener('keydown', (e) => {
   if (key === 'g') setMode(mode === 'grow' ? 'place' : 'grow');
   if (key === 'p') setMode(mode === 'paint' ? 'place' : 'paint');
   if (key === 'o') {
-    if (e.shiftKey) showHidden();
+    if (e.altKey) showHidden();
     else hideSelected();
   }
   if (key === 'i') isolateSelected();
@@ -2430,6 +2590,7 @@ window.addEventListener('keydown', (e) => {
   if (key === 'f' && mode !== 'cut') setMode(mode === 'face' ? 'place' : 'face');
   if (key === 'v') setMode(mode === 'vertex' ? 'place' : 'vertex');
   if (key === 'h') toggleHud();
+  if (key === 'a') setHintHidden(!hintHidden);
   if (key === 'w') setWireframe(!isWireframeView());
   if (key === 'x' || key === 'y' || key === 'z') toggleSymmetry(key);
   if (mode !== 'cut' && mode !== 'fill' && mode !== 'vertex') {
@@ -2457,7 +2618,7 @@ window.addEventListener('keydown', (e) => {
   } else if (key === 'escape') {
     selection.clear();
   } else if (key === 'r' && mode === 'select' && selection.size > 0) {
-    commitTransform(rotateChange(selectedPieces(), e.shiftKey ? 3 : 1));
+    commitTransform(rotateChange(selectedPieces(), e.altKey ? 3 : 1));
   } else if (key === 'r' && mode === 'place') {
     rotation = (rotation + 1) % 4;
     refreshGhost();
