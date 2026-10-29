@@ -39,3 +39,7 @@ npx vite-node scripts/tiburon.ts
 - `src/tools/`: herramientas interactivas (cortar, rellenar, vértices).
 - `src/render/`: mallas, sombreado y GLB.
 - `src/main.ts`: interfaz y cableado.
+
+## Licencia
+
+MIT. Ver [LICENSE](LICENSE).
