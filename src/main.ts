@@ -25,7 +25,7 @@ import { buildShape, MAX_SIDES, MIN_SIDES, SHAPES, type ShapeKind, type ShapeSpe
 import { facesAt, paintChange, type FaceRef } from './core/paint';
 import { faceColorOf, newGroupId, withGroup } from './core/piece';
 import { VertexTool } from './tools/vertexTool';
-import { excavateChange, extrudeFaceChange, mergeChange, repeatChange, splitFaceChange, triangleCount } from './core/modeling';
+import { excavateChange, extrudeFaceChange, mergeChange, repeatChange, sinkCutters, sinkFacesChange, splitFaceChange, triangleCount } from './core/modeling';
 
 const DEFAULT_GRID_SIZE = 24;
 const MIN_GRID_SIZE = 4;
@@ -227,7 +227,7 @@ if (import.meta.env.DEV) {
   };
 }
 
-type Mode = 'place' | 'cut' | 'select' | 'erase' | 'grow' | 'fill' | 'vertex' | 'paint' | 'shape' | 'bevel' | 'face';
+type Mode = 'place' | 'cut' | 'select' | 'erase' | 'grow' | 'sink' | 'fill' | 'vertex' | 'paint' | 'shape' | 'bevel' | 'face';
 let mode: Mode = 'place';
 let selected = 0;
 let rotation = 0;
@@ -262,7 +262,7 @@ function updateCursor(overPiece: boolean): void {
   else if (mode === 'cut' || mode === 'fill' || mode === 'vertex') canvas.style.cursor = 'crosshair';
   else if (growDrag) canvas.style.cursor = 'grabbing';
   else if (mode === 'select') canvas.style.cursor = overPiece ? 'grab' : 'default';
-  else if (mode === 'erase' || mode === 'grow' || mode === 'paint' || mode === 'shape' || mode === 'bevel' || mode === 'face') canvas.style.cursor = overPiece ? 'pointer' : 'default';
+  else if (mode === 'erase' || mode === 'grow' || mode === 'sink' || mode === 'paint' || mode === 'shape' || mode === 'bevel' || mode === 'face') canvas.style.cursor = overPiece ? 'pointer' : 'default';
   else canvas.style.cursor = 'default';
 }
 
@@ -385,7 +385,7 @@ function updateHover(event: PointerEvent): void {
     fillTool.setHover(snapped);
     return;
   }
-  if (mode === 'grow') {
+  if (mode === 'grow' || mode === 'sink') {
     setFaceHover(hit && !backdrops.includes(hit.object) ? findFace(hit) : undefined, growWhole(event));
     return;
   }
@@ -1356,6 +1356,8 @@ interface GrowDrag {
   startY: number;
   moved: boolean;
   distance: number;
+  /** Hundir en vez de crecer: la distancia se cuenta hacia dentro. */
+  sink: boolean;
   preview: THREE.Object3D | null;
 }
 let growDrag: GrowDrag | null = null;
@@ -1410,7 +1412,8 @@ function showGrowPreview(): void {
     growDrag.preview = null;
   }
   const preview = new THREE.Group();
-  for (const piece of expand(grownPieces(growDrag.faces, growDrag.distance))) preview.add(createPieceObject(piece, true));
+  const shown = growDrag.sink ? sinkCutters(growDrag.faces, growDrag.distance) : expand(grownPieces(growDrag.faces, growDrag.distance));
+  for (const piece of shown) preview.add(createPieceObject(piece, true));
   growDrag.preview = preview;
   scene3d.add(growDrag.preview);
 }
@@ -1420,7 +1423,7 @@ const grownPieces = (faces: FaceOf[], distance: number): Piece[] =>
   faces.map(({ piece, face }) => extrudeFace(face, faceColorOf(piece, piece.faces.indexOf(face)), distance));
 
 function startGrow(event: PointerEvent): void {
-  if (mode !== 'grow' || event.button !== 0) return;
+  if ((mode !== 'grow' && mode !== 'sink') || event.button !== 0) return;
   const hit = castRay(event, false);
   const found = hit ? findFace(hit) : undefined;
   if (!found) return;
@@ -1431,7 +1434,7 @@ function startGrow(event: PointerEvent): void {
     // Sin captura el arrastre sigue funcionando mientras el puntero esté sobre el lienzo.
   }
   const faces = growFaces(found, growWhole(event));
-  growDrag = { face: found, faces, startX: event.clientX, startY: event.clientY, moved: false, distance: growClickDistance(found.normal), preview: null };
+  growDrag = { face: found, faces, startX: event.clientX, startY: event.clientY, moved: false, distance: growClickDistance(found.normal), sink: mode === 'sink', preview: null };
   showGrowPreview();
 }
 
@@ -1451,8 +1454,8 @@ function updateGrowDrag(event: PointerEvent): void {
   const t = (b * d.dot(w) - n.dot(w)) / denominator;
   const step = growStep(growDrag.face.normal);
   growDrag.moved = true;
-  growDrag.distance = Math.max(step, snapTo(t, step));
-  statusEl.textContent = `Crecer ${+growDrag.distance.toFixed(3)} (Esc cancela)`;
+  growDrag.distance = Math.max(step, snapTo(growDrag.sink ? -t : t, step));
+  statusEl.textContent = `${growDrag.sink ? 'Hundir' : 'Crecer'} ${+growDrag.distance.toFixed(3)} (Esc cancela)`;
   showGrowPreview();
 }
 
@@ -1467,6 +1470,16 @@ function finishGrow(commit: boolean): void {
   }
   statusEl.textContent = '';
   if (!commit) return;
+  if (current.sink) {
+    const change = sinkFacesChange(current.faces, model.all(), current.distance);
+    if (change.removed.length === 0) {
+      statusEl.textContent = 'No hay nada que hundir ahí';
+      return;
+    }
+    model.apply(change);
+    if (current.faces.length > 1) statusEl.textContent = `Se hundieron ${current.faces.length} caras juntas`;
+    return;
+  }
   model.apply({ added: expand(grownPieces(current.faces, current.distance)), removed: [] });
   if (current.faces.length > 1) statusEl.textContent = `Crecieron ${current.faces.length} caras juntas`;
 }
@@ -1653,7 +1666,7 @@ renderer.domElement.addEventListener('pointerup', (e) => {
     faceToolAt(e);
     return;
   }
-  if (mode === 'grow') return;
+  if (mode === 'grow' || mode === 'sink') return;
   if (withCtrl(e)) removeAt(e);
   else placePiece();
   updateHover(e);
@@ -1666,7 +1679,7 @@ renderer.domElement.addEventListener('pointerleave', () => {
   if (mode === 'fill') fillTool.setHover(null);
   if (mode === 'vertex') vertexTool.clearHover();
   if (mode === 'erase') setEraseHover(undefined);
-  if ((mode === 'grow' && !growDrag) || mode === 'paint' || mode === 'face') setFaceHover(undefined);
+  if (((mode === 'grow' || mode === 'sink') && !growDrag) || mode === 'paint' || mode === 'face') setFaceHover(undefined);
   if (mode === 'shape') setShapeHover(undefined);
   if (mode === 'bevel') setBevelHover(undefined);
 });
@@ -1749,6 +1762,11 @@ growButton.textContent = 'G Crecer';
 growButton.title = 'Clic en una cara la hace crecer; arrastrar elige cuánto';
 growButton.addEventListener('click', () => setMode(mode === 'grow' ? 'place' : 'grow'));
 toolsEl.appendChild(growButton);
+const sinkButton = document.createElement('button');
+sinkButton.textContent = 'D Hundir';
+sinkButton.title = 'Lo contrario de crecer: clic en una cara la hunde hacia dentro; arrastrar elige cuánto';
+sinkButton.addEventListener('click', () => setMode(mode === 'sink' ? 'place' : 'sink'));
+toolsEl.appendChild(sinkButton);
 
 const cutActionsEl = document.getElementById('cutActions')!;
 function syncCutActions(): void {
@@ -1809,7 +1827,7 @@ function setMode(next: Mode): void {
   if (mode === 'fill') fillTool.deactivate();
   if (mode === 'vertex') vertexTool.deactivate();
   if (mode === 'erase') setEraseHover(undefined);
-  if (mode === 'grow') {
+  if (mode === 'grow' || mode === 'sink') {
     finishGrow(false);
     setFaceHover(undefined);
   }
@@ -1832,7 +1850,7 @@ function setMode(next: Mode): void {
   syncShapeActions();
   syncBevelActions();
   syncFaceActions();
-  growActionsEl.hidden = mode !== 'grow';
+  growActionsEl.hidden = mode !== 'grow' && mode !== 'sink';
   syncPlaceRows();
   syncSelectionActions();
 }
@@ -1859,6 +1877,7 @@ function syncButtons(): void {
   selectButton.classList.toggle('active', mode === 'select');
   eraseButton.classList.toggle('active', mode === 'erase');
   growButton.classList.toggle('active', mode === 'grow');
+  sinkButton.classList.toggle('active', mode === 'sink');
   paintButton.classList.toggle('active', mode === 'paint');
   shapeButton.classList.toggle('active', mode === 'shape');
   bevelButton.classList.toggle('active', mode === 'bevel');
@@ -2078,6 +2097,7 @@ const MODE_INFO: Record<Mode, { name: string; color: string }> = {
   fill: { name: 'Rellenar', color: '#45d19a' },
   vertex: { name: 'Vértice', color: '#ffd34d' },
   grow: { name: 'Crecer', color: '#b58cff' },
+  sink: { name: 'Hundir', color: '#ff6b8b' },
   paint: { name: 'Pintar', color: '#ff7ad1' },
   shape: { name: 'Forma', color: '#7ad1ff' },
   bevel: { name: 'Chaflán', color: '#ffb36b' },
@@ -2096,6 +2116,9 @@ function hintText(): string {
       return 'Clic en la pieza marcada en rojo para borrarla';
     case 'grow':
       return (growAllEl.checked ? 'Crece toda la cara conectada (Ctrl: solo el cuadrito apuntado)' : 'Clic en una cara la hace crecer (Ctrl: toda la cara conectada)') +
+        ` · cantidad ${growAmountOf() === null ? 'automática' : `${+growAmountOf()!.toFixed(3)} celda(s)`}`;
+    case 'sink':
+      return (growAllEl.checked ? 'Hunde toda la cara conectada (Ctrl: solo el cuadrito apuntado)' : 'Clic en una cara la hunde (Ctrl: toda la cara conectada)') +
         ` · cantidad ${growAmountOf() === null ? 'automática' : `${+growAmountOf()!.toFixed(3)} celda(s)`}`;
     case 'bevel':
       return 'Clic en una arista (marcada en amarillo) para cortarla en chaflán';
@@ -2140,7 +2163,7 @@ const GUIDE: Record<Mode, [string, string][]> = {
     ['R', 'rotar la pieza 90°'],
     ['1 – 9', 'elegir pieza del catálogo'],
     ['S · B · C · L', 'elegir · borrar · cortar · rellenar'],
-    ['V · G · P', 'vértice · crecer · pintar'],
+    ['V · G · D · P', 'vértice · crecer · hundir · pintar'],
     ['T · J · F', 'forma · chaflán · cara'],
     ...VIEW_GUIDE,
   ],
@@ -2195,6 +2218,14 @@ const GUIDE: Record<Mode, [string, string][]> = {
     ['Clic', 'hacer crecer la cara apuntada la cantidad elegida en el panel'],
     ['Ctrl+clic', 'invierte “Toda la cara conectada” solo para ese clic'],
     ['Arrastrar', 'elegir otra distancia al momento'],
+    ['Esc', 'cancelar el arrastre / volver'],
+    ['Panel “Cuánto”', '¼, ⅓, ½, 1 celda, valor exacto o Auto'],
+    ...VIEW_GUIDE.slice(0, 2),
+  ],
+  sink: [
+    ['Clic', 'hundir la cara apuntada la cantidad elegida en el panel (la parte roja es lo que se quita)'],
+    ['Ctrl+clic', 'invierte “Toda la cara conectada” solo para ese clic'],
+    ['Arrastrar', 'elegir otra distancia al momento (hacia dentro)'],
     ['Esc', 'cancelar el arrastre / volver'],
     ['Panel “Cuánto”', '¼, ⅓, ½, 1 celda, valor exacto o Auto'],
     ...VIEW_GUIDE.slice(0, 2),
@@ -2574,6 +2605,7 @@ window.addEventListener('keydown', (e) => {
   if (key === 's') setMode(mode === 'select' ? 'place' : 'select');
   if (key === 'b') setMode(mode === 'erase' ? 'place' : 'erase');
   if (key === 'g') setMode(mode === 'grow' ? 'place' : 'grow');
+  if (key === 'd') setMode(mode === 'sink' ? 'place' : 'sink');
   if (key === 'p') setMode(mode === 'paint' ? 'place' : 'paint');
   if (key === 'o') {
     if (e.altKey) showHidden();
