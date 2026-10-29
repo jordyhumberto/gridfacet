@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { buildPieces, buildSlab, CATALOG, SLAB_THICKNESS } from './catalog';
-import { clearanceLift, magnetLines, snapSpan } from './placement';
+import { clearanceLift, flatSurface, magnetLines, snapSpan } from './placement';
 import { volume } from './piece';
 import { boundsOf } from './transform';
 
@@ -129,5 +129,32 @@ describe('mover una pieza pequeña dentro de una cara', () => {
   it('una pieza lejana no aporta sus bordes', () => {
     const [far] = at('cube', 8, 0, 8);
     expect(magnetLines([far], 0, [1.5, 0.1, 0.4], 0.6)).not.toContain(8);
+  });
+});
+
+describe('superficie continua', () => {
+  const cube = (x: number, y: number) => at('cube', x, y * 3, 0)[0];
+  it('cuatro cubos juntos forman una sola pared', () => {
+    const wall = [cube(0, 0), cube(1, 0), cube(0, 1), cube(1, 1)];
+    const surface = flatSurface(wall, 2, 1, [0.5, 0.5, 1])!;
+    expect(surface.min[0]).toBeCloseTo(0);
+    expect(surface.max[0]).toBeCloseTo(2);
+    expect(surface.min[1]).toBeCloseTo(0);
+    expect(surface.max[1]).toBeCloseTo(2);
+  });
+
+  it('un cubo separado no se suma a la superficie', () => {
+    const surface = flatSurface([cube(0, 0), cube(1, 0), cube(5, 0)], 2, 1, [0.5, 0.5, 1])!;
+    expect(surface.max[0]).toBeCloseTo(2);
+  });
+
+  it('un escalón en otra profundidad no cuenta como la misma cara', () => {
+    const behind = at('cube', 1, 0, -1)[0];
+    const surface = flatSurface([cube(0, 0), behind], 2, 1, [0.5, 0.5, 1])!;
+    expect(surface.max[0]).toBeCloseTo(1);
+  });
+
+  it('sin cara bajo el cursor devuelve null', () => {
+    expect(flatSurface([cube(0, 0)], 2, 1, [3, 0.5, 1])).toBeNull();
   });
 });

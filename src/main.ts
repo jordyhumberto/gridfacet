@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { CATALOG, SLAB_THICKNESS, buildPieces, buildSlab } from './core/catalog';
-import { clearanceLift, magnetLines, snapSpan } from './core/placement';
+import { clearanceLift, flatSurface, magnetLines, snapSpan } from './core/placement';
 import { coplanarRegion, type FaceOf } from './core/region';
 import type { Change } from './core/cut';
 import type { ExportMode } from './core/export';
@@ -465,7 +465,7 @@ function updateHover(event: PointerEvent): void {
 
 /**
  * Coloca una pieza menor que una celda siguiendo al cursor dentro de la cara apuntada, sin saltar de celda en celda:
- * se mueve en pasos de un cuarto de su tamaño, se imanta a las aristas de las piezas cercanas y a la rejilla, y no se sale de la pieza que la recibe.
+ * se mueve en pasos de un cuarto de su tamaño, se imanta a las aristas de las piezas cercanas y a la rejilla, y no se sale de la superficie que la recibe.
  * En el eje de la cara queda a ras de ella. En una pared también se mueve en vertical.
  */
 function freePlacement(hit: THREE.Intersection, footW: number, footD: number, scale: number): void {
@@ -476,8 +476,10 @@ function freePlacement(hit: THREE.Intersection, footW: number, footD: number, sc
   const point: [number, number, number] = [hit.point.x, hit.point.y, hit.point.z];
   const id = pieceIdOf(hit);
   const host = id === undefined ? undefined : model.get(id);
-  const hostBox = host ? boundsOf([host]) : null;
   const others = model.all().filter((piece) => !hidden.has(piece.id));
+  // Con una cara recta, el límite es toda la superficie continua (varios cubos juntos son una pared); si no, la pieza apuntada.
+  const flat = Math.abs(components[axis]) > 0.999 ? flatSurface(others, axis, sign, [point[0], point[1], point[2]]) : null;
+  const hostBox = flat ?? (host ? boundsOf([host]) : null);
   const place = (a: 0 | 2, size: number): number => {
     if (axis === a) return sign > 0 ? Math.round(point[a] * 1e4) / 1e4 : Math.round(point[a] * 1e4) / 1e4 - size;
     return snapSpan(point[a], size, magnetLines(others, a, point, size + 0.6), hostBox?.min[a], hostBox?.max[a]);
