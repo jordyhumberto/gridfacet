@@ -1364,7 +1364,7 @@ function bindAmount(attr: string, input: HTMLInputElement, initial: number | nul
   return () => current;
 }
 // Tamaño al colocar: escala de la pieza (o lado de la lámina) y grosor de la lámina.
-const placeSizeOf = bindAmount('size', document.getElementById('placeSizeInput') as HTMLInputElement, 1, () => 4, refreshGhost);
+const placeSizeOf = bindAmount('place-size', document.getElementById('placeSizeInput') as HTMLInputElement, 1, () => 4, refreshGhost);
 const slabThickOf = bindAmount('thick', document.getElementById('slabThickInput') as HTMLInputElement, 0.25, () => 4, refreshGhost);
 const growAmountOf = bindAmount('grow-amount', document.getElementById('growAmount') as HTMLInputElement, null, () => gridSize);
 
