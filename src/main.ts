@@ -2471,10 +2471,6 @@ window.addEventListener('keydown', (e) => {
     e.preventDefault();
     // Con una herramienta a medias, Ctrl+Z retrocede un punto en vez de deshacer el último bloque.
     const tool = mode === 'cut' ? cutTool : mode === 'fill' ? fillTool : null;
-    if (e.shiftKey) {
-      redo(); // Ctrl+Mayús+Z, el rehacer habitual en otros programas (la ayuda anuncia Ctrl+Y)
-      return;
-    }
     if (tool?.hasPoints) {
       tool.undoPoint();
       return;
