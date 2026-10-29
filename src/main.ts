@@ -22,7 +22,7 @@ import { FillTool } from './tools/fillTool';
 import { boundsOf, centerChange, rotateFreeChange, scaleChange } from './core/transform';
 import { connectedPieces, sizeOf } from './core/connected';
 import { bevelChange, edgeBetween, nearestEdge, type PieceEdge } from './core/bevel';
-import { buildShape, MAX_SIDES, MIN_SIDES, SHAPES, type ShapeKind, type ShapeSpec } from './core/shapes';
+import { buildShape, MAX_RINGS, MAX_SIDES, MIN_RINGS, MIN_SIDES, SECTIONS, SHAPES, type ShapeKind, type ShapeSpec, type SphereSection } from './core/shapes';
 import { facesAt, paintChange, type FaceRef } from './core/paint';
 import { faceColorOf, newGroupId, withGroup } from './core/piece';
 import { VertexTool } from './tools/vertexTool';
@@ -1303,10 +1303,20 @@ syncTriangles();
 const shapeSpec: ShapeSpec = { kind: 'sphere', size: [1, 1, 1], sides: 12 };
 let shapeGhost: THREE.Group | null = null;
 let shapeBase: Piece | null = null;
+let shapeBaseKey = '';
 let shapeCenter: Vec3 | null = null;
+let shapeUp: Vec3 | undefined;
+let shapeAuto = true;
+
+/** Una sección de esfera con la cara plana apoyada en la superficie mira su cúpula hacia fuera de ella. */
+function shapeFacing(normal: THREE.Vector3): Vec3 | undefined {
+  const sectioned = shapeSpec.kind === 'sphere' && (shapeSpec.section ?? 'full') !== 'full';
+  return shapeAuto && sectioned ? [normal.x, normal.y, normal.z] : undefined;
+}
 
 function rebuildShapeBase(): void {
-  shapeBase = buildShape(shapeSpec, [0, 0, 0], color);
+  shapeBase = null;
+  shapeBaseKey = '';
   setShapeHover(undefined);
 }
 
@@ -1318,13 +1328,24 @@ function setShapeHover(hit: THREE.Intersection | undefined): void {
   }
   shapeCenter = null;
   if (!hit || !hit.face || mode !== 'shape') return;
-  if (!shapeBase) shapeBase = buildShape(shapeSpec, [0, 0, 0], color);
-  if (!shapeBase) return;
   const normal = hit.face.normal.clone().transformDirection(hit.object.matrixWorld);
-  const half = shapeSpec.size.map((v) => v / 2);
-  const raw = [hit.point.x + normal.x * half[0], hit.point.y + normal.y * half[1], hit.point.z + normal.z * half[2]];
-  // Se ajusta el centro a un cuarto de celda para que la forma caiga sobre la rejilla.
-  shapeCenter = [Math.round(raw[0] / 0.25) * 0.25, Math.round(raw[1] / (1 / 12)) * (1 / 12), Math.round(raw[2] / 0.25) * 0.25];
+  const up = shapeFacing(normal);
+  const key = up ? up.map((v) => v.toFixed(3)).join(',') : '-';
+  if (!shapeBase || key !== shapeBaseKey) {
+    shapeBase = buildShape(shapeSpec, [0, 0, 0], color, up);
+    shapeBaseKey = key;
+  }
+  if (!shapeBase) return;
+  // La forma se apoya con su punto más bajo (visto desde la superficie) sobre lo apuntado.
+  const lowest = Math.min(...shapeBase.faces.flat().map((p) => p[0] * normal.x + p[1] * normal.y + p[2] * normal.z));
+  const raw: Vec3 = [hit.point.x - normal.x * lowest, hit.point.y - normal.y * lowest, hit.point.z - normal.z * lowest];
+  // Con una cara alineada con un eje, el centro se ajusta a un cuarto de celda en el plano de la cara y queda a ras en el otro.
+  const axes = [normal.x, normal.y, normal.z].map(Math.abs);
+  const dominant = axes.indexOf(Math.max(...axes));
+  const aligned = axes[dominant] > 0.999;
+  const steps = [0.25, 1 / 12, 0.25];
+  shapeCenter = raw.map((v, i) => (aligned && i !== dominant ? Math.round(v / steps[i]) * steps[i] : v)) as Vec3;
+  shapeUp = up;
   shapeGhost = new THREE.Group();
   shapeGhost.add(createPieceObject({ ...shapeBase, color }, true));
   shapeGhost.position.set(...shapeCenter);
@@ -1333,7 +1354,7 @@ function setShapeHover(hit: THREE.Intersection | undefined): void {
 
 function placeShape(): void {
   if (!shapeCenter) return;
-  const piece = buildShape(shapeSpec, shapeCenter, color);
+  const piece = buildShape(shapeSpec, shapeCenter, color, shapeUp);
   if (piece) {
     model.apply({ added: expand([piece]), removed: [] });
     useColor(color);
@@ -1341,22 +1362,56 @@ function placeShape(): void {
 }
 
 const shapeActionsEl = document.getElementById('shapeActions')!;
+const sphereActionsEl = document.getElementById('sphereActions')!;
 const shapeKindEl = document.getElementById('shapeKind') as HTMLSelectElement;
+const shapeSectionEl = document.getElementById('shapeSection') as HTMLSelectElement;
 for (const { kind, name } of SHAPES) shapeKindEl.add(new Option(name, kind));
+for (const { kind, name } of SECTIONS) shapeSectionEl.add(new Option(name, kind));
 function syncShapeActions(): void {
   shapeActionsEl.hidden = mode !== 'shape';
+  sphereActionsEl.hidden = mode !== 'shape' || shapeKindEl.value !== 'sphere';
+  document.getElementById('shapeCutRow')!.hidden = shapeSectionEl.value !== 'cap';
+  document.getElementById('shapeAngleRow')!.hidden = shapeSectionEl.value !== 'wedge';
 }
 function readShapeInputs(): void {
+  const input = (id: string) => document.getElementById(id) as HTMLInputElement;
   const num = (id: string, fallback: number) => {
-    const value = Number((document.getElementById(id) as HTMLInputElement).value);
+    const value = Number(input(id).value);
     return Number.isFinite(value) && value > 0 ? value : fallback;
+  };
+  const any = (id: string, fallback: number) => {
+    const value = Number(input(id).value);
+    return Number.isFinite(value) ? value : fallback;
   };
   shapeSpec.kind = shapeKindEl.value as ShapeKind;
   shapeSpec.size = [num('shapeW', 1), num('shapeH', 1), num('shapeD', 1)];
   shapeSpec.sides = Math.max(MIN_SIDES, Math.min(MAX_SIDES, Math.round(num('shapeSides', 12))));
+  shapeSpec.section = shapeSectionEl.value as SphereSection;
+  shapeSpec.cut = Math.max(-0.9, Math.min(0.9, any('shapeCut', 0.4)));
+  shapeSpec.angle = Math.max(10, Math.min(180, any('shapeAngle', 90)));
+  shapeSpec.rings = Math.max(MIN_RINGS, Math.min(MAX_RINGS, Math.round(num('shapeRings', 4))));
+  shapeSpec.turn = [any('shapeTurnX', 0), any('shapeTurnY', 0), any('shapeTurnZ', 0)];
+  shapeAuto = input('shapeAuto').checked;
+  syncShapeActions();
   rebuildShapeBase();
 }
-for (const id of ['shapeKind', 'shapeW', 'shapeH', 'shapeD', 'shapeSides']) document.getElementById(id)!.addEventListener('change', readShapeInputs);
+for (const id of ['shapeKind', 'shapeW', 'shapeH', 'shapeD', 'shapeSides', 'shapeSection', 'shapeCut', 'shapeAngle', 'shapeRings', 'shapeTurnX', 'shapeTurnY', 'shapeTurnZ', 'shapeAuto'])
+  document.getElementById(id)!.addEventListener('change', readShapeInputs);
+document.querySelectorAll<HTMLButtonElement>('[data-detail]').forEach((button) =>
+  button.addEventListener('click', () => {
+    const [sides, rings] = button.dataset.detail!.split(',');
+    (document.getElementById('shapeSides') as HTMLInputElement).value = sides;
+    (document.getElementById('shapeRings') as HTMLInputElement).value = rings;
+    readShapeInputs();
+  }),
+);
+
+/** R sobre una forma: gira 90° la cúpula sobre su eje (Y), para elegir hacia dónde queda el gajo. */
+function turnShape(): void {
+  const input = document.getElementById('shapeTurnY') as HTMLInputElement;
+  input.value = String((((Number(input.value) || 0) + 90 + 180) % 360) - 180);
+  readShapeInputs();
+}
 
 /** Cara bajo el cursor y sus reflejos, si hay simetría activa. */
 function paintTargets(found: FaceHit, wholePiece: boolean): FaceRef[] {
@@ -2316,7 +2371,11 @@ const GUIDE: Record<Mode, [string, string][]> = {
   ],
   shape: [
     ['Clic', 'apoyar la forma sobre lo que apuntas'],
-    ['Panel', 'medidas y número de lados'],
+    ['Panel', 'medidas, lados y, en la esfera, anillos y detalle (Bajo · Medio · Alto)'],
+    ['Sección', 'esfera completa, hemisferio, casquete (altura del corte), gajo (ángulo) u octante'],
+    ['Girar° X · Y · Z', 'giro propio de la forma antes de colocarla'],
+    ['R', 'girar 90° la forma sobre su eje (dónde queda el gajo)'],
+    ['Cara plana contra la superficie', 'la sección se apoya por su corte en la cara que apuntas, sea suelo, pared o techo'],
     ['Esc', 'volver a Colocar'],
     ...VIEW_GUIDE.slice(0, 2),
   ],
@@ -2713,6 +2772,7 @@ window.addEventListener('keydown', (e) => {
     if (key === 'escape') cutTool.cancel();
   } else if (mode === 'vertex' || mode === 'paint' || mode === 'erase' || mode === 'shape' || mode === 'bevel' || mode === 'face') {
     if (key === 'escape') setMode('place');
+    if (key === 'r' && mode === 'shape') turnShape();
   } else if (mode === 'fill') {
     if (key === 'enter') {
       e.preventDefault();
