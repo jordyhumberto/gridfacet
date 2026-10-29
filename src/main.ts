@@ -32,6 +32,16 @@ const MIN_GRID_SIZE = 4;
 const MAX_GRID_SIZE = 128;
 const CLICK_MAX_MOVE = 4;
 
+// La app se llamó Novoxel: los ajustes guardados en el navegador con ese nombre pasan a las claves nuevas la primera vez.
+try {
+  for (const name of ['triBudget', 'recentColors', 'collapsed']) {
+    const old = localStorage.getItem(`novoxel.${name}`);
+    if (old !== null && localStorage.getItem(`polygrid.${name}`) === null) localStorage.setItem(`polygrid.${name}`, old);
+  }
+} catch {
+  // Sin almacenamiento no hay nada que migrar.
+}
+
 const container = document.getElementById('app')!;
 const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setPixelRatio(window.devicePixelRatio);
@@ -124,7 +134,7 @@ let dirty = false;
 function syncFileName(): void {
   const label = `${dirty ? '● ' : ''}${fileName}`;
   fileNameEl.textContent = label;
-  document.title = `${label} · Novoxel`;
+  document.title = `${label} · Polygrid`;
 }
 syncFileName();
 
@@ -1183,7 +1193,7 @@ repeatEl.querySelector('button')!.addEventListener('click', repeatSelected);
 // Triángulos de todas las piezas frente al presupuesto elegido (se recuerda entre sesiones).
 const triStatsEl = document.getElementById('triStats')!;
 const triBudgetEl = document.getElementById('triBudget') as HTMLInputElement;
-const BUDGET_KEY = 'novoxel.triBudget';
+const BUDGET_KEY = 'polygrid.triBudget';
 try {
   triBudgetEl.value = localStorage.getItem(BUDGET_KEY) ?? triBudgetEl.value;
 } catch {
@@ -1860,7 +1870,7 @@ function setColor(next: number): void {
 colorInputEl.addEventListener('input', () => setColor(parseInt(colorInputEl.value.slice(1), 16)));
 
 // Últimos colores usados (al colocar, pintar o rellenar): los 10 más recientes, el último primero; se recuerdan entre sesiones.
-const RECENT_KEY = 'novoxel.recentColors';
+const RECENT_KEY = 'polygrid.recentColors';
 const RECENT_MAX = 10;
 let recentColors: number[] = [];
 try {
@@ -1913,13 +1923,13 @@ const errorText = (error: unknown): string => (error instanceof Error ? error.me
 async function saveProject(asNew = false): Promise<void> {
   const pieces = model.all();
   const data = serializeProject(pieces, model.points(), gridSize);
-  const suggested = fileName === 'Sin título' ? 'novoxel-proyecto.json' : fileName.replace(/(\.json)?$/i, '.json');
+  const suggested = fileName === 'Sin título' ? 'polygrid-proyecto.json' : fileName.replace(/(\.json)?$/i, '.json');
   let name = suggested;
   try {
     if (canPickSave()) {
       let handle = asNew ? null : fileHandle;
       if (!handle) {
-        handle = await pickSave(suggested, 'Proyecto de Novoxel', 'application/json', '.json');
+        handle = await pickSave(suggested, 'Proyecto de Polygrid', 'application/json', '.json');
         if (!handle) return;
       }
       await writeHandle(handle, data);
@@ -1962,7 +1972,7 @@ async function requestOpen(): Promise<void> {
     return;
   }
   try {
-    const handle = await pickOpen('Proyecto de Novoxel', 'application/json', '.json');
+    const handle = await pickOpen('Proyecto de Polygrid', 'application/json', '.json');
     if (handle) await openProject(await handle.getFile(), handle);
   } catch (error) {
     statusEl.textContent = `No se pudo abrir: ${errorText(error)}`;
@@ -1985,7 +1995,7 @@ document.getElementById('export')!.addEventListener('click', async () => {
     return;
   }
   const exportMode = (document.getElementById('exportMode') as HTMLSelectElement).value as ExportMode;
-  const suggested = fileName === 'Sin título' ? 'novoxel.glb' : fileName.replace(/\.json$/i, '') + '.glb';
+  const suggested = fileName === 'Sin título' ? 'polygrid.glb' : fileName.replace(/\.json$/i, '') + '.glb';
   try {
     const data = await exportGlb(pieces, exportMode);
     let saved = suggested;
@@ -2125,7 +2135,7 @@ function updateHint(): void {
 setInterval(updateHint, 120);
 
 // Secciones del panel plegables; se recuerda cuáles estaban plegadas.
-const COLLAPSE_KEY = 'novoxel.collapsed';
+const COLLAPSE_KEY = 'polygrid.collapsed';
 let collapsed: string[] = [];
 try {
   collapsed = JSON.parse(localStorage.getItem(COLLAPSE_KEY) ?? '[]');

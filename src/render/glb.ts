@@ -6,7 +6,7 @@ import type { Piece } from '../core/piece';
 /** Genera un GLB. Sin normales, glTF se interpreta como sombreado plano, que es lo que pide una pieza facetada. */
 export async function exportGlb(pieces: Piece[], mode: ExportMode): Promise<ArrayBuffer> {
   const root = new THREE.Group();
-  root.name = 'Novoxel';
+  root.name = 'Polygrid';
   const materials = new Map<number, THREE.MeshStandardMaterial>();
 
   for (const mesh of buildExportMeshes(pieces, mode)) {

@@ -14,13 +14,19 @@ describe('proyecto', () => {
     expect(volume(loaded[1])).toBeCloseTo(volume(cut));
   });
 
+  it('abre los proyectos guardados con el nombre antiguo del formato (novoxel)', () => {
+    const text = JSON.stringify({ format: 'novoxel', version: 1, pieces: [] });
+    expect(parseProject(text)).toEqual([]);
+    expect(JSON.parse(serializeProject([])).format).toBe('polygrid');
+  });
+
   it('un proyecto vacío es válido', () => {
     expect(parseProject(serializeProject([]))).toEqual([]);
   });
 
   it('rechaza archivos que no son del programa o están dañados', () => {
     expect(() => parseProject('no es json')).toThrow('JSON');
-    expect(() => parseProject('{"hola":1}')).toThrow('proyecto de Novoxel');
+    expect(() => parseProject('{"hola":1}')).toThrow('proyecto de Polygrid');
     expect(() => parseProject('{"format":"novoxel","version":99,"pieces":[]}')).toThrow('más nueva');
     expect(() => parseProject('{"format":"novoxel","version":1,"pieces":[{"color":1,"faces":[]}]}')).toThrow('caras');
     expect(() => parseProject('{"format":"novoxel","version":1,"pieces":[null]}')).toThrow('color');

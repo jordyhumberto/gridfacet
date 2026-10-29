@@ -1,5 +1,5 @@
 /**
- * Genera `ejemplos/tiburon.novoxel.json`: un tiburón con lomo gris, vientre blanco, aletas y cola.
+ * Genera `ejemplos/tiburon.polygrid.json`: un tiburón con lomo gris, vientre blanco, aletas y cola.
  * Se ejecuta con: npx vite-node scripts/tiburon.ts
  */
 import { mkdirSync, writeFileSync } from 'node:fs';
@@ -118,5 +118,5 @@ lobe([[-0.02, -2.6], [0.22, -3.0], [1.62, -3.55], [1.5, -4.25], [0.35, -3.6]], 0
 lobe([[-0.05, -2.6], [0.12, -3.0], [-0.9, -3.45], [-0.85, -3.95], [-0.2, -3.3]], 0.04, tailGroup);
 
 mkdirSync('ejemplos', { recursive: true });
-writeFileSync('ejemplos/tiburon.novoxel.json', serializeProject(pieces, [], 24));
-console.log(`ejemplos/tiburon.novoxel.json: ${pieces.length} piezas, ${pieces.reduce((s, p) => s + p.faces.length, 0)} caras`);
+writeFileSync('ejemplos/tiburon.polygrid.json', serializeProject(pieces, [], 24));
+console.log(`ejemplos/tiburon.polygrid.json: ${pieces.length} piezas, ${pieces.reduce((s, p) => s + p.faces.length, 0)} caras`);
