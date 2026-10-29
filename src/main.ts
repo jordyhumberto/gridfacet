@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-import { CATALOG, buildPieces } from './core/catalog';
+import { CATALOG, buildPieces, buildSlab } from './core/catalog';
+import { clearanceLift } from './core/placement';
 import type { Change } from './core/cut';
 import type { ExportMode } from './core/export';
 import { extrudeFace, faceAt, unitNormal } from './core/extrude';
@@ -415,6 +416,12 @@ function updateHover(event: PointerEvent): void {
   // Apoyada sobre una cara horizontal, la pieza admite medias placas; al lado de otra, queda a ras de placa.
   // Se avanza un poco por la normal para caer en la celda vecina a la cara tocada.
   const probe = hit.point.clone().addScaledVector(hit.face.normal, 0.001);
+  if (CATALOG[selected].grows) {
+    slabTarget = slabAt(hit, probe);
+    hasTarget = slabTarget !== null;
+    refreshGhost();
+    return;
+  }
   target = { cx: Math.floor(probe.x), cy: Math.abs(hit.face.normal.y) > 0.5 ? Math.floor(probe.y * 6 + 1e-6) / 2 : Math.floor(probe.y * 3), cz: Math.floor(probe.z), ox: 0, oz: 0 };
   // Las piezas menores que una celda se colocan en el cuadrante de la celda sobre el que apunta el cursor.
   const [footW, footD] = CATALOG[selected].footprint;
@@ -437,9 +444,44 @@ function refreshGhost(): void {
   scene3d.add(ghost);
 }
 
+/** Lámina que crece desde la cara apuntada: eje y sentido de la cara, dónde está y la esquina de su celda en los otros ejes. */
+let slabTarget: { axis: 0 | 1 | 2; sign: 1 | -1; surface: number; tangentMin: Vec3 } | null = null;
+
+function slabAt(hit: THREE.Intersection, probe: THREE.Vector3): typeof slabTarget {
+  const n = hit.face!.normal;
+  const components = [n.x, n.y, n.z];
+  const axis = components.map(Math.abs).indexOf(Math.max(...components.map(Math.abs))) as 0 | 1 | 2;
+  const sign: 1 | -1 = components[axis] >= 0 ? 1 : -1;
+  const surface = Math.round(hit.point.getComponent(axis) * 1e4) / 1e4;
+  // En horizontal la celda es entera; en vertical, el alto de una celda (3 placas) alineado a placas.
+  const tangentMin: Vec3 = [Math.floor(probe.x), Math.floor(probe.y * 3) / 3, Math.floor(probe.z)];
+  // De costado, la lámina arranca desde la base de la pieza a la que se pega, así queda a ras aunque esa pieza no siga la rejilla de placas.
+  if (axis !== 1) {
+    const id = pieceIdOf(hit);
+    const piece = id === undefined ? undefined : model.get(id);
+    const box = piece ? boundsOf([piece]) : null;
+    if (box) tangentMin[1] = box.min[1];
+  }
+  const [x, y, z] = tangentMin;
+  if (Math.abs(x + 0.5) >= gridSize / 2 || Math.abs(z + 0.5) >= gridSize / 2 || y < 0 || y >= gridSize) return null;
+  return { axis, sign, surface, tangentMin: [x, y, z] };
+}
+
 /** Piezas que se colocarían ahora; un elemento del catálogo puede componerse de varias partes convexas. */
 function currentParts(): Piece[] {
-  return expand(buildPieces(CATALOG[selected], target.cx + target.ox, target.cy, target.cz + target.oz, rotation, color));
+  const def = CATALOG[selected];
+  const others = model.all().filter((piece) => !hidden.has(piece.id));
+  if (def.grows) {
+    if (!slabTarget) return [];
+    const { axis, sign, surface, tangentMin } = slabTarget;
+    let slab = buildSlab(axis, sign, surface, tangentMin, color);
+    // Sobre una cara de arriba, si la celda cubre algo más alto se apoya encima en vez de atravesarlo.
+    if (axis === 1 && sign > 0) slab = translatePiece(slab, 0, clearanceLift([slab], others), 0);
+    return expand([slab]);
+  }
+  const parts = buildPieces(def, target.cx + target.ox, target.cy, target.cz + target.oz, rotation, color);
+  const lift = clearanceLift(parts, others);
+  return expand(lift > 0 ? parts.map((part) => translatePiece(part, 0, lift, 0)) : parts);
 }
 
 function placePiece(): void {
@@ -1544,7 +1586,7 @@ const toolsEl = document.getElementById('tools')!;
 const piecesEl = document.getElementById('pieces')!;
 const pieceButtons = CATALOG.map((def, i) => {
   const button = document.createElement('button');
-  button.textContent = `${i + 1} ${def.short}`;
+  button.textContent = `${(i + 1) % 10} ${def.short}`;
   button.title = def.name;
   button.addEventListener('click', () => selectPiece(i));
   piecesEl.appendChild(button);
@@ -1925,6 +1967,7 @@ const MODE_INFO: Record<Mode, { name: string; color: string }> = {
 function hintText(): string {
   switch (mode) {
     case 'place':
+      if (CATALOG[selected].grows) return 'Clic: la lámina crece pegada a la cara que apuntas (arriba, abajo o de costado) · Shift+clic: borrar';
       return `Clic: colocar ${CATALOG[selected].name} · R: rotar · Shift+clic: borrar · arrastra para orbitar la vista`;
     case 'select':
       return selection.size === 0
@@ -2254,7 +2297,8 @@ window.addEventListener('keydown', (e) => {
   }
 
   const n = Number(e.key);
-  if (n >= 1 && n <= CATALOG.length) selectPiece(n - 1);
+  if (n >= 1 && n <= Math.min(9, CATALOG.length)) selectPiece(n - 1);
+  if (e.key === '0' && CATALOG.length >= 10) selectPiece(9);
   if (key === 'c') setMode(mode === 'cut' ? 'place' : 'cut');
   if (key === 's') setMode(mode === 'select' ? 'place' : 'select');
   if (key === 'b') setMode(mode === 'erase' ? 'place' : 'erase');

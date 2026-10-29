@@ -20,6 +20,8 @@ export interface PieceDef {
    * Una forma cóncava (como una esquina interior o un arco) se compone de varias partes convexas.
    */
   parts(h: number): Solid[];
+  /** La pieza no se apoya en la rejilla: crece pegada a la cara a la que se apunta (ver `buildSlab`). */
+  grows?: boolean;
 }
 
 function box(w: number, h: number, d: number): Solid {
@@ -132,7 +134,36 @@ export const CATALOG: PieceDef[] = [
   { id: 'cylinder', name: 'Cilindro', short: 'Cilindro', heightPlates: 3, footprint: [1, 1], parts: (h) => [cylinder(h)] },
   { id: 'arch', name: 'Arco', short: 'Arco', heightPlates: 4, footprint: [2, 1], parts: arch },
   { id: 'quarter', name: 'Cubo pequeño (½ × ½ × ½)', short: '¼ Cubo', heightPlates: 1.5, footprint: [0.5, 0.5], parts: (h) => [box(0.5, h, 0.5)] },
+  {
+    id: 'slab',
+    name: 'Lámina (¼ de celda de grosor, crece desde la cara a la que apuntas)',
+    short: 'Lámina',
+    heightPlates: 0.75,
+    footprint: [1, 1],
+    parts: (h) => [box(1, h, 1)],
+    grows: true,
+  },
 ];
+
+/** Grosor de la lámina que crece desde una cara: un cuarto de celda. */
+export const SLAB_THICKNESS = 0.25;
+
+/**
+ * Lámina de 1 × 1 y SLAB_THICKNESS de grosor pegada a una cara. `axis` (0 = X, 1 = Y, 2 = Z) y `sign` dicen hacia dónde mira la cara
+ * a la que se pega y `surface` dónde está; la lámina crece hacia fuera de ella. `tangentMin` da la esquina mínima en los otros dos ejes
+ * (el valor del eje de la cara se ignora).
+ */
+export function buildSlab(axis: 0 | 1 | 2, sign: 1 | -1, surface: number, tangentMin: Vec3, color: number): Piece {
+  const min: Vec3 = [tangentMin[0], tangentMin[1], tangentMin[2]];
+  min[axis] = sign > 0 ? surface : surface - SLAB_THICKNESS;
+  const size: Vec3 = [1, 1, 1];
+  size[axis] = SLAB_THICKNESS;
+  const solid = box(size[0], size[1], size[2]);
+  return makePiece(
+    solid.map((face) => face.map((p): Vec3 => [p[0] + min[0], p[1] + min[1], p[2] + min[2]])),
+    color,
+  );
+}
 
 /** Gira (x, z) en múltiplos de 90° alrededor del origen. */
 function rotateY(p: Vec3, quarterTurns: number): Vec3 {
