@@ -70,6 +70,15 @@ describe('lámina que crece desde una cara', () => {
     expect(hi - lo).toBeCloseTo(SLAB_THICKNESS, 6);
   });
 
+  it('con lado y grosor a medida', () => {
+    const slab = buildSlab(1, 1, 2, [3, 0, -4], 0, 0.5, 0.125);
+    expect(volume(slab)).toBeCloseTo(0.5 * 0.5 * 0.125, 6);
+    const box = boundsOf([slab])!;
+    expect(box.min[1]).toBeCloseTo(2);
+    expect(box.max[1]).toBeCloseTo(2.125);
+    expect(box.max[0] - box.min[0]).toBeCloseTo(0.5);
+  });
+
   it('en los otros ejes ocupa una celda entera desde la esquina dada', () => {
     const box = boundsOf([buildSlab(1, 1, 2, [3, 0, -4], 0)])!;
     expect(box.min[0]).toBeCloseTo(3);

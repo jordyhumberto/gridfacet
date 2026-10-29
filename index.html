@@ -45,7 +45,9 @@
       #faceActions select { background: #2a2f3a; color: inherit; border: 1px solid #3d4452; border-radius: 6px; padding: 2px 4px; font-size: 12px; }
       #repeatRow input[type=number] { width: 40px; }
       #growActions input[type=number] { width: 56px; background: #2a2f3a; color: inherit; border: 1px solid #3d4452; border-radius: 6px; padding: 2px 4px; font-size: 12px; }
-      #growActions button.active { background: #3b6fd4; border-color: #3b6fd4; color: #fff; }
+      #growActions button.active, #placeSize button.active, #slabThick button.active { background: #3b6fd4; border-color: #3b6fd4; color: #fff; }
+      #placeSize input[type=number], #slabThick input[type=number] { width: 56px; background: #2a2f3a; color: inherit; border: 1px solid #3d4452; border-radius: 6px; padding: 2px 4px; font-size: 12px; }
+      #placeSize, #slabThick { margin-top: 6px; }
       #recentColors { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; margin: 8px 0 4px; }
       #recentColors button { height: 22px; padding: 0; border: 1px solid #3d4452; border-radius: 6px; cursor: pointer; }
       #recentColors button:disabled { background: none; border-style: dashed; opacity: 0.4; cursor: default; }
@@ -115,6 +117,23 @@
         <section>
           <h4><span class="title">Piezas</span><input type="color" id="color" value="#d9534f" title="Color de la pieza" /></h4>
           <div class="row grid" id="pieces"></div>
+          <div class="row" id="placeSize" title="Escala de la pieza al colocarla; en la lámina, el lado">
+            <small>Tamaño</small>
+            <button data-size="1">1</button>
+            <button data-size="0.75">¾</button>
+            <button data-size="0.5">½</button>
+            <button data-size="0.333333333333">⅓</button>
+            <button data-size="0.25">¼</button>
+            <input type="number" id="placeSizeInput" min="0.1" max="4" step="0.05" placeholder="otro" title="Escala exacta (1 = tamaño normal)" />
+          </div>
+          <div class="row" id="slabThick" title="Grosor de la lámina, en celdas" hidden>
+            <small>Grosor</small>
+            <button data-thick="0.125">⅛</button>
+            <button data-thick="0.25">¼</button>
+            <button data-thick="0.333333333333">⅓</button>
+            <button data-thick="0.5">½</button>
+            <input type="number" id="slabThickInput" min="0.02" max="4" step="0.025" placeholder="otro" title="Grosor exacto en celdas" />
+          </div>
           <div id="recentColors" title="Últimos 10 colores usados: clic para volver a elegir uno"></div>
           <div class="row" id="triRow">
             <small id="triStats"></small>
@@ -177,7 +196,7 @@
           </div>
           <div class="row" id="growActions" hidden>
             <small>Cuánto (celdas):</small>
-            <button data-grow-amount="auto" title="Una celda en horizontal y una placa (⅓) en vertical">Auto</button>
+            <button data-grow-amount="auto" class="active" title="Una celda en horizontal y una placa (⅓) en vertical">Auto</button>
             <button data-grow-amount="0.25">¼</button>
             <button data-grow-amount="0.333333333333">⅓</button>
             <button data-grow-amount="0.5">½</button>
@@ -281,7 +300,8 @@
         <h3>Colocar y borrar</h3>
         <dl>
           <dt><kbd>1</kbd>–<kbd>9</kbd>, <kbd>0</kbd></dt><dd>Elegir pieza. Clic coloca; <kbd>R</kbd> la rota antes de colocar. Si lo que apuntas es un desnivel (por ejemplo un cubito en una esquina), la pieza se apoya encima de lo más alto que cubre en vez de meterse dentro.</dd>
-          <dt><kbd>0</kbd> Lámina</dt><dd>Una lámina de un cuarto de celda de grosor que crece pegada a la cara que apuntas: desde arriba queda tumbada, desde abajo cuelga, de costado queda de pie como un ladrillito contra la pared (arranca desde la base de esa pieza).</dd>
+          <dt>Tamaño</dt><dd>Debajo de las piezas eliges la escala al colocar: 1, ¾, ½, ⅓, ¼ o un valor exacto. Una pieza menor que una celda se coloca en el trozo de la celda al que apuntas (mitades, tercios, cuartos) y, sobre una cara plana, se apoya justo encima de ella aunque sea una lámina fina.</dd>
+          <dt><kbd>0</kbd> Lámina</dt><dd>Una lámina que crece pegada a la cara que apuntas: desde arriba queda tumbada, desde abajo cuelga, de costado queda de pie como un ladrillito contra la pared (arranca desde la base de esa pieza). Su lado es el “Tamaño” (1, ½, ¼…) y su “Grosor” se elige aparte (⅛, ¼, ⅓, ½ o un valor exacto).</dd>
           <dt>Esquina interior, Arco</dt><dd>Se componen de varias piezas convexas (se seleccionan y borran de una en una).</dd>
           <dt><kbd>B</kbd> Borrar</dt><dd>Clic en una pieza la borra; la pieza bajo el ratón se marca en rojo. También <kbd>Shift</kbd>+clic al colocar.</dd>
           <dt><kbd>G</kbd> Crecer</dt><dd>Clic en una cara la hace crecer lo que elijas en “Cuánto”: ¼, ⅓, ½, 1 celda (el ancho de un cubo), un valor exacto, o “Auto” (1 celda en horizontal, 1 placa en vertical). Arrastrar elige otra distancia al momento. La casilla “Toda la cara conectada” (o <kbd>Mayús</kbd>) hace crecer de golpe todas las caras del mismo plano que enlazan con la apuntada, como un muro de 3×3 cubos. <kbd>Esc</kbd> cancela.</dd>

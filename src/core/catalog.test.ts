@@ -47,6 +47,17 @@ describe.each(CATALOG)('catálogo: $name', (def) => {
   });
 });
 
+describe.each(CATALOG)('escala: $name', (def) => {
+  it.each([0.25, 0.5, 2])('con escala %f el volumen se multiplica por escala³ y la esquina mínima no se mueve', (scale) => {
+    const total = (s: number) => buildPieces(def, 3, 2, -4, 0, 0, s).reduce((sum, p) => sum + volume(p), 0);
+    expect(total(scale)).toBeCloseTo(total(1) * scale ** 3, 6);
+    const { x, z, y } = bounds(buildPieces(def, 3, 2, -4, 1, 0, scale));
+    expect(x[0]).toBeCloseTo(3);
+    expect(z[0]).toBeCloseTo(-4);
+    expect(y[0]).toBeCloseTo(2 * PLATE);
+  });
+});
+
 describe('volúmenes conocidos', () => {
   const total = (id: string) =>
     buildPieces(CATALOG.find((d) => d.id === id)!, 0, 0, 0, 0, 0).reduce((sum, p) => sum + volume(p), 0);

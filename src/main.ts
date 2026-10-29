@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-import { CATALOG, buildPieces, buildSlab } from './core/catalog';
+import { CATALOG, SLAB_THICKNESS, buildPieces, buildSlab } from './core/catalog';
 import { clearanceLift } from './core/placement';
 import { coplanarRegion, type FaceOf } from './core/region';
 import type { Change } from './core/cut';
@@ -423,11 +423,23 @@ function updateHover(event: PointerEvent): void {
     refreshGhost();
     return;
   }
-  target = { cx: Math.floor(probe.x), cy: Math.abs(hit.face.normal.y) > 0.5 ? Math.floor(probe.y * 6 + 1e-6) / 2 : Math.floor(probe.y * 3), cz: Math.floor(probe.z), ox: 0, oz: 0 };
-  // Las piezas menores que una celda se colocan en el cuadrante de la celda sobre el que apunta el cursor.
-  const [footW, footD] = CATALOG[selected].footprint;
-  if (footW < 1) target.ox = probe.x - target.cx >= 0.5 ? 0.5 : 0;
-  if (footD < 1) target.oz = probe.z - target.cz >= 0.5 ? 0.5 : 0;
+  // Sobre una cara plana la pieza se apoya justo en ella, aunque no caiga en la rejilla de placas (por ejemplo encima de una lámina);
+  // sobre una inclinada se alinea a media placa.
+  const flatTop = hit.face.normal.y > 0.999;
+  target = {
+    cx: Math.floor(probe.x),
+    cy: flatTop ? (Math.round(hit.point.y * 1e4) / 1e4) * 3 : Math.abs(hit.face.normal.y) > 0.5 ? Math.floor(probe.y * 6 + 1e-6) / 2 : Math.floor(probe.y * 3),
+    cz: Math.floor(probe.z),
+    ox: 0,
+    oz: 0,
+  };
+  // Las piezas menores que una celda se colocan en el trozo de la celda sobre el que apunta el cursor (mitades, tercios, cuartos...).
+  const scale = placeSizeOf() ?? 1;
+  const turned = rotation % 2 !== 0;
+  const footW = CATALOG[selected].footprint[turned ? 1 : 0] * scale;
+  const footD = CATALOG[selected].footprint[turned ? 0 : 1] * scale;
+  if (footW < 1) target.ox = Math.floor((probe.x - target.cx) / footW + 1e-9) * footW;
+  if (footD < 1) target.oz = Math.floor((probe.z - target.cz) / footD + 1e-9) * footD;
   hasTarget = Math.abs(target.cx + 0.5) < gridSize / 2 && Math.abs(target.cz + 0.5) < gridSize / 2 && target.cy >= 0 && target.cy < gridSize * 3;
   refreshGhost();
 }
@@ -454,14 +466,20 @@ function slabAt(hit: THREE.Intersection, probe: THREE.Vector3): typeof slabTarge
   const axis = components.map(Math.abs).indexOf(Math.max(...components.map(Math.abs))) as 0 | 1 | 2;
   const sign: 1 | -1 = components[axis] >= 0 ? 1 : -1;
   const surface = Math.round(hit.point.getComponent(axis) * 1e4) / 1e4;
-  // En horizontal la celda es entera; en vertical, el alto de una celda (3 placas) alineado a placas.
-  const tangentMin: Vec3 = [Math.floor(probe.x), Math.floor(probe.y * 3) / 3, Math.floor(probe.z)];
+  // El lado de la lámina es el "Tamaño" del panel. Menor que una celda, se coloca en el trozo de la celda al que apunta el cursor.
+  const side = placeSizeOf() ?? 1;
+  const snap = (value: number): number => {
+    const cell = Math.floor(value);
+    return side < 1 ? cell + Math.floor((value - cell) / side + 1e-9) * side : cell;
+  };
+  const tangentMin: Vec3 = [snap(probe.x), Math.floor(probe.y * 3) / 3, snap(probe.z)];
   // De costado, la lámina arranca desde la base de la pieza a la que se pega, así queda a ras aunque esa pieza no siga la rejilla de placas.
   if (axis !== 1) {
     const id = pieceIdOf(hit);
     const piece = id === undefined ? undefined : model.get(id);
     const box = piece ? boundsOf([piece]) : null;
-    if (box) tangentMin[1] = box.min[1];
+    if (box) tangentMin[1] = box.min[1] + (side < 1 ? Math.floor((probe.y - box.min[1]) / side + 1e-9) * side : 0);
+    else if (side < 1) tangentMin[1] = snap(probe.y);
   }
   const [x, y, z] = tangentMin;
   if (Math.abs(x + 0.5) >= gridSize / 2 || Math.abs(z + 0.5) >= gridSize / 2 || y < 0 || y >= gridSize) return null;
@@ -475,12 +493,12 @@ function currentParts(): Piece[] {
   if (def.grows) {
     if (!slabTarget) return [];
     const { axis, sign, surface, tangentMin } = slabTarget;
-    let slab = buildSlab(axis, sign, surface, tangentMin, color);
+    let slab = buildSlab(axis, sign, surface, tangentMin, color, placeSizeOf() ?? 1, slabThickOf() ?? SLAB_THICKNESS);
     // Sobre una cara de arriba, si la celda cubre algo más alto se apoya encima en vez de atravesarlo.
     if (axis === 1 && sign > 0) slab = translatePiece(slab, 0, clearanceLift([slab], others), 0);
     return expand([slab]);
   }
-  const parts = buildPieces(def, target.cx + target.ox, target.cy, target.cz + target.oz, rotation, color);
+  const parts = buildPieces(def, target.cx + target.ox, target.cy, target.cz + target.oz, rotation, color, placeSizeOf() ?? 1);
   const lift = clearanceLift(parts, others);
   return expand(lift > 0 ? parts.map((part) => translatePiece(part, 0, lift, 0)) : parts);
 }
@@ -1313,32 +1331,45 @@ let growDrag: GrowDrag | null = null;
 
 /** Paso fino al arrastrar: media celda en horizontal, un sexto de celda (media placa) en vertical. */
 const growStep = (normal: Vec3): number => (Math.abs(normal[1]) > 0.5 ? STEP_Y : STEP_XZ);
-/** Cantidad elegida en el panel (celdas); null = automático. */
-let growAmount: number | null = null;
-const growAmountEl = document.getElementById('growAmount') as HTMLInputElement;
-const growPresets = [...document.querySelectorAll<HTMLButtonElement>('#growActions [data-grow-amount]')];
-function syncGrowAmount(): void {
-  for (const button of growPresets) {
-    const value = button.dataset.growAmount === 'auto' ? null : Number(button.dataset.growAmount);
-    button.classList.toggle('active', value === growAmount);
+/**
+ * Selector de cantidad: botones con valores fijos (`data-<attr>`, "auto" = sin valor) y un campo para un valor exacto.
+ * Devuelve una función que da el valor actual (null = automático).
+ */
+function bindAmount(attr: string, input: HTMLInputElement, initial: number | null, max: () => number, onChange?: () => void): () => number | null {
+  let current = initial;
+  const buttons = [...document.querySelectorAll<HTMLButtonElement>(`[data-${attr}]`)];
+  const datasetKey = attr.replace(/-(\w)/g, (_, c: string) => c.toUpperCase());
+  const valueOf = (button: HTMLButtonElement): number | null => {
+    const raw = button.dataset[datasetKey];
+    return raw === 'auto' ? null : Number(raw);
+  };
+  const show = (): void => {
+    for (const button of buttons) button.classList.toggle('active', valueOf(button) === current);
+    input.value = current === null || buttons.some((b) => valueOf(b) === current) ? '' : String(+current.toFixed(3));
+  };
+  for (const button of buttons) {
+    button.addEventListener('click', () => {
+      current = valueOf(button);
+      show();
+      onChange?.();
+    });
   }
-}
-for (const button of growPresets) {
-  button.addEventListener('click', () => {
-    growAmount = button.dataset.growAmount === 'auto' ? null : Number(button.dataset.growAmount);
-    growAmountEl.value = growAmount === null ? '' : String(+growAmount.toFixed(3));
-    syncGrowAmount();
+  input.addEventListener('input', () => {
+    const value = Number(input.value);
+    current = input.value !== '' && value > 0 && value <= max() ? value : initial;
+    for (const button of buttons) button.classList.toggle('active', valueOf(button) === current && input.value === '');
+    onChange?.();
   });
+  show();
+  return () => current;
 }
-growAmountEl.addEventListener('input', () => {
-  const value = Number(growAmountEl.value);
-  growAmount = growAmountEl.value !== '' && value > 0 && value <= gridSize ? value : null;
-  syncGrowAmount();
-});
-syncGrowAmount();
+// Tamaño al colocar: escala de la pieza (o lado de la lámina) y grosor de la lámina.
+const placeSizeOf = bindAmount('size', document.getElementById('placeSizeInput') as HTMLInputElement, 1, () => 4, refreshGhost);
+const slabThickOf = bindAmount('thick', document.getElementById('slabThickInput') as HTMLInputElement, 0.25, () => 4, refreshGhost);
+const growAmountOf = bindAmount('grow-amount', document.getElementById('growAmount') as HTMLInputElement, null, () => gridSize);
 
 /** Un clic sin arrastrar hace crecer lo elegido en el panel; en automático, una celda en horizontal o una placa en vertical. */
-const growClickDistance = (normal: Vec3): number => growAmount ?? (Math.abs(normal[1]) > 0.5 ? 1 / 3 : 1);
+const growClickDistance = (normal: Vec3): number => growAmountOf() ?? (Math.abs(normal[1]) > 0.5 ? 1 / 3 : 1);
 
 function showGrowPreview(): void {
   if (!growDrag) return;
@@ -1771,13 +1802,23 @@ function setMode(next: Mode): void {
   syncBevelActions();
   syncFaceActions();
   growActionsEl.hidden = mode !== 'grow';
+  syncPlaceRows();
   syncSelectionActions();
+}
+
+/** El tamaño solo se muestra al colocar; el grosor, solo con la lámina. */
+const placeSizeRow = document.getElementById('placeSize')!;
+const slabThickRow = document.getElementById('slabThick')!;
+function syncPlaceRows(): void {
+  placeSizeRow.hidden = mode !== 'place';
+  slabThickRow.hidden = mode !== 'place' || !CATALOG[selected].grows;
 }
 
 function selectPiece(index: number): void {
   selected = index;
   setMode('place');
   syncButtons();
+  syncPlaceRows();
   refreshGhost();
 }
 
@@ -2025,7 +2066,7 @@ function hintText(): string {
       return 'Clic en la pieza marcada en rojo para borrarla (también puntos de referencia)';
     case 'grow':
       return (growAllEl.checked ? 'Crece toda la cara conectada (Mayús: solo el cuadrito apuntado)' : 'Clic en una cara la hace crecer (Mayús: toda la cara conectada)') +
-        ` · cantidad ${growAmount === null ? 'automática' : `${+growAmount.toFixed(3)} celda(s)`} en el panel; arrastra para otra distancia · Esc cancela`;
+        ` · cantidad ${growAmountOf() === null ? 'automática' : `${+growAmountOf()!.toFixed(3)} celda(s)`} en el panel; arrastra para otra distancia · Esc cancela`;
     case 'bevel':
       return 'Clic en una arista (marcada en amarillo) para cortarla en chaflán · Tamaño en el panel · Esc sale';
     case 'face':
