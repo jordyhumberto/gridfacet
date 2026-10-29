@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { buildPieces, buildSlab, CATALOG, SLAB_THICKNESS } from './catalog';
-import { clearanceLift } from './placement';
+import { clearanceLift, magnetLines, snapSpan } from './placement';
 import { volume } from './piece';
 import { boundsOf } from './transform';
 
@@ -87,5 +87,47 @@ describe('lámina que crece desde una cara', () => {
     expect(box.max[0]).toBeCloseTo(4);
     expect(box.min[2]).toBeCloseTo(-4);
     expect(box.max[2]).toBeCloseTo(-3);
+  });
+});
+
+describe('mover una pieza pequeña dentro de una cara', () => {
+  it('sin nada cerca sigue al cursor en pasos de un cuarto de su tamaño', () => {
+    // Medio de lado: pasos de 0,125, con el cursor en el centro de la pieza.
+    expect(snapSpan(2.37, 0.5, [])).toBeCloseTo(2.125);
+    expect(snapSpan(2.45, 0.5, [])).toBeCloseTo(2.25);
+  });
+
+  it('con el tamaño más pequeño también se mueve en pasos propios', () => {
+    expect(snapSpan(1.5, 0.25, [])).toBeCloseTo(1.375);
+    expect(snapSpan(1.56, 0.25, [])).toBeCloseTo(1.4375);
+  });
+
+  it('se imanta con su borde o su centro a una línea cercana', () => {
+    expect(snapSpan(2.28, 0.5, [2])).toBeCloseTo(2); // borde menor sobre la línea
+    expect(snapSpan(1.72, 0.5, [2])).toBeCloseTo(1.5); // borde mayor sobre la línea
+    expect(snapSpan(2.02, 0.5, [2])).toBeCloseTo(1.75); // centro sobre la línea
+  });
+
+  it('no se imanta a líneas lejanas', () => {
+    expect(snapSpan(2.6, 0.5, [2])).toBeCloseTo(2.375);
+  });
+
+  it('se queda dentro de la cara que lo recibe', () => {
+    expect(snapSpan(0.05, 0.5, [], 0, 1)).toBeCloseTo(0);
+    expect(snapSpan(1.2, 0.5, [], 0, 1)).toBeCloseTo(0.5);
+  });
+
+  it('las líneas incluyen los bordes de las piezas próximas y la rejilla', () => {
+    const [cube] = at('cube', 1.1, 0, 0, 0.8);
+    const lines = magnetLines([cube], 0, [1.5, 0.1, 0.4], 0.6);
+    expect(lines.some((l) => Math.abs(l - 1.1) < 1e-6)).toBe(true);
+    expect(lines.some((l) => Math.abs(l - 1.9) < 1e-6)).toBe(true);
+    expect(lines).toContain(1);
+    expect(lines).toContain(2);
+  });
+
+  it('una pieza lejana no aporta sus bordes', () => {
+    const [far] = at('cube', 8, 0, 8);
+    expect(magnetLines([far], 0, [1.5, 0.1, 0.4], 0.6)).not.toContain(8);
   });
 });

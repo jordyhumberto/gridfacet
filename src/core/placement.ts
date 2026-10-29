@@ -40,3 +40,46 @@ export function clearanceLift(parts: Piece[], others: Iterable<Piece>): number {
   }
   return lift;
 }
+
+/** Pasos con los que se mueve una pieza menor que una celda dentro de una cara: cada tamaño propio se divide en este número. */
+export const FREE_STEPS = 4;
+/** A qué distancia (en celdas) de una arista o línea de la rejilla se imanta una pieza pequeña. */
+export const MAGNET = 0.1;
+
+/**
+ * Dónde empieza (por su lado menor) una pieza de largo `size` que sigue al cursor sobre un eje: se mueve en pasos
+ * de `size / FREE_STEPS` y se imanta a las `lines` cercanas con su borde o con su centro. Se queda dentro de [lo, hi] si se dan.
+ */
+export function snapSpan(cursor: number, size: number, lines: Iterable<number>, lo = -Infinity, hi = Infinity): number {
+  const step = size / FREE_STEPS;
+  const wanted = cursor - size / 2;
+  let best = Math.round(wanted / step) * step;
+  let bestDist = MAGNET;
+  for (const line of lines) {
+    for (const start of [line, line - size, line - size / 2]) {
+      const dist = Math.abs(start - wanted);
+      if (dist < bestDist) {
+        bestDist = dist;
+        best = start;
+      }
+    }
+  }
+  if (hi - lo >= size) best = Math.min(Math.max(best, lo), hi - size);
+  return Math.round(best * 1e6) / 1e6;
+}
+
+/**
+ * Líneas sobre un eje a las que puede imantarse una pieza que se coloca cerca de `around`: los bordes de las piezas próximas
+ * y las líneas de la rejilla (cada celda en X/Z, cada placa en Y).
+ */
+export function magnetLines(pieces: Iterable<Piece>, axis: 0 | 1 | 2, around: [number, number, number], reach: number): number[] {
+  const lines: number[] = [];
+  for (const piece of pieces) {
+    const box = boxOf(piece);
+    if ([0, 1, 2].every((i) => around[i] > box.min[i] - reach && around[i] < box.max[i] + reach)) lines.push(box.min[axis], box.max[axis]);
+  }
+  const pitch = axis === 1 ? 1 / 3 : 1;
+  const first = Math.floor((around[axis] - reach) / pitch);
+  for (let k = first; k <= first + Math.ceil((2 * reach) / pitch) + 1; k++) lines.push(k * pitch);
+  return lines;
+}
