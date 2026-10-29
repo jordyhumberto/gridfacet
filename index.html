@@ -32,7 +32,7 @@
       #helpBody dt { color: #9aa1b2; white-space: nowrap; }
       #helpBody dd { margin: 0; }
       #helpBody kbd { background: #2a2f3a; border: 1px solid #3d4452; border-radius: 4px; padding: 0 5px; font-family: inherit; font-size: 12px; }
-      #shapeActions input[type=number] { width: 52px; background: #2a2f3a; color: inherit; border: 1px solid #3d4452; border-radius: 6px; padding: 2px 4px; font-size: 12px; }
+      #shapeActions input[type=number], #sphereActions input[type=number] { width: 52px; background: #2a2f3a; color: inherit; border: 1px solid #3d4452; border-radius: 6px; padding: 2px 4px; font-size: 12px; }
       #inspector input[type=number], #inspector #rotAngle { width: 54px; background: #2a2f3a; color: inherit; border: 1px solid #3d4452; border-radius: 6px; padding: 2px 4px; font-size: 12px; }
       #inspector .row { gap: 6px; }
       #groupList { display: flex; flex-direction: column; gap: 3px; max-height: 140px; overflow-y: auto; }
@@ -52,7 +52,9 @@
       #recentColors button { height: 22px; padding: 0; border: 1px solid #3d4452; border-radius: 6px; cursor: pointer; }
       #recentColors button:disabled { background: none; border-style: dashed; opacity: 0.4; cursor: default; }
       #recentColors button.active { outline: 2px solid #fff; outline-offset: 1px; }
-      #faceActions label[hidden] { display: none; }
+      #faceActions label[hidden], #sphereActions label[hidden] { display: none; }
+      #sphereActions { display: flex; flex-direction: column; gap: 6px; margin-top: 6px; }
+      #sphereActions[hidden] { display: none; }
       #bevelActions input[type=number] { width: 56px; background: #2a2f3a; color: inherit; border: 1px solid #3d4452; border-radius: 6px; padding: 2px 4px; font-size: 12px; }
       #planeRow input[type=number] { width: 56px; background: #2a2f3a; color: inherit; border: 1px solid #3d4452; border-radius: 6px; padding: 2px 4px; font-size: 12px; }
       #planeRow select { padding: 3px 4px; }
@@ -186,6 +188,28 @@
             <label title="Alto (celdas)">Y <input type="number" id="shapeH" min="0.25" step="0.25" value="1" /></label>
             <label title="Fondo (celdas)">Z <input type="number" id="shapeD" min="0.25" step="0.25" value="1" /></label>
             <label title="Lados: pocos dan un prisma o una pirámide, muchos una forma redonda">Lados <input type="number" id="shapeSides" min="3" max="20" step="1" value="12" /></label>
+          </div>
+          <div id="sphereActions" hidden>
+            <div class="row">
+              <select id="shapeSection" title="Cuánto de la esfera se conserva"></select>
+              <label id="shapeCutRow" title="Casquete: altura del corte (0 es por la mitad, positivo deja solo la punta, negativo casi entera)" hidden>Corte <input type="number" id="shapeCut" min="-0.9" max="0.9" step="0.1" value="0.4" /></label>
+              <label id="shapeAngleRow" title="Gajo: ángulo de la cuña en grados (10 a 180)" hidden>Ángulo <input type="number" id="shapeAngle" min="10" max="180" step="10" value="90" /></label>
+            </div>
+            <div class="row">
+              <label title="Anillos de arriba abajo: pocos dan una esfera más facetada (2 a 8)">Anillos <input type="number" id="shapeRings" min="2" max="8" step="1" value="4" /></label>
+              <button data-detail="6,3" title="6 lados × 3 anillos">Bajo</button>
+              <button data-detail="8,4" title="8 lados × 4 anillos">Medio</button>
+              <button data-detail="12,6" title="12 lados × 6 anillos">Alto</button>
+            </div>
+            <div class="row">
+              <small>Girar°</small>
+              <label>X <input type="number" id="shapeTurnX" step="15" value="0" /></label>
+              <label>Y <input type="number" id="shapeTurnY" step="15" value="0" /></label>
+              <label>Z <input type="number" id="shapeTurnZ" step="15" value="0" /></label>
+            </div>
+            <div class="row">
+              <label title="La cara plana del corte se apoya en la superficie que apuntas; sin esto la cúpula siempre mira hacia arriba"><input type="checkbox" id="shapeAuto" checked /> Cara plana contra la superficie</label>
+            </div>
           </div>
           <div class="row" id="bevelActions" hidden>
             <label title="Distancia de la arista a cada lado del chaflán, en celdas">Tamaño <input type="number" id="bevelSize" min="0.02" step="0.05" value="0.25" /></label>
