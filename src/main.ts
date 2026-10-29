@@ -16,7 +16,8 @@ import { PieceBatches } from './render/batches';
 import { createPieceObject, disposeObject, isWireframeView, setHighlight, setSmoothShading, setWireframeView } from './render/meshes';
 import { ModelScene } from './scene';
 import { Selection } from './selection';
-import { CutTool, snapPoint } from './tools/cutTool';
+import type { Guides } from './core/guides';
+import { CutTool, snapPoint, type SnapOptions } from './tools/cutTool';
 import { FillTool } from './tools/fillTool';
 import { boundsOf, centerChange, rotateFreeChange, scaleChange } from './core/transform';
 import { connectedPieces, sizeOf } from './core/connected';
@@ -310,14 +311,49 @@ document.querySelectorAll<HTMLButtonElement>('[data-plane]').forEach((button) =>
 );
 planeValueEl.value = '0';
 
+/** Aristas prolongadas y vértices virtuales de la zona que apunta el cursor, para ver de dónde sale cada punto. */
+const guideOverlay = new THREE.Group();
+scene3d.add(guideOverlay);
+const GUIDE_RADIUS = 1.5;
+const MAX_GUIDE_LINES = 60;
+
+function showGuides(guides: Guides | null, center?: Vec3): void {
+  for (const child of [...guideOverlay.children]) {
+    guideOverlay.remove(child);
+    disposeObject(child);
+  }
+  if (!guides || !center) return;
+  const near = (p: Vec3) => Math.hypot(p[0] - center[0], p[1] - center[1], p[2] - center[2]) < GUIDE_RADIUS;
+  const positions: number[] = [];
+  for (const [a, b] of guides.lines.slice(0, MAX_GUIDE_LINES)) positions.push(...a, ...b);
+  if (positions.length > 0) {
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+    const lines = new THREE.LineSegments(geometry, new THREE.LineBasicMaterial({ color: 0xffb020, transparent: true, opacity: 0.8, depthTest: false }));
+    lines.renderOrder = 9;
+    guideOverlay.add(lines);
+  }
+  for (const p of guides.points.filter(near)) {
+    const dot = new THREE.Mesh(new THREE.SphereGeometry(0.035, 10, 8), new THREE.MeshBasicMaterial({ color: 0x9a7bff, depthTest: false }));
+    dot.position.set(p[0], p[1], p[2]);
+    dot.renderOrder = 9;
+    guideOverlay.add(dot);
+  }
+}
+
 /** Punto que se marcaría ahora: sobre el plano de trabajo si hay uno, si no sobre lo que apunta el cursor. */
 function markTarget(event: PointerEvent, hit: THREE.Intersection | undefined): Vec3 | null {
-  if (!workPlane) return hit ? snapPoint(hit.point, model, { edge: event.altKey }) : null;
+  const center = (point: THREE.Vector3): Vec3 => [point.x, point.y, point.z];
+  const options = (point: THREE.Vector3): SnapOptions => ({ edge: event.altKey, onGuides: (guides) => showGuides(guides, center(point)) });
+  if (!workPlane) {
+    if (!hit) showGuides(null);
+    return hit ? snapPoint(hit.point, model, options(hit.point)) : null;
+  }
   const normal = new THREE.Vector3();
   normal.setComponent(workPlane.axis, 1);
   const point = raycaster.ray.intersectPlane(new THREE.Plane(normal, -workPlane.value), new THREE.Vector3());
   if (!point) return null;
-  const snapped = snapPoint(point, model, { edge: event.altKey });
+  const snapped = snapPoint(point, model, options(point));
   // Un candidato fuera del plano se descarta: el punto va a la rejilla, dentro del plano.
   if (Math.abs(snapped[workPlane.axis] - workPlane.value) < 1e-4) return snapped;
   const grid: Vec3 = [Math.round(point.x / 0.5) * 0.5, Math.round(point.y / (1 / 6)) * (1 / 6), Math.round(point.z / 0.5) * 0.5];
@@ -372,6 +408,7 @@ function updateHover(event: PointerEvent): void {
   }
   const hit = castRay(event, true);
   updateCursor(hit !== undefined && !backdrops.includes(hit.object));
+  if (mode !== 'cut' && mode !== 'fill') showGuides(null);
   if (mode === 'cut') {
     snapped = markTarget(event, hit);
     showPointInfo(snapped);
@@ -1674,6 +1711,7 @@ renderer.domElement.addEventListener('pointerup', (e) => {
 renderer.domElement.addEventListener('pointerleave', () => {
   hasTarget = false;
   snapped = null;
+  showGuides(null);
   refreshGhost();
   if (mode === 'cut') cutTool.setHover(null);
   if (mode === 'fill') fillTool.setHover(null);
@@ -2190,7 +2228,7 @@ const GUIDE: Record<Mode, [string, string][]> = {
     ...VIEW_GUIDE,
   ],
   cut: [
-    ['Clic', 'marcar un punto de la región (se pega a vértices y a la rejilla)'],
+    ['Clic', 'marcar un punto de la región (se pega a vértices, a la rejilla y a los vértices virtuales de las aristas prolongadas, los puntos morados)'],
     ['Ctrl+clic', 'sobre una cara: cortar con el plano de esa cara'],
     ['Clic en el primer punto / Enter', 'cerrar la región · con la región cerrada, Enter corta'],
     ['F', 'cambiar el lado que se borra (el rojo)'],
@@ -2200,7 +2238,7 @@ const GUIDE: Record<Mode, [string, string][]> = {
     ...VIEW_GUIDE.slice(0, 2),
   ],
   fill: [
-    ['Clic', 'marcar un punto (4 o más, no todos en un mismo plano)'],
+    ['Clic', 'marcar un punto (4 o más, no todos en un mismo plano); se pega también a los vértices virtuales (puntos morados donde se cruzan aristas prolongadas)'],
     ['Clic en el primer punto / Enter', 'crear la pieza que los une'],
     ['Ctrl+Z / Ctrl+Y', 'quitar / reponer el último punto'],
     ['Esc', 'cancelar'],
