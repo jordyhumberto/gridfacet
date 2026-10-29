@@ -438,10 +438,20 @@ function updateHover(event: PointerEvent): void {
   const turned = rotation % 2 !== 0;
   const footW = CATALOG[selected].footprint[turned ? 1 : 0] * scale;
   const footD = CATALOG[selected].footprint[turned ? 0 : 1] * scale;
-  if (footW < 1) target.ox = Math.floor((probe.x - target.cx) / footW + 1e-9) * footW;
-  if (footD < 1) target.oz = Math.floor((probe.z - target.cz) / footD + 1e-9) * footD;
+  if (footW < 1) target.ox = centeredOffset(probe.x - target.cx, footW);
+  if (footD < 1) target.oz = centeredOffset(probe.z - target.cz, footD);
   hasTarget = Math.abs(target.cx + 0.5) < gridSize / 2 && Math.abs(target.cz + 0.5) < gridSize / 2 && target.cy >= 0 && target.cy < gridSize * 3;
   refreshGhost();
+}
+
+/**
+ * Dónde empieza (dentro de la celda, de 0 a 1 − tamaño) una pieza de `size` < 1 centrada en el cursor `frac`.
+ * Salta de medio en medio tamaño, así una pieza de ½ cabe en las dos esquinas y también en el centro de la celda.
+ */
+function centeredOffset(frac: number, size: number): number {
+  const step = size / 2;
+  const offset = Math.round((frac - size / 2) / step) * step;
+  return Math.min(Math.max(offset, 0), 1 - size);
 }
 
 function refreshGhost(): void {
@@ -470,7 +480,7 @@ function slabAt(hit: THREE.Intersection, probe: THREE.Vector3): typeof slabTarge
   const side = placeSizeOf() ?? 1;
   const snap = (value: number): number => {
     const cell = Math.floor(value);
-    return side < 1 ? cell + Math.floor((value - cell) / side + 1e-9) * side : cell;
+    return side < 1 ? cell + centeredOffset(value - cell, side) : cell;
   };
   const tangentMin: Vec3 = [snap(probe.x), Math.floor(probe.y * 3) / 3, snap(probe.z)];
   // De costado, la lámina arranca desde la base de la pieza a la que se pega, así queda a ras aunque esa pieza no siga la rejilla de placas.
@@ -478,7 +488,8 @@ function slabAt(hit: THREE.Intersection, probe: THREE.Vector3): typeof slabTarge
     const id = pieceIdOf(hit);
     const piece = id === undefined ? undefined : model.get(id);
     const box = piece ? boundsOf([piece]) : null;
-    if (box) tangentMin[1] = box.min[1] + (side < 1 ? Math.floor((probe.y - box.min[1]) / side + 1e-9) * side : 0);
+    // Medida desde la base de la pieza; una lámina pequeña puede ir más arriba, centrada en el cursor, sin pasarse del alto de una celda.
+    if (box) tangentMin[1] = box.min[1] + (side < 1 ? centeredOffset(probe.y - box.min[1], side) : 0);
     else if (side < 1) tangentMin[1] = snap(probe.y);
   }
   const [x, y, z] = tangentMin;
@@ -2388,7 +2399,6 @@ window.addEventListener('keydown', (e) => {
 
   const n = Number(e.key);
   if (n >= 1 && n <= Math.min(9, CATALOG.length)) selectPiece(n - 1);
-  if (e.key === '0' && CATALOG.length >= 10) selectPiece(9);
   if (key === 'c') setMode(mode === 'cut' ? 'place' : 'cut');
   if (key === 's') setMode(mode === 'select' ? 'place' : 'select');
   if (key === 'b') setMode(mode === 'erase' ? 'place' : 'erase');

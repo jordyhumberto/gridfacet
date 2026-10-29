@@ -5,7 +5,9 @@ import { volume } from './piece';
 import { boundsOf } from './transform';
 
 const def = (id: string) => CATALOG.find((d) => d.id === id)!;
-const at = (id: string, cx: number, cyPlates: number, cz: number) => buildPieces(def(id), cx, cyPlates, cz, 0, 0xff0000);
+const at = (id: string, cx: number, cyPlates: number, cz: number, scale = 1) => buildPieces(def(id), cx, cyPlates, cz, 0, 0xff0000, scale);
+/** Cubito de medio de lado. */
+const small = (cx: number, cyPlates: number, cz: number) => at('cube', cx, cyPlates, cz, 0.5);
 
 describe('subir para no meterse en otras piezas', () => {
   it('sin nada debajo no sube', () => {
@@ -18,7 +20,7 @@ describe('subir para no meterse en otras piezas', () => {
 
   it('un cubo apuntado a la altura de un cubito baja del todo si otro cuadrante es más alto', () => {
     // Un cubito (¼) sobre el suelo, y otro cubo grande de 2 placas más arriba en la misma celda
-    const lowStep = at('quarter', 0, 0, 0);
+    const lowStep = small(0, 0, 0);
     const parts = at('cube', 0, 1.5, 0);
     const lift = clearanceLift(parts, lowStep);
     // El cubito mide 1,5 placas; el cubo ya está sobre él (1,5 placas), así que no sube
@@ -33,7 +35,7 @@ describe('subir para no meterse en otras piezas', () => {
   });
 
   it('con una cuña de 1,5 placas en una esquina y el cubo a 1 placa, queda encima', () => {
-    const step = at('quarter', 0.5, 0, 0.5); // 0,5 de alto
+    const step = small(0.5, 0, 0.5); // 0,5 de alto
     const parts = at('cube', 0, 0.5, 0); // arranca a y = 1/6
     const lift = clearanceLift(parts, step);
     expect(boundsOf(parts)!.min[1] + lift).toBeGreaterThanOrEqual(0.5 - 1e-9);

@@ -129,20 +129,19 @@ export const CATALOG: PieceDef[] = [
   { id: 'plate', name: 'Placa', short: 'Placa', heightPlates: 1, footprint: [1, 1], parts: (h) => [box(1, h, 1)] },
   { id: 'ramp', name: 'Rampa', short: 'Rampa', heightPlates: 3, footprint: [1, 1], parts: (h) => [ramp(h)] },
   { id: 'brick', name: 'Ladrillo 2×1', short: '2×1', heightPlates: 3, footprint: [2, 1], parts: (h) => [box(2, h, 1)] },
-  { id: 'outer', name: 'Esquina exterior', short: 'Esq. ext.', heightPlates: 3, footprint: [1, 1], parts: (h) => [outerCorner(h)] },
-  { id: 'inner', name: 'Esquina interior', short: 'Esq. int.', heightPlates: 3, footprint: [1, 1], parts: innerCorner },
-  { id: 'cylinder', name: 'Cilindro', short: 'Cilindro', heightPlates: 3, footprint: [1, 1], parts: (h) => [cylinder(h)] },
-  { id: 'arch', name: 'Arco', short: 'Arco', heightPlates: 4, footprint: [2, 1], parts: arch },
-  { id: 'quarter', name: 'Cubo pequeño (½ × ½ × ½)', short: '¼ Cubo', heightPlates: 1.5, footprint: [0.5, 0.5], parts: (h) => [box(0.5, h, 0.5)] },
   {
     id: 'slab',
-    name: 'Lámina (¼ de celda de grosor, crece desde la cara a la que apuntas)',
+    name: 'Lámina (crece desde la cara a la que apuntas; lado = Tamaño, grosor aparte)',
     short: 'Lámina',
     heightPlates: 0.75,
     footprint: [1, 1],
     parts: (h) => [box(1, h, 1)],
     grows: true,
   },
+  { id: 'cylinder', name: 'Cilindro', short: 'Cilindro', heightPlates: 3, footprint: [1, 1], parts: (h) => [cylinder(h)] },
+  { id: 'arch', name: 'Arco', short: 'Arco', heightPlates: 4, footprint: [2, 1], parts: arch },
+  { id: 'outer', name: 'Esquina exterior', short: 'Esq. ext.', heightPlates: 3, footprint: [1, 1], parts: (h) => [outerCorner(h)] },
+  { id: 'inner', name: 'Esquina interior', short: 'Esq. int.', heightPlates: 3, footprint: [1, 1], parts: innerCorner },
 ];
 
 /** Grosor de la lámina que crece desde una cara: un cuarto de celda. */
