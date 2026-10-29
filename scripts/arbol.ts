@@ -1,5 +1,5 @@
 /**
- * Genera `ejemplos/arbol.polygrid.json`: un árbol con ramas que se bifurcan, hecho con troncos cónicos y copas de esferas.
+ * Genera `ejemplos/arbol.gridfacet.json`: un árbol con ramas que se bifurcan, hecho con troncos cónicos y copas de esferas.
  * Se ejecuta con: npx vite-node scripts/arbol.ts
  */
 import { mkdirSync, writeFileSync } from 'node:fs';
@@ -89,6 +89,6 @@ function grow(from: Vec3, dir: Vec3, length: number, radius: number, depth: numb
 grow([0, 0, 0], [0, 1, 0], 1.7, 0.22, 0);
 
 mkdirSync('ejemplos', { recursive: true });
-writeFileSync('ejemplos/arbol.polygrid.json', serializeProject(pieces, [], 24));
+writeFileSync('ejemplos/arbol.gridfacet.json', serializeProject(pieces, [], 24));
 const count = (group: string) => pieces.filter((p) => p.groupName === group).length;
-console.log(`ejemplos/arbol.polygrid.json: ${pieces.length} piezas (tronco ${count('Tronco')}, ramas ${count('Ramas')}, hojas ${count('Hojas')})`);
+console.log(`ejemplos/arbol.gridfacet.json: ${pieces.length} piezas (tronco ${count('Tronco')}, ramas ${count('Ramas')}, hojas ${count('Hojas')})`);

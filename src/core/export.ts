@@ -72,5 +72,5 @@ export function buildExportMeshes(pieces: Piece[], mode: ExportMode): ExportMesh
     if (group) group.push(face);
     else byColor.set(color, [face]);
   }
-  return [...byColor].map(([color, faces]) => ({ name: `Polygrid_${hex(color)}`, color, ...weld(faces) }));
+  return [...byColor].map(([color, faces]) => ({ name: `Gridfacet_${hex(color)}`, color, ...weld(faces) }));
 }

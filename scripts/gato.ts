@@ -1,5 +1,5 @@
 /**
- * Genera el proyecto de ejemplo `ejemplos/gato.polygrid.json`: un gato sentado hecho con formas convexas.
+ * Genera el proyecto de ejemplo `ejemplos/gato.gridfacet.json`: un gato sentado hecho con formas convexas.
  * Se ejecuta con: npx vite-node scripts/gato.ts
  */
 import { mkdirSync, writeFileSync } from 'node:fs';
@@ -72,5 +72,5 @@ for (let i = 0; i <= N; i++) {
 }
 
 mkdirSync('ejemplos', { recursive: true });
-writeFileSync('ejemplos/gato.polygrid.json', serializeProject(pieces, [], 24));
-console.log(`ejemplos/gato.polygrid.json: ${pieces.length} piezas, ${pieces.reduce((s, p) => s + p.faces.length, 0)} caras`);
+writeFileSync('ejemplos/gato.gridfacet.json', serializeProject(pieces, [], 24));
+console.log(`ejemplos/gato.gridfacet.json: ${pieces.length} piezas, ${pieces.reduce((s, p) => s + p.faces.length, 0)} caras`);

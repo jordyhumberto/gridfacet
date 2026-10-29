@@ -1,8 +1,8 @@
 import { makePiece, volume, type Piece, type Vec3 } from './piece';
 
-const FORMAT = 'polygrid';
-/** Nombre que tenía el formato antes de llamarse Polygrid: los proyectos guardados así se siguen abriendo. */
-const LEGACY_FORMAT = 'novoxel';
+const FORMAT = 'gridfacet';
+/** Nombres que tuvo el formato antes de llamarse Gridfacet (Novoxel y Polygrid): los proyectos guardados así se siguen abriendo. */
+const LEGACY_FORMATS = ['polygrid', 'novoxel'];
 const VERSION = 1;
 
 interface ProjectFile {
@@ -50,9 +50,9 @@ export function parseProjectFull(text: string): { pieces: Piece[]; marks: Vec3[]
   }
 
   const file = data as Partial<ProjectFile> | null;
-  if (!file || (file.format !== FORMAT && String(file.format) !== LEGACY_FORMAT)) throw new Error('El archivo no es un proyecto de Polygrid');
+  if (!file || (file.format !== FORMAT && !LEGACY_FORMATS.includes(String(file.format)))) throw new Error('El archivo no es un proyecto de Gridfacet');
   if (typeof file.version !== 'number' || file.version > VERSION) {
-    throw new Error('El proyecto es de una versión más nueva de Polygrid');
+    throw new Error('El proyecto es de una versión más nueva de Gridfacet');
   }
   if (!Array.isArray(file.pieces)) throw new Error('El proyecto no contiene piezas');
 

@@ -1,4 +1,4 @@
-# Polygrid
+# Gridfacet
 
 Editor web de modelos *low poly* hechos con **poliedros convexos** sobre una malla. Pensado para armar figuras con estética de PS1 (como Mega Man Legends), exportarlas a **GLB** y rigearlas o animarlas en Blender o Godot.
 
@@ -23,7 +23,7 @@ Dentro de la app, el botón **Ayuda y atajos (?)** explica cada herramienta.
 - **Crecer** una cara o toda la cara conectada, con la cantidad que quieras (¼, ⅓, ½, 1…).
 - **Repetir** en serie con desplazamiento, giro y escala; **simetría**, grupos con nombre, espejo, pintar por cara y últimos colores.
 - **Contador de triángulos** con presupuesto, útil para mantenerse en el rango de un personaje PS1 (300–800).
-- **Exportar GLB** (uniendo por color o una malla por pieza) y guardar/abrir proyectos `.polygrid.json`. Los proyectos antiguos (`.novoxel.json`) se siguen abriendo.
+- **Exportar GLB** (uniendo por color o una malla por pieza) y guardar/abrir proyectos `.gridfacet.json`. Los proyectos antiguos (`.novoxel.json`) se siguen abriendo.
 
 ## Ejemplos
 
