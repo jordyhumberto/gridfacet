@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { CATALOG, buildPieces, buildSlab } from './core/catalog';
 import { clearanceLift } from './core/placement';
+import { coplanarRegion, type FaceOf } from './core/region';
 import type { Change } from './core/cut';
 import type { ExportMode } from './core/export';
 import { extrudeFace, faceAt, unitNormal } from './core/extrude';
@@ -365,7 +366,7 @@ function updateHover(event: PointerEvent): void {
     return;
   }
   if (mode === 'grow') {
-    setFaceHover(hit && !backdrops.includes(hit.object) ? findFace(hit) : undefined);
+    setFaceHover(hit && !backdrops.includes(hit.object) ? findFace(hit) : undefined, growWhole(event));
     return;
   }
   if (mode === 'paint') {
@@ -981,7 +982,7 @@ function setEraseHover(piece: Piece | undefined): void {
   statusEl.textContent = 'Clic para borrar la pieza marcada en rojo';
 }
 
-let faceOverlay: THREE.Mesh | null = null;
+let faceOverlay: THREE.Object3D | null = null;
 
 function faceMesh(face: Vec3[], opacity: number): THREE.Mesh {
   const positions: number[] = [];
@@ -1270,19 +1271,38 @@ function paintAt(event: PointerEvent): void {
   updateHover(event);
 }
 
-function setFaceHover(found: FaceHit | undefined): void {
+/** Resalta la cara apuntada; con `whole`, toda la cara conectada de la que forma parte. */
+function setFaceHover(found: FaceHit | undefined, whole = false): void {
   if (faceOverlay) {
     scene3d.remove(faceOverlay);
     disposeObject(faceOverlay);
     faceOverlay = null;
   }
   if (!found) return;
-  faceOverlay = faceMesh(found.face, 0.4);
+  if (!whole) {
+    faceOverlay = faceMesh(found.face, 0.4);
+  } else {
+    const group = new THREE.Group();
+    for (const { face } of growFaces(found, true)) group.add(faceMesh(face, 0.4));
+    faceOverlay = group;
+  }
   scene3d.add(faceOverlay);
+}
+
+const growAllEl = document.getElementById('growAll') as HTMLInputElement;
+const growActionsEl = document.getElementById('growActions')!;
+growAllEl.addEventListener('change', () => growAllEl.blur());
+/** ¿Crece toda la cara conectada? La casilla lo decide y Mayús lo invierte mientras se pulsa. */
+const growWhole = (event: { shiftKey: boolean }): boolean => growAllEl.checked !== event.shiftKey;
+/** La cara apuntada, o toda la cara conectada (las caras del mismo plano que enlazan con ella y están a la vista). */
+function growFaces(found: FaceHit, whole: boolean): FaceOf[] {
+  return whole ? coplanarRegion({ piece: found.piece, face: found.face }, model.all()) : [{ piece: found.piece, face: found.face }];
 }
 
 interface GrowDrag {
   face: FaceHit;
+  /** Las caras que crecen juntas: la apuntada o toda la cara conectada. */
+  faces: FaceOf[];
   startX: number;
   startY: number;
   moved: boolean;
@@ -1303,13 +1323,15 @@ function showGrowPreview(): void {
     disposeObject(growDrag.preview);
     growDrag.preview = null;
   }
-  const { face, piece } = growDrag.face;
-  const grown = extrudeFace(face, piece.color, growDrag.distance);
   const preview = new THREE.Group();
-  for (const piece of expand([grown])) preview.add(createPieceObject(piece, true));
+  for (const piece of expand(grownPieces(growDrag.faces, growDrag.distance))) preview.add(createPieceObject(piece, true));
   growDrag.preview = preview;
   scene3d.add(growDrag.preview);
 }
+
+/** Un prisma por cada cara, del color de esa cara. */
+const grownPieces = (faces: FaceOf[], distance: number): Piece[] =>
+  faces.map(({ piece, face }) => extrudeFace(face, faceColorOf(piece, piece.faces.indexOf(face)), distance));
 
 function startGrow(event: PointerEvent): void {
   if (mode !== 'grow' || event.button !== 0) return;
@@ -1322,7 +1344,8 @@ function startGrow(event: PointerEvent): void {
   } catch {
     // Sin captura el arrastre sigue funcionando mientras el puntero esté sobre el lienzo.
   }
-  growDrag = { face: found, startX: event.clientX, startY: event.clientY, moved: false, distance: growClickDistance(found.normal), preview: null };
+  const faces = growFaces(found, growWhole(event));
+  growDrag = { face: found, faces, startX: event.clientX, startY: event.clientY, moved: false, distance: growClickDistance(found.normal), preview: null };
   showGrowPreview();
 }
 
@@ -1358,8 +1381,8 @@ function finishGrow(commit: boolean): void {
   }
   statusEl.textContent = '';
   if (!commit) return;
-  const { face, piece } = current.face;
-  model.apply({ added: expand([extrudeFace(face, piece.color, current.distance)]), removed: [] });
+  model.apply({ added: expand(grownPieces(current.faces, current.distance)), removed: [] });
+  if (current.faces.length > 1) statusEl.textContent = `Crecieron ${current.faces.length} caras juntas`;
 }
 
 /**
@@ -1723,6 +1746,7 @@ function setMode(next: Mode): void {
   syncShapeActions();
   syncBevelActions();
   syncFaceActions();
+  growActionsEl.hidden = mode !== 'grow';
   syncSelectionActions();
 }
 
@@ -1976,7 +2000,9 @@ function hintText(): string {
     case 'erase':
       return 'Clic en la pieza marcada en rojo para borrarla (también puntos de referencia)';
     case 'grow':
-      return 'Clic en una cara la hace crecer; arrastra para elegir cuánto · Esc cancela';
+      return growAllEl.checked
+        ? 'Crece toda la cara conectada (Mayús: solo el cuadrito apuntado); arrastra para elegir cuánto · Esc cancela'
+        : 'Clic en una cara la hace crecer; Mayús crece toda la cara conectada; arrastra para elegir cuánto · Esc cancela';
     case 'bevel':
       return 'Clic en una arista (marcada en amarillo) para cortarla en chaflán · Tamaño en el panel · Esc sale';
     case 'face':

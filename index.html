@@ -173,6 +173,9 @@
             <label title="Cuánto se separa del borde de la cara (0 a 0,9): deja un reborde alrededor del cráter o del saliente">Borde <input type="number" id="faceInset" min="0" max="0.9" step="0.05" value="0" /></label>
             <label title="Dónde corta, contando desde la cara: 0,5 es por la mitad">Corte <input type="number" id="faceFraction" min="0.05" max="0.95" step="0.05" value="0.5" /></label>
           </div>
+          <div class="row" id="growActions" hidden>
+            <label title="Crece toda la cara conectada a la apuntada (por ejemplo un muro de 3×3 cubos) y no solo el cuadrito. Mayús invierte la opción mientras se hace clic"><input type="checkbox" id="growAll" /> Toda la cara conectada</label>
+          </div>
           <div class="row" id="fillActions" hidden>
             <button data-fill="undo">Quitar punto (Ctrl+Z)</button>
             <button data-fill="apply">Rellenar (Enter)</button>
