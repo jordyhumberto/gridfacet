@@ -1313,8 +1313,32 @@ let growDrag: GrowDrag | null = null;
 
 /** Paso fino al arrastrar: media celda en horizontal, un sexto de celda (media placa) en vertical. */
 const growStep = (normal: Vec3): number => (Math.abs(normal[1]) > 0.5 ? STEP_Y : STEP_XZ);
-/** Un clic sin arrastrar hace crecer una celda en horizontal o una placa en vertical. */
-const growClickDistance = (normal: Vec3): number => (Math.abs(normal[1]) > 0.5 ? 1 / 3 : 1);
+/** Cantidad elegida en el panel (celdas); null = automático. */
+let growAmount: number | null = null;
+const growAmountEl = document.getElementById('growAmount') as HTMLInputElement;
+const growPresets = [...document.querySelectorAll<HTMLButtonElement>('#growActions [data-grow-amount]')];
+function syncGrowAmount(): void {
+  for (const button of growPresets) {
+    const value = button.dataset.growAmount === 'auto' ? null : Number(button.dataset.growAmount);
+    button.classList.toggle('active', value === growAmount);
+  }
+}
+for (const button of growPresets) {
+  button.addEventListener('click', () => {
+    growAmount = button.dataset.growAmount === 'auto' ? null : Number(button.dataset.growAmount);
+    growAmountEl.value = growAmount === null ? '' : String(+growAmount.toFixed(3));
+    syncGrowAmount();
+  });
+}
+growAmountEl.addEventListener('input', () => {
+  const value = Number(growAmountEl.value);
+  growAmount = growAmountEl.value !== '' && value > 0 && value <= gridSize ? value : null;
+  syncGrowAmount();
+});
+syncGrowAmount();
+
+/** Un clic sin arrastrar hace crecer lo elegido en el panel; en automático, una celda en horizontal o una placa en vertical. */
+const growClickDistance = (normal: Vec3): number => growAmount ?? (Math.abs(normal[1]) > 0.5 ? 1 / 3 : 1);
 
 function showGrowPreview(): void {
   if (!growDrag) return;
@@ -2000,9 +2024,8 @@ function hintText(): string {
     case 'erase':
       return 'Clic en la pieza marcada en rojo para borrarla (también puntos de referencia)';
     case 'grow':
-      return growAllEl.checked
-        ? 'Crece toda la cara conectada (Mayús: solo el cuadrito apuntado); arrastra para elegir cuánto · Esc cancela'
-        : 'Clic en una cara la hace crecer; Mayús crece toda la cara conectada; arrastra para elegir cuánto · Esc cancela';
+      return (growAllEl.checked ? 'Crece toda la cara conectada (Mayús: solo el cuadrito apuntado)' : 'Clic en una cara la hace crecer (Mayús: toda la cara conectada)') +
+        ` · cantidad ${growAmount === null ? 'automática' : `${+growAmount.toFixed(3)} celda(s)`} en el panel; arrastra para otra distancia · Esc cancela`;
     case 'bevel':
       return 'Clic en una arista (marcada en amarillo) para cortarla en chaflán · Tamaño en el panel · Esc sale';
     case 'face':
