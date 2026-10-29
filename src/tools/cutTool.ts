@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { guideVertices, type Guides } from '../core/guides';
 import { intersectionPoints } from '../core/intersections';
 import { crossesPlane, cutPieces, flipPlane, planeOfPolygon, projectToPlane, regionTouchesPiece, triangulateRegion } from '../core/cut';
 import { clipPiece, planeFromPoints, type Piece, type Plane, type Vec3 } from '../core/piece';
@@ -20,6 +21,8 @@ const ACCENT = 0xffb020;
 export interface SnapOptions {
   /** Libre sobre la arista más cercana (Alt), en vez de solo vértices, puntos medios y centros de cara. */
   edge?: boolean;
+  /** Recibe las aristas prolongadas y los vértices virtuales de la zona, para dibujarlos. */
+  onGuides?: (guides: Guides) => void;
 }
 
 const EDGE_RADIUS = 0.15;
@@ -27,7 +30,8 @@ const EDGE_RADIUS = 0.15;
 /**
  * Elige el candidato más cercano: un vértice, el punto medio de una arista, el centro de una cara, un punto de referencia
  * o un punto donde las aristas de una pieza cruzan la cara de otra (el vértice que tendría la unión). Con `edge`, también
- * el punto más cercano sobre una arista. Si no hay ninguno cerca, ajusta a media celda en X/Z y media placa en Y.
+ * el punto más cercano sobre una arista. También los vértices virtuales: donde se cruzan las aristas prolongadas de las piezas
+ * apoyadas en un mismo plano (un cubo pequeño sobre la pared de otro). Si no hay ninguno cerca, ajusta a media celda en X/Z y media placa en Y.
  */
 export function snapPoint(hit: THREE.Vector3, model: ModelScene, options: SnapOptions = {}): Vec3 {
   let best: Vec3 | null = null;
@@ -73,6 +77,9 @@ export function snapPoint(hit: THREE.Vector3, model: ModelScene, options: SnapOp
   }
   // Gana el candidato más cercano al cursor.
   if (near.length >= 2) for (const p of intersectionPoints(near)) consider(p);
+  const guides = guideVertices([hit.x, hit.y, hit.z], model.all());
+  options.onGuides?.(guides);
+  for (const p of guides.points) consider(p);
   if (best) {
     const b: Vec3 = best;
     return [b[0], b[1], b[2]];
