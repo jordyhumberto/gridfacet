@@ -20,6 +20,7 @@ import { Selection } from './selection';
 import type { Guides } from './core/guides';
 import { CutTool, snapPoint, type SnapOptions } from './tools/cutTool';
 import { FillTool } from './tools/fillTool';
+import { OutlineTool } from './tools/outlineTool';
 import { boundsOf, centerChange, rotateFreeChange, scaleChange } from './core/transform';
 import { connectedPieces, sizeOf } from './core/connected';
 import { bevelChange, edgeBetween, nearestEdge, type PieceEdge } from './core/bevel';
@@ -131,6 +132,9 @@ const vertexTool = new VertexTool(
   (message) => (statusEl.textContent = message),
   (points) => withSymmetryPoints(points, symmetry),
 );
+/** Crecer (false) o hundir (true) la figura marcada con la herramienta Figura. */
+let outlineSink = false;
+const outlineTool = new OutlineTool(scene3d, model, () => outlineSink, (normal) => growClickDistance(normal), (message) => (statusEl.textContent = message), (pieces) => expand(pieces));
 const fillTool = new FillTool(scene3d, model, () => color, (message) => (statusEl.textContent = message), expand);
 const cutTool = new CutTool(scene3d, model, selection, (message) => (statusEl.textContent = message), () => symmetry);
 
@@ -230,7 +234,7 @@ if (import.meta.env.DEV) {
   };
 }
 
-type Mode = 'place' | 'cut' | 'select' | 'erase' | 'grow' | 'sink' | 'fill' | 'vertex' | 'paint' | 'shape' | 'bevel' | 'face';
+type Mode = 'place' | 'cut' | 'select' | 'erase' | 'grow' | 'sink' | 'fill' | 'outline' | 'vertex' | 'paint' | 'shape' | 'bevel' | 'face';
 let mode: Mode = 'place';
 let selected = 0;
 let rotation = 0;
@@ -375,7 +379,7 @@ function showPointInfo(point: Vec3 | null): void {
 }
 
 /** Añade un punto a Cortar o Rellenar; si el cursor está a pocos píxeles del primero, cierra en vez de marcar uno nuevo. */
-function addToolPoint(tool: CutTool | FillTool, point: Vec3, minToClose: number, event: PointerEvent): void {
+function addToolPoint(tool: CutTool | FillTool | OutlineTool, point: Vec3, minToClose: number, event: PointerEvent): void {
   const first = tool.firstPoint;
   if (first && tool.pointCount >= minToClose) {
     const s = screenOf(first);
@@ -414,7 +418,7 @@ function updateHover(event: PointerEvent): void {
   }
   const hit = castRay(event, true);
   updateCursor(hit !== undefined && !backdrops.includes(hit.object));
-  if (mode !== 'cut' && mode !== 'fill') showGuides(null);
+  if (mode !== 'cut' && mode !== 'fill' && mode !== 'outline') showGuides(null);
   if (mode === 'cut') {
     snapped = markTarget(event, hit);
     showPointInfo(snapped);
@@ -426,6 +430,12 @@ function updateHover(event: PointerEvent): void {
     snapped = markTarget(event, hit);
     showPointInfo(snapped);
     fillTool.setHover(snapped);
+    return;
+  }
+  if (mode === 'outline') {
+    snapped = markTarget(event, hit);
+    showPointInfo(snapped);
+    outlineTool.setHover(snapped);
     return;
   }
   if (mode === 'grow' || mode === 'sink') {
@@ -1862,6 +1872,10 @@ renderer.domElement.addEventListener('pointerup', (e) => {
     if (snapped) addToolPoint(fillTool, snapped, 4, e);
     return;
   }
+  if (mode === 'outline') {
+    if (snapped) addToolPoint(outlineTool, snapped, 3, e);
+    return;
+  }
   if (mode === 'erase') {
     removeAt(e);
     setEraseHover(undefined);
@@ -1896,6 +1910,7 @@ renderer.domElement.addEventListener('pointerleave', () => {
   refreshGhost();
   if (mode === 'cut') cutTool.setHover(null);
   if (mode === 'fill') fillTool.setHover(null);
+  if (mode === 'outline') outlineTool.setHover(null);
   if (mode === 'vertex') vertexTool.clearHover();
   if (mode === 'erase') setEraseHover(undefined);
   if (((mode === 'grow' || mode === 'sink') && !growDrag) || mode === 'paint' || mode === 'face') setFaceHover(undefined);
@@ -1951,6 +1966,11 @@ fillButton.textContent = 'L Rellenar';
 fillButton.title = 'Marca puntos y se llena el volumen que encierran';
 fillButton.addEventListener('click', () => setMode(mode === 'fill' ? 'place' : 'fill'));
 toolsEl.appendChild(fillButton);
+const outlineButton = document.createElement('button');
+outlineButton.textContent = 'Figura';
+outlineButton.title = 'Marca los puntos de una figura sobre una superficie y haz crecer o hundir solo esa figura';
+outlineButton.addEventListener('click', () => setMode(mode === 'outline' ? 'place' : 'outline'));
+toolsEl.appendChild(outlineButton);
 const vertexButton = document.createElement('button');
 vertexButton.textContent = 'V Vértice';
 vertexButton.title = 'Añade un vértice de referencia a la pieza elegida';
@@ -2028,6 +2048,24 @@ fillActionsEl.addEventListener('click', (e) => {
   else if (action === 'undo') fillTool.undoPoint();
   else if (action === 'cancel') fillTool.cancel();
 });
+const outlineActionsEl = document.getElementById('outlineActions')!;
+function syncOutlineActions(): void {
+  outlineActionsEl.hidden = mode !== 'outline';
+  outlineActionsEl.querySelector<HTMLButtonElement>('[data-outline="undo"]')!.hidden = !outlineTool.hasPoints;
+  outlineActionsEl.querySelector('[data-outline="grow"]')!.classList.toggle('active', !outlineSink);
+  outlineActionsEl.querySelector('[data-outline="sink"]')!.classList.toggle('active', outlineSink);
+}
+outlineTool.onPhaseChange = syncOutlineActions;
+outlineActionsEl.addEventListener('click', (e) => {
+  const action = (e.target as HTMLElement).dataset.outline;
+  if (action === 'apply') outlineTool.apply();
+  else if (action === 'undo') outlineTool.undoPoint();
+  else if (action === 'cancel') outlineTool.cancel();
+  else if (action === 'grow' || action === 'sink') {
+    outlineSink = action === 'sink';
+    outlineTool.update();
+  }
+});
 cutActionsEl.addEventListener('click', (e) => {
   const action = (e.target as HTMLElement).dataset.cut;
   if (action === 'close' || action === 'apply') cutTool.apply();
@@ -2044,6 +2082,7 @@ function setMode(next: Mode): void {
     setFaceHover(undefined);
   }
   if (mode === 'fill') fillTool.deactivate();
+  if (mode === 'outline') outlineTool.deactivate();
   if (mode === 'vertex') vertexTool.deactivate();
   if (mode === 'erase') setEraseHover(undefined);
   if (mode === 'grow' || mode === 'sink') {
@@ -2059,17 +2098,19 @@ function setMode(next: Mode): void {
   mode = next;
   if (mode === 'cut') cutTool.activate();
   if (mode === 'fill') fillTool.activate();
+  if (mode === 'outline') outlineTool.activate();
   if (mode === 'vertex') vertexTool.activate();
   hasTarget = false;
   refreshGhost();
   syncButtons();
   syncCutActions();
   syncFillActions();
+  syncOutlineActions();
   syncVertexActions();
   syncShapeActions();
   syncBevelActions();
   syncFaceActions();
-  growActionsEl.hidden = mode !== 'grow' && mode !== 'sink';
+  growActionsEl.hidden = mode !== 'grow' && mode !== 'sink' && mode !== 'outline';
   syncPlaceRows();
   syncSelectionActions();
 }
@@ -2103,6 +2144,7 @@ function syncButtons(): void {
   bevelButton.classList.toggle('active', mode === 'bevel');
   faceButton.classList.toggle('active', mode === 'face');
   fillButton.classList.toggle('active', mode === 'fill');
+  outlineButton.classList.toggle('active', mode === 'outline');
   vertexButton.classList.toggle('active', mode === 'vertex');
 }
 syncButtons();
@@ -2302,7 +2344,7 @@ helpModal.addEventListener('pointerdown', (e) => {
 
 /** Rehacer: con un corte o relleno a medias repone el punto quitado; si no, rehace el último bloque. */
 function redo(): void {
-  const tool = mode === 'cut' ? cutTool : mode === 'fill' ? fillTool : null;
+  const tool = mode === 'cut' ? cutTool : mode === 'fill' ? fillTool : mode === 'outline' ? outlineTool : null;
   if (tool?.hasRedo) tool.redoPoint();
   else model.redo();
 }
@@ -2315,6 +2357,7 @@ const MODE_INFO: Record<Mode, { name: string; color: string }> = {
   erase: { name: 'Borrar', color: '#ff5a5a' },
   cut: { name: 'Cortar', color: '#ff9a3d' },
   fill: { name: 'Rellenar', color: '#45d19a' },
+  outline: { name: 'Figura', color: '#b58cff' },
   vertex: { name: 'Vértice', color: '#ffd34d' },
   grow: { name: 'Crecer', color: '#b58cff' },
   sink: { name: 'Hundir', color: '#ff6b8b' },
@@ -2355,6 +2398,13 @@ function hintText(): string {
       if (n === 0) return 'Rellenar: marca 4 o más puntos que no estén en un mismo plano; se pegan a vértices y a la rejilla';
       if (n < 4) return `Rellenar: ${n} punto(s) marcados · faltan ${4 - n} como mínimo`;
       return `Rellenar: ${n} puntos · clic en el primero (o Enter) crea la pieza que los une`;
+    }
+    case 'outline': {
+      const n = outlineTool.pointCount;
+      const verb = outlineSink ? 'hundir' : 'crecer';
+      if (n === 0) return `Figura: marca los puntos de la figura que quieres ${verb} sobre una cara · se pegan a vértices y a los virtuales`;
+      if (n < 3) return `Figura: ${n} punto(s) marcados · faltan ${3 - n} como mínimo`;
+      return `Figura: ${n} puntos · clic en el primero (o Enter) para ${verb} solo esa figura`;
     }
     case 'cut': {
       if (cutTool.isClosed) return 'Región cerrada · F cambia el lado que se borra (el rojo) · Enter corta';
@@ -2424,6 +2474,15 @@ const GUIDE: Record<Mode, [string, string][]> = {
   fill: [
     ['Clic', 'marcar un punto (4 o más, no todos en un mismo plano); se pega también a los vértices virtuales (puntos morados donde se cruzan aristas prolongadas)'],
     ['Clic en el primer punto / Enter', 'crear la pieza que los une'],
+    ['Ctrl+Z / Ctrl+Y', 'quitar / reponer el último punto'],
+    ['Esc', 'cancelar'],
+    ...VIEW_GUIDE.slice(0, 2),
+  ],
+  outline: [
+    ['Clic', 'marcar un punto de la figura (3 o más, en una misma cara); se pega a vértices, aristas prolongadas y vértices virtuales'],
+    ['Clic en el primer punto / Enter', 'hacer crecer o hundir solo esa figura, en perpendicular a la cara'],
+    ['Crecer / Hundir (panel)', 'elige el sentido; la vista previa es morada al crecer y roja al hundir'],
+    ['Panel “Cuánto”', '¼, ⅓, ½, 1 celda, valor exacto o Auto'],
     ['Ctrl+Z / Ctrl+Y', 'quitar / reponer el último punto'],
     ['Esc', 'cancelar'],
     ...VIEW_GUIDE.slice(0, 2),
@@ -2727,7 +2786,7 @@ window.addEventListener('keydown', (e) => {
   if ((e.ctrlKey || e.metaKey) && key === 'z') {
     e.preventDefault();
     // Con una herramienta a medias, Ctrl+Z retrocede un punto en vez de deshacer el último bloque.
-    const tool = mode === 'cut' ? cutTool : mode === 'fill' ? fillTool : null;
+    const tool = mode === 'cut' ? cutTool : mode === 'fill' ? fillTool : mode === 'outline' ? outlineTool : null;
     if (tool?.hasPoints) {
       tool.undoPoint();
       return;
@@ -2847,7 +2906,7 @@ window.addEventListener('keydown', (e) => {
   if (key === 'a') setHintHidden(!hintHidden);
   if (key === 'w') setWireframe(!isWireframeView());
   if (key === 'x' || key === 'y' || key === 'z') toggleSymmetry(key);
-  if (mode !== 'cut' && mode !== 'fill' && mode !== 'vertex') {
+  if (mode !== 'cut' && mode !== 'fill' && mode !== 'vertex' && mode !== 'outline') {
     if (key === 'm') mirrorSelected('x');
     if (key === 'n') mirrorSelected('z');
     if (key === 'u') mirrorSelected('y');
@@ -2870,6 +2929,12 @@ window.addEventListener('keydown', (e) => {
       fillTool.apply();
     }
     if (key === 'escape') fillTool.cancel();
+  } else if (mode === 'outline') {
+    if (key === 'enter') {
+      e.preventDefault();
+      outlineTool.apply();
+    }
+    if (key === 'escape') outlineTool.cancel();
   } else if (key === 'escape') {
     selection.clear();
   } else if (key === 'r' && mode === 'select' && selection.size > 0) {

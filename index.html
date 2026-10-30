@@ -45,7 +45,7 @@
       #faceActions select { background: #2a2f3a; color: inherit; border: 1px solid #3d4452; border-radius: 6px; padding: 2px 4px; font-size: 12px; }
       #repeatRow input[type=number] { width: 40px; }
       #growActions input[type=number] { width: 56px; background: #2a2f3a; color: inherit; border: 1px solid #3d4452; border-radius: 6px; padding: 2px 4px; font-size: 12px; }
-      #growActions button.active, #placeSize button.active, #slabThick button.active { background: #3b6fd4; border-color: #3b6fd4; color: #fff; }
+      #growActions button.active, #outlineActions button.active, #placeSize button.active, #slabThick button.active { background: #3b6fd4; border-color: #3b6fd4; color: #fff; }
       #placeSize input[type=number], #slabThick input[type=number] { width: 56px; background: #2a2f3a; color: inherit; border: 1px solid #3d4452; border-radius: 6px; padding: 2px 4px; font-size: 12px; }
       #placeSize, #slabThick, #slopeRow { margin-top: 6px; }
       #slopeRow select { background: #2a2f3a; color: inherit; border: 1px solid #3d4452; border-radius: 6px; padding: 2px 4px; font-size: 12px; }
@@ -245,6 +245,13 @@
             <button data-grow-amount="1">1</button>
             <input type="number" id="growAmount" min="0.05" step="0.05" placeholder="otro" title="Cantidad exacta en celdas (1 = el ancho de un cubo)" />
             <label title="Crece o hunde toda la cara conectada a la apuntada (por ejemplo un muro de 3×3 cubos) y no solo el cuadrito. Ctrl invierte la opción mientras se hace clic"><input type="checkbox" id="growAll" /> Toda la cara conectada</label>
+          </div>
+          <div class="row" id="outlineActions" hidden>
+            <button data-outline="grow" class="active" title="La figura marcada sube, como un saliente">Crecer</button>
+            <button data-outline="sink" title="La figura marcada baja, como un hueco">Hundir</button>
+            <button data-outline="undo">Quitar punto (Ctrl+Z)</button>
+            <button data-outline="apply">Aplicar (Enter)</button>
+            <button data-outline="cancel">Cancelar (Esc)</button>
           </div>
           <div class="row" id="fillActions" hidden>
             <button data-fill="undo">Quitar punto (Ctrl+Z)</button>
