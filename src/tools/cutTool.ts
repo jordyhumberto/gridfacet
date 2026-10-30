@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { guideVertices, type Guides } from '../core/guides';
 import { intersectionPoints } from '../core/intersections';
+import { candidatePoints } from '../core/vertexCandidates';
 import { crossesPlane, cutPieces, flipPlane, planeOfPolygon, projectToPlane, regionTouchesPiece, triangulateRegion } from '../core/cut';
 import { clipPiece, planeFromPoints, type Piece, type Plane, type Vec3 } from '../core/piece';
 import { reflections, type Symmetry } from '../core/symmetry';
@@ -23,9 +24,13 @@ export interface SnapOptions {
   edge?: boolean;
   /** Recibe las aristas prolongadas y los vértices virtuales de la zona, para dibujarlos. */
   onGuides?: (guides: Guides) => void;
+  /** En cuántas partes se divide cada arista y el lado de cada cara para ofrecer más puntos (0 o 1: sin subdivisiones). */
+  divisions?: number;
 }
 
 const EDGE_RADIUS = 0.15;
+/** Hasta dónde (celdas) se ofrecen los puntos de la rejilla de marcado alrededor del cursor. */
+const GRID_REACH = 0.9;
 
 /**
  * Elige el candidato más cercano: un vértice, el punto medio de una arista, el centro de una cara, un punto de referencia
@@ -78,6 +83,13 @@ export function snapPoint(hit: THREE.Vector3, model: ModelScene, options: SnapOp
   // Gana el candidato más cercano al cursor.
   if (near.length >= 2) for (const p of intersectionPoints(near)) consider(p);
   const guides = guideVertices([hit.x, hit.y, hit.z], model.all());
+  // Más puntos por cara: subdivisiones de las aristas y cuadrícula dentro de las caras de las piezas cercanas.
+  if ((options.divisions ?? 0) >= 2 && near.length > 0) {
+    const reach = GRID_REACH;
+    guides.grid = candidatePoints(near, near, { divisions: options.divisions!, faces: true })
+      .points.filter((p) => Math.hypot(p[0] - hit.x, p[1] - hit.y, p[2] - hit.z) < reach);
+    for (const p of guides.grid) consider(p);
+  }
   options.onGuides?.(guides);
   for (const p of guides.points) consider(p);
   if (best) {

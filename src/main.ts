@@ -343,6 +343,12 @@ function showGuides(guides: Guides | null, center?: Vec3): void {
     lines.renderOrder = 9;
     guideOverlay.add(lines);
   }
+  for (const p of guides.grid.filter(near)) {
+    const dot = new THREE.Mesh(new THREE.SphereGeometry(0.02, 8, 6), new THREE.MeshBasicMaterial({ color: 0xd8dcea, transparent: true, opacity: 0.85, depthTest: false }));
+    dot.position.set(p[0], p[1], p[2]);
+    dot.renderOrder = 9;
+    guideOverlay.add(dot);
+  }
   for (const p of guides.points.filter(near)) {
     const dot = new THREE.Mesh(new THREE.SphereGeometry(0.035, 10, 8), new THREE.MeshBasicMaterial({ color: 0x9a7bff, depthTest: false }));
     dot.position.set(p[0], p[1], p[2]);
@@ -351,10 +357,19 @@ function showGuides(guides: Guides | null, center?: Vec3): void {
   }
 }
 
+/** En cuántas partes se divide cada arista y cada cara para marcar puntos en Cortar, Rellenar y Figura. */
+let snapDivisions = 4;
+const snapRowEl = document.getElementById('snapRow')!;
+const snapDensityEl = document.getElementById('snapDensity') as HTMLSelectElement;
+snapDensityEl.addEventListener('change', () => {
+  snapDivisions = Number(snapDensityEl.value);
+  snapDensityEl.blur();
+});
+
 /** Punto que se marcaría ahora: sobre el plano de trabajo si hay uno, si no sobre lo que apunta el cursor. */
 function markTarget(event: PointerEvent, hit: THREE.Intersection | undefined): Vec3 | null {
   const center = (point: THREE.Vector3): Vec3 => [point.x, point.y, point.z];
-  const options = (point: THREE.Vector3): SnapOptions => ({ edge: event.altKey, onGuides: (guides) => showGuides(guides, center(point)) });
+  const options = (point: THREE.Vector3): SnapOptions => ({ edge: event.altKey, divisions: snapDivisions, onGuides: (guides) => showGuides(guides, center(point)) });
   if (!workPlane) {
     if (!hit) showGuides(null);
     return hit ? snapPoint(hit.point, model, options(hit.point)) : null;
@@ -2051,6 +2066,7 @@ fillActionsEl.addEventListener('click', (e) => {
 const outlineActionsEl = document.getElementById('outlineActions')!;
 function syncOutlineActions(): void {
   outlineActionsEl.hidden = mode !== 'outline';
+  snapRowEl.hidden = mode !== 'outline' && mode !== 'cut' && mode !== 'fill';
   outlineActionsEl.querySelector<HTMLButtonElement>('[data-outline="undo"]')!.hidden = !outlineTool.hasPoints;
   outlineActionsEl.querySelector('[data-outline="grow"]')!.classList.toggle('active', !outlineSink);
   outlineActionsEl.querySelector('[data-outline="sink"]')!.classList.toggle('active', outlineSink);

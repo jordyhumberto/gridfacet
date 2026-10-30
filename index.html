@@ -246,6 +246,15 @@
             <input type="number" id="growAmount" min="0.05" step="0.05" placeholder="otro" title="Cantidad exacta en celdas (1 = el ancho de un cubo)" />
             <label title="Crece o hunde toda la cara conectada a la apuntada (por ejemplo un muro de 3×3 cubos) y no solo el cuadrito. Ctrl invierte la opción mientras se hace clic"><input type="checkbox" id="growAll" /> Toda la cara conectada</label>
           </div>
+          <div class="row" id="snapRow" hidden title="Puntos que se ofrecen al marcar en Cortar, Rellenar y Figura: cada arista y cada cara se divide en esa cantidad de partes (se ven como puntos claros cerca del cursor)">
+            <small>Puntos por cara:</small>
+            <select id="snapDensity">
+              <option value="0">Pocos (solo vértices)</option>
+              <option value="2">Mitades</option>
+              <option value="4" selected>Cuartos</option>
+              <option value="8">Octavos</option>
+            </select>
+          </div>
           <div class="row" id="outlineActions" hidden>
             <button data-outline="grow" class="active" title="La figura marcada sube, como un saliente">Crecer</button>
             <button data-outline="sink" title="La figura marcada baja, como un hueco">Hundir</button>
