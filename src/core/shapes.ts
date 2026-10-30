@@ -111,7 +111,7 @@ function eulerTurn([ax, ay, az]: Vec3): (p: Vec3) => Vec3 {
 }
 
 /** Giro mínimo que lleva el eje +Y hacia `to` (Rodrigues); sirve para apoyar la cara plana de una sección sobre una superficie. */
-function tiltUpTo(to: Vec3): (p: Vec3) => Vec3 {
+export function tiltUpTo(to: Vec3): (p: Vec3) => Vec3 {
   const length = Math.hypot(to[0], to[1], to[2]) || 1;
   const n: Vec3 = [to[0] / length, to[1] / length, to[2] / length];
   if (n[1] > 1 - 1e-9) return (p) => p;

@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { CATALOG, SLAB_THICKNESS, buildPieces, buildSlab } from './core/catalog';
 import { clearanceLift, flatSurface, magnetLines, snapSpan } from './core/placement';
+import { seatOnSlope, slopeKindOf, standOnSlope, type SlopeKind } from './core/slope';
 import { coplanarRegion, type FaceOf } from './core/region';
 import type { Change } from './core/cut';
 import type { ExportMode } from './core/export';
@@ -474,12 +475,22 @@ function updateHover(event: PointerEvent): void {
   // Apoyada sobre una cara horizontal, la pieza admite medias placas; al lado de otra, queda a ras de placa.
   // Se avanza un poco por la normal para caer en la celda vecina a la cara tocada.
   const probe = hit.point.clone().addScaledVector(hit.face.normal, 0.001);
+  slopeAim = null;
   if (CATALOG[selected].grows) {
     slabTarget = slabAt(hit, probe);
     hasTarget = slabTarget !== null;
     refreshGhost();
     return;
   }
+  // Sobre una pendiente (el techo de rampas) la pieza se asienta o se apoya perpendicular, en vez de caer a la rejilla.
+  const slope = slopeKindOf([hit.face.normal.x, hit.face.normal.y, hit.face.normal.z], slopeMode);
+  if (slope) {
+    slopeAim = { kind: slope, n: [hit.face.normal.x, hit.face.normal.y, hit.face.normal.z], point: [hit.point.x, hit.point.y, hit.point.z] };
+    hasTarget = Math.abs(hit.point.x - 0.5) < gridSize / 2 + 0.5 && Math.abs(hit.point.z - 0.5) < gridSize / 2 + 0.5 && hit.point.y >= 0;
+    refreshGhost();
+    return;
+  }
+  slopeAim = null;
   // Sobre una cara plana la pieza se apoya justo en ella, aunque no caiga en la rejilla de placas (por ejemplo encima de una lámina);
   // sobre una inclinada se alinea a media placa.
   const flatTop = hit.face.normal.y > 0.999;
@@ -594,6 +605,39 @@ function slabAt(hit: THREE.Intersection, probe: THREE.Vector3): typeof slabTarge
   return { axis, sign, surface, tangentMin: [x, y, z] };
 }
 
+/** Qué hacer al apuntar a una cara inclinada, y a dónde. */
+let slopeAim: { kind: SlopeKind; n: Vec3; point: Vec3 } | null = null;
+let slopeMode: SlopeKind | 'grid' = 'seat';
+const slopeModeEl = document.getElementById('slopeMode') as HTMLSelectElement;
+slopeModeEl.addEventListener('change', () => {
+  slopeMode = slopeModeEl.value as SlopeKind | 'grid';
+  slopeAim = null;
+  slopeModeEl.blur();
+  hasTarget = false;
+  refreshGhost();
+});
+
+/** La pieza elegida sobre la pendiente apuntada: asentada (vertical con la base cortada) o perpendicular a ella. */
+function slopeParts(def: (typeof CATALOG)[number], others: Piece[]): Piece[] {
+  if (!slopeAim) return [];
+  const { kind, n, point } = slopeAim;
+  const parts = buildPieces(def, 0, 0, 0, rotation, color, placeSizeOf() ?? 1);
+  const box = boundsOf(parts)!;
+  const [w, d] = [box.max[0] - box.min[0], box.max[2] - box.min[2]];
+  const length = Math.hypot(...n);
+  const unit: Vec3 = [n[0] / length, n[1] / length, n[2] / length];
+  if (kind === 'seat') {
+    // El centro de la huella sigue al cursor en pasos de un cuarto de su tamaño y se imanta a las aristas cercanas.
+    const x = snapSpan(point[0], w, magnetLines(others, 0, point, w + 0.6)) + w / 2;
+    const z = snapSpan(point[2], d, magnetLines(others, 2, point, d + 0.6)) + d / 2;
+    return seatOnSlope(parts, unit, point, [x, z]);
+  }
+  // Perpendicular: el punto se ajusta a 1/8 de celda en horizontal y se recalcula su altura sobre el plano.
+  const [x, z] = [Math.round(point[0] / 0.125) * 0.125, Math.round(point[2] / 0.125) * 0.125];
+  const y = point[1] - (unit[0] * (x - point[0]) + unit[2] * (z - point[2])) / unit[1];
+  return standOnSlope(parts, unit, [x, y, z]);
+}
+
 /** Piezas que se colocarían ahora; un elemento del catálogo puede componerse de varias partes convexas. */
 function currentParts(): Piece[] {
   const def = CATALOG[selected];
@@ -606,6 +650,7 @@ function currentParts(): Piece[] {
     if (axis === 1 && sign > 0) slab = translatePiece(slab, 0, clearanceLift([slab], others), 0);
     return expand([slab]);
   }
+  if (slopeAim) return expand(slopeParts(def, others));
   const parts = buildPieces(def, target.cx + target.ox, target.cy, target.cz + target.oz, rotation, color, placeSizeOf() ?? 1);
   const lift = clearanceLift(parts, others);
   return expand(lift > 0 ? parts.map((part) => translatePiece(part, 0, lift, 0)) : parts);
@@ -1994,6 +2039,7 @@ const slabThickRow = document.getElementById('slabThick')!;
 function syncPlaceRows(): void {
   placeSizeRow.hidden = mode !== 'place';
   slabThickRow.hidden = mode !== 'place' || !CATALOG[selected].grows;
+  document.getElementById('slopeRow')!.hidden = mode !== 'place' || CATALOG[selected].grows === true;
 }
 
 function selectPiece(index: number): void {
@@ -2292,6 +2338,7 @@ const VIEW_GUIDE: [string, string][] = [
 const GUIDE: Record<Mode, [string, string][]> = {
   place: [
     ['Clic', 'colocar la pieza elegida (la lámina crece desde la cara apuntada)'],
+    ['En pendientes', 'sobre el techo de rampas o una cara inclinada la pieza se asienta (vertical, con la base cortada a la rampa) o se apoya perpendicular; se elige en el panel'],
     ['Tamaño ¾ · ½ · ⅓ · ¼', 'la pieza sigue al cursor dentro de la cara, en pasos de un cuarto de su tamaño, y se imanta a las aristas de las piezas cercanas y a la rejilla'],
     ['Ctrl+clic', 'borrar la pieza apuntada'],
     ['R', 'rotar la pieza 90°'],
