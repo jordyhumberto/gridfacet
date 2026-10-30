@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { CATALOG, buildPiece } from './catalog';
 import { volume } from './piece';
-import { boundsOf, centerChange, mirrorChange, mirrorPiece, moveChange, rotateChange, rotateFreeChange, rotationCenter, scaleChange, translatePiece } from './transform';
+import { boundsOf, centerChange, mirrorChange, mirrorPiece, moveChange, rotateChange, rotateFreeChange, rotateQuarterChange, rotationCenter, scaleChange, translatePiece } from './transform';
 
 const cube = (x = 0, z = 0) => buildPiece(CATALOG[0], x, 0, z, 0, 0xabcdef);
 const bounds = (piece: ReturnType<typeof cube>, axis: 0 | 1 | 2) => {
@@ -123,5 +123,42 @@ describe('escala, centro y giro libres', () => {
     const piece = cubeAt(0);
     const [turned] = rotateFreeChange([piece], 'z', 45).added;
     expect(volume(turned)).toBeCloseTo(volume(piece), 6);
+  });
+});
+
+describe('giro de cuartos de vuelta', () => {
+  // Una pieza larga de 2 × 1 × 1 apoyada en el suelo (dos cubos unidos por el mismo grupo no hacen falta: basta una caja).
+  const bar = () => [buildPiece(CATALOG[0], 0, 0, 0, 0, 0xabcdef), buildPiece(CATALOG[0], 1, 0, 0, 0, 0xabcdef)];
+  const size = (pieces: ReturnType<typeof bar>) => {
+    const box = boundsOf(pieces)!;
+    return box.max.map((v, i) => +(v - box.min[i]).toFixed(6));
+  };
+
+  it('sobre Z tumba una barra horizontal y la deja apoyada donde estaba', () => {
+    const { added } = rotateQuarterChange(bar(), 'z', 1);
+    expect(size(added)).toEqual([1, 2, 1]);
+    expect(boundsOf(added)!.min[1]).toBeCloseTo(0);
+  });
+
+  it('sobre X lleva la profundidad a la altura', () => {
+    const { added } = rotateQuarterChange([buildPiece(CATALOG[0], 0, 0, 0, 0, 0xabcdef)], 'x', 1);
+    expect(size(added)).toEqual([1, 1, 1]);
+    expect(added[0].faces.flat().every((p) => p[1] >= -1e-9)).toBe(true);
+  });
+
+  it('cuatro cuartos de vuelta devuelven la forma, el volumen no cambia y dos medias vueltas dejan de cabeza', () => {
+    const pieces = bar();
+    let current = pieces;
+    for (let i = 0; i < 4; i++) current = rotateQuarterChange(current, 'x', 1).added;
+    expect(boundsOf(current)!.min).toEqual(boundsOf(pieces)!.min);
+    expect(boundsOf(current)!.max).toEqual(boundsOf(pieces)!.max);
+    const flipped = rotateQuarterChange(pieces, 'z', 2).added;
+    expect(volume(flipped[0])).toBeCloseTo(volume(pieces[0]));
+  });
+
+  it('el giro es al revés con vueltas negativas', () => {
+    const turned = rotateQuarterChange(bar(), 'z', 1).added;
+    const back = rotateQuarterChange(turned, 'z', -1).added;
+    expect(size(back)).toEqual([2, 1, 1]);
   });
 });
