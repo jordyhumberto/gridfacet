@@ -68,9 +68,10 @@ const GRID_PENALTY = 0.03;
 
 /**
  * Dónde empieza (por su lado menor) una pieza de largo `size` que sigue al cursor sobre un eje: se mueve en pasos
- * de `size / FREE_STEPS` y se imanta a las `lines` cercanas con su borde o con su centro. Se queda dentro de [lo, hi] si se dan.
+ * de `size / FREE_STEPS` y se imanta a las `lines` cercanas con su borde o con su centro. Se queda dentro de [lo, hi] si se dan,
+ * pudiendo sobresalir `overhang` por cada extremo (así sigue la alineación de la rejilla más allá del borde de la cara).
  */
-export function snapSpan(cursor: number, size: number, lines: Iterable<number>, lo = -Infinity, hi = Infinity, weak: Iterable<number> = []): number {
+export function snapSpan(cursor: number, size: number, lines: Iterable<number>, lo = -Infinity, hi = Infinity, weak: Iterable<number> = [], overhang = 0): number {
   const step = size / FREE_STEPS;
   const wanted = cursor - size / 2;
   let best = Math.round(wanted / step) * step;
@@ -88,7 +89,7 @@ export function snapSpan(cursor: number, size: number, lines: Iterable<number>, 
   };
   for (const line of lines) consider(line, 0);
   for (const line of weak) consider(line, GRID_PENALTY);
-  if (hi - lo >= size) best = Math.min(Math.max(best, lo), hi - size);
+  if (hi - lo >= size - overhang * 2) best = Math.min(Math.max(best, lo - overhang), hi - size + overhang);
   return Math.round(best * 1e6) / 1e6;
 }
 

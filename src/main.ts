@@ -570,7 +570,8 @@ function freePlacement(hit: THREE.Intersection, footW: number, footD: number, sc
   const hostBox = flat ?? (host ? boundsOf([host]) : null);
   const place = (a: 0 | 2, size: number): number => {
     if (axis === a) return sign > 0 ? Math.round(point[a] * 1e4) / 1e4 : Math.round(point[a] * 1e4) / 1e4 - size;
-    return snapSpan(point[a], size, edgeLines(others, a, point, size + 0.6), hostBox?.min[a], hostBox?.max[a], cellLines(a, point, size + 0.6));
+    // Puede sobresalir hasta la mitad de su largo del borde de la cara: la mitad queda apoyada y la alineación con la rejilla sigue.
+    return snapSpan(point[a], size, edgeLines(others, a, point, size + 0.6), hostBox?.min[a], hostBox?.max[a], cellLines(a, point, size + 0.6), size / 2);
   };
   // Una pieza de una celda o más también se mueve libre sobre una superficie formada por varias figuras, si cabe en ella.
   const fits = (a: 0 | 1 | 2, size: number): boolean => flat !== null && (axis === a || flat.max[a] - flat.min[a] >= size - 1e-6);
