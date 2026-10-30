@@ -53,6 +53,34 @@ export function rotateChange(pieces: Piece[], quarterTurns: number): Change {
   return { removed: pieces, added: pieces.map((piece) => rotatePieceY(piece, quarterTurns, cx, cz)) };
 }
 
+/**
+ * Gira el conjunto `quarterTurns` cuartos de vuelta (90°) alrededor del eje X, Y o Z que pasa por el centro de su caja.
+ * Como los giros son exactos, las piezas siguen en la rejilla: el centro se lleva a media paso y, si el giro es sobre X o Z,
+ * el conjunto conserva la altura de su base (una T que se tumba sigue apoyada donde estaba).
+ */
+export function rotateQuarterChange(pieces: Piece[], axis: Axis, quarterTurns: number): Change {
+  const box = boundsOf(pieces);
+  const q = ((quarterTurns % 4) + 4) % 4;
+  if (!box || q === 0) return { added: [], removed: [] };
+  const grid = STEP_XZ / 2;
+  const c = box.min.map((v, i) => Math.round((v + box.max[i]) / 2 / grid) * grid) as Vec3;
+  const clean = (v: number): number => Math.round(v * 1e9) / 1e9;
+  const [i, j] = axis === 'x' ? [1, 2] : axis === 'y' ? [2, 0] : [0, 1];
+  const map = (p: Vec3): Vec3 => {
+    const a = p[i] - c[i];
+    const b = p[j] - c[j];
+    const [ra, rb] = [[a, b], [-b, a], [-a, -b], [b, -a]][q];
+    const out: Vec3 = [p[0], p[1], p[2]];
+    out[i] = clean(c[i] + ra);
+    out[j] = clean(c[j] + rb);
+    return out;
+  };
+  const turned = pieces.map((piece) => mapPiece(piece, map));
+  const after = boundsOf(turned)!;
+  const drop = axis === 'y' ? 0 : box.min[1] - after.min[1];
+  return { removed: pieces, added: drop === 0 ? turned : turned.map((piece) => translatePiece(piece, 0, drop, 0)) };
+}
+
 /** Caja que encierra las piezas, o null si no hay ninguna. */
 export function boundsOf(pieces: Piece[]): { min: Vec3; max: Vec3 } | null {
   if (pieces.length === 0) return null;

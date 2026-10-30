@@ -9,7 +9,7 @@ import type { ExportMode } from './core/export';
 import { extrudeFace, faceAt, unitNormal } from './core/extrude';
 import { pieceKey, reflectPiece, reflections, withSymmetry, withSymmetryPoints, type Symmetry } from './core/symmetry';
 import type { Piece, Vec3 } from './core/piece';
-import { STEP_XZ, STEP_Y, mirrorChange, moveChange, rotateChange, translatePiece, type Axis } from './core/transform';
+import { STEP_XZ, STEP_Y, mirrorChange, moveChange, rotateChange, rotateQuarterChange, translatePiece, type Axis } from './core/transform';
 import { parseProjectFull, serializeProject } from './core/project';
 import { canPickOpen, canPickSave, pickOpen, pickSave, writeHandle, type FileHandle } from './fileAccess';
 import { downloadBlob, exportGlb } from './render/glb';
@@ -2496,6 +2496,7 @@ const GUIDE: Record<Mode, [string, string][]> = {
     ['Flechas', 'mover un cuarto de celda (Ctrl: media celda)'],
     ['E / Q · Re Pág / Av Pág', 'subir / bajar un cuarto de celda (Ctrl: media celda)'],
     ['R · Alt+R', 'girar 90° · girar al revés'],
+    ['Alt + flechas', 'tumbar 90°: la parte de arriba va hacia la flecha (según la cámara); dos veces la deja de cabeza'],
     ['M · N · U', 'espejo en X · Z · Y'],
     ['Ctrl+G · Ctrl+Alt+G', 'agrupar · desagrupar'],
     ['Ctrl+C · V · D', 'copiar · pegar · duplicar'],
@@ -2884,10 +2885,10 @@ window.addEventListener('keydown', (e) => {
     pasteClipboard();
     return;
   }
-  // Con Ctrl solo siguen las flechas y Re Pág/Av Pág (paso doble); con Alt solo R y O (girar al revés, mostrar ocultas).
+  // Con Ctrl solo siguen las flechas y Re Pág/Av Pág (paso doble); con Alt solo R y O (girar al revés, mostrar ocultas) y las flechas (tumbar).
   if (e.ctrlKey || e.metaKey) {
     if (!/^(arrow|page)/.test(key)) return;
-  } else if (e.altKey && key !== 'r' && key !== 'o') return;
+  } else if (e.altKey && key !== 'r' && key !== 'o' && !key.startsWith('arrow')) return;
   const fast = e.ctrlKey || e.metaKey;
 
   if (key === 'escape' && (drag || growDrag || marquee)) {
@@ -2917,6 +2918,17 @@ window.addEventListener('keydown', (e) => {
       arrowleft: [-right[0], -right[1]],
     };
     const dir = arrows[key];
+    // Alt + flechas: tumbar la selección un cuarto de vuelta, la parte de arriba va hacia donde apunta la flecha (según la cámara).
+    if (dir && e.altKey && !e.ctrlKey && !e.metaKey) {
+      e.preventDefault();
+      const [dx, dz] = dir;
+      // Eje de giro = arriba × dirección, llevado al eje del mundo más cercano.
+      const k = [dz, -dx];
+      const axis: Axis = Math.abs(k[0]) >= Math.abs(k[1]) ? 'x' : 'z';
+      const turns = (axis === 'x' ? k[0] : k[1]) >= 0 ? 1 : -1;
+      commitTransform(rotateQuarterChange(selectedPieces(), axis, turns));
+      return;
+    }
     if (dir) {
       e.preventDefault();
       moveSelectionBy(dir[0] * stepXZ, 0, dir[1] * stepXZ);
