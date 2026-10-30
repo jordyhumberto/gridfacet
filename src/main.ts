@@ -1605,7 +1605,7 @@ interface GrowDrag {
 }
 let growDrag: GrowDrag | null = null;
 
-/** Paso fino al arrastrar: media celda en horizontal, un sexto de celda (media placa) en vertical. */
+/** Paso fino al arrastrar: un cuarto de celda, en horizontal y en vertical. */
 const growStep = (normal: Vec3): number => (Math.abs(normal[1]) > 0.5 ? STEP_Y : STEP_XZ);
 /**
  * Selector de cantidad: botones con valores fijos (`data-<attr>`, "auto" = sin valor) y un campo para un valor exacto.
@@ -2461,8 +2461,8 @@ const GUIDE: Record<Mode, [string, string][]> = {
     ['Ctrl+arrastrar', 'desde un hueco: recuadro que suma lo de dentro'],
     ['Ctrl+A · K · Esc', 'elegir todo · sumar conectadas · quitar selección'],
     ['Arrastrar pieza', 'mover la selección (Alt: en vertical · Ctrl: paso doble · Esc cancela)'],
-    ['Flechas', 'mover media celda (Ctrl: una celda)'],
-    ['E / Q · Re Pág / Av Pág', 'subir / bajar media placa (Ctrl: una placa)'],
+    ['Flechas', 'mover un cuarto de celda (Ctrl: media celda)'],
+    ['E / Q · Re Pág / Av Pág', 'subir / bajar un cuarto de celda (Ctrl: media celda)'],
     ['R · Alt+R', 'girar 90° · girar al revés'],
     ['M · N · U', 'espejo en X · Z · Y'],
     ['Ctrl+G · Ctrl+Alt+G', 'agrupar · desagrupar'],
@@ -2874,7 +2874,7 @@ window.addEventListener('keydown', (e) => {
   }
 
   if (mode !== 'cut' && mode !== 'fill' && mode !== 'vertex' && selection.size > 0) {
-    // Ctrl duplica el paso: de media celda a una celda, y de media placa a una placa.
+    // Ctrl duplica el paso: de un cuarto a media celda.
     const stepXZ = fast ? 2 * STEP_XZ : STEP_XZ;
     const stepY = fast ? 2 * STEP_Y : STEP_Y;
     const { forward, right } = cameraAxes();
