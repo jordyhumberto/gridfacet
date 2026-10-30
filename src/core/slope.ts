@@ -3,17 +3,19 @@ import { clipPiece, makePiece, type Piece, type Vec3 } from './piece';
 import { tiltUpTo } from './shapes';
 import { boundsOf } from './transform';
 
-/** Una cara es una pendiente si no es vertical ni está alineada con un eje: se apoya algo encima sin que caiga a la rejilla. */
+/** Una cara es una pendiente si no está alineada con un eje: se apoya algo encima sin que caiga a la rejilla. Si además es casi vertical es una pared oblicua. */
 const FLAT = 0.999;
 const STEEP = 0.05;
 
-export type SlopeKind = 'seat' | 'perp';
+export type SlopeKind = 'seat' | 'perp' | 'wall';
 
 /** Cómo colocar una pieza sobre una cara con la normal dada: null si no es una pendiente (cara recta o casi vertical). */
 export function slopeKindOf(normal: Vec3, mode: SlopeKind | 'grid'): SlopeKind | null {
   const length = Math.hypot(...normal) || 1;
   const n = normal.map((v) => v / length);
-  if (mode === 'grid' || Math.max(...n.map(Math.abs)) > FLAT || Math.abs(n[1]) <= STEEP) return null;
+  if (mode === 'grid' || Math.max(...n.map(Math.abs)) > FLAT) return null;
+  // Una pared que no sigue los ejes: la pieza se apoya de pie contra ella, girada para quedar a ras.
+  if (Math.abs(n[1]) <= STEEP) return 'wall';
   // Asentada necesita que la cara mire hacia arriba; por debajo solo cabe apoyarla perpendicular.
   return mode === 'seat' && n[1] > 0 ? 'seat' : 'perp';
 }
@@ -53,6 +55,23 @@ export function seatOnSlope(parts: Piece[], n: Vec3, point: Vec3, center: [numbe
     if (cut) result.push(cut);
   }
   return result;
+}
+
+/**
+ * Apoya la pieza de pie contra una pared vertical con la normal horizontal `n`: su cara de atrás (la de menor z) queda a ras de la pared,
+ * girada alrededor de Y para seguirla. `anchor` es el centro de esa cara a la altura de la base.
+ */
+export function leanOnWall(parts: Piece[], n: Vec3, anchor: Vec3): Piece[] {
+  const box = boundsOf(parts);
+  if (!box) return [];
+  const angle = Math.atan2(n[0], n[2]);
+  const [sin, cos] = [Math.sin(angle), Math.cos(angle)];
+  const mid = (box.min[0] + box.max[0]) / 2;
+  const map = (p: Vec3): Vec3 => {
+    const [u, w] = [p[0] - mid, p[2] - box.min[2]];
+    return [anchor[0] + cos * u + sin * w, anchor[1] + p[1] - box.min[1], anchor[2] - sin * u + cos * w];
+  };
+  return parts.map((part) => makePiece(part.faces.map((face) => face.map(map)), part.color, part.faceColors));
 }
 
 /**

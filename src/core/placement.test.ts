@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { buildPieces, buildSlab, CATALOG, SLAB_THICKNESS } from './catalog';
-import { clearanceLift, flatSurface, magnetLines, snapSpan } from './placement';
+import { clearanceLift, edgeLines, flatSurface, gridLines, magnetLines, snapSpan } from './placement';
 import { volume } from './piece';
 import { boundsOf } from './transform';
 
@@ -168,5 +168,26 @@ describe('superficie continua', () => {
 
   it('sin cara bajo el cursor devuelve null', () => {
     expect(flatSurface([cube(0, 0)], 2, 1, [3, 0.5, 1])).toBeNull();
+  });
+});
+
+describe('imán: bordes de piezas antes que rejilla y centros', () => {
+  it('un borde de pieza gana a la línea de la rejilla de placas', () => {
+    // Escalón de cubitos de ¼ cuyo borde está en 0,25; la rejilla de placas (⅓) cae a 0,0083 de distancia del centro.
+    expect(snapSpan(0.31, 0.25, [0.25, 0.5], undefined, undefined, [1 / 3])).toBeCloseTo(0.25);
+  });
+
+  it('un borde de pieza gana al centrado en esa misma pieza si ambos están cerca', () => {
+    expect(snapSpan(0.4, 0.25, [0.25, 0.5])).toBeCloseTo(0.25);
+  });
+
+  it('sin piezas cerca la rejilla sigue imantando', () => {
+    expect(snapSpan(1.27, 0.5, [], undefined, undefined, [1])).toBeCloseTo(1);
+  });
+
+  it('edgeLines y gridLines por separado forman magnetLines', () => {
+    const cube = at('cube', 1, 0, 0)[0];
+    const around: [number, number, number] = [1.5, 0.1, 0.4];
+    expect(magnetLines([cube], 0, around, 0.6)).toEqual([...edgeLines([cube], 0, around, 0.6), ...gridLines(0, around, 0.6)]);
   });
 });

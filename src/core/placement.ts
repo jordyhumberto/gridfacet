@@ -62,25 +62,32 @@ export function clearanceLift(parts: Piece[], others: Iterable<Piece>): number {
 export const FREE_STEPS = 4;
 /** A qué distancia (en celdas) de una arista o línea de la rejilla se imanta una pieza pequeña. */
 export const MAGNET = 0.1;
+/** Lo que se encarece (en celdas de distancia) imantarse al centro de una línea y a una línea de la rejilla frente a un borde de pieza. */
+const CENTER_PENALTY = 0.03;
+const GRID_PENALTY = 0.03;
 
 /**
  * Dónde empieza (por su lado menor) una pieza de largo `size` que sigue al cursor sobre un eje: se mueve en pasos
  * de `size / FREE_STEPS` y se imanta a las `lines` cercanas con su borde o con su centro. Se queda dentro de [lo, hi] si se dan.
  */
-export function snapSpan(cursor: number, size: number, lines: Iterable<number>, lo = -Infinity, hi = Infinity): number {
+export function snapSpan(cursor: number, size: number, lines: Iterable<number>, lo = -Infinity, hi = Infinity, weak: Iterable<number> = []): number {
   const step = size / FREE_STEPS;
   const wanted = cursor - size / 2;
   let best = Math.round(wanted / step) * step;
   let bestDist = MAGNET;
-  for (const line of lines) {
-    for (const start of [line, line - size, line - size / 2]) {
-      const dist = Math.abs(start - wanted);
+  // Alinear un borde con otra pieza vale más que centrarse en ella, y las líneas de la rejilla valen menos que los bordes de las piezas:
+  // así dos piezas pequeñas se apilan o se alinean sin que las posiciones intermedias les ganen.
+  const consider = (line: number, penalty: number): void => {
+    for (const [start, extra] of [[line, 0], [line - size, 0], [line - size / 2, CENTER_PENALTY]] as const) {
+      const dist = Math.abs(start - wanted) + extra + penalty;
       if (dist < bestDist) {
         bestDist = dist;
         best = start;
       }
     }
-  }
+  };
+  for (const line of lines) consider(line, 0);
+  for (const line of weak) consider(line, GRID_PENALTY);
   if (hi - lo >= size) best = Math.min(Math.max(best, lo), hi - size);
   return Math.round(best * 1e6) / 1e6;
 }
@@ -90,11 +97,22 @@ export function snapSpan(cursor: number, size: number, lines: Iterable<number>, 
  * y las líneas de la rejilla (cada celda en X/Z, cada placa en Y).
  */
 export function magnetLines(pieces: Iterable<Piece>, axis: 0 | 1 | 2, around: [number, number, number], reach: number): number[] {
+  return [...edgeLines(pieces, axis, around, reach), ...gridLines(axis, around, reach)];
+}
+
+/** Los bordes, sobre un eje, de las piezas próximas a `around`. */
+export function edgeLines(pieces: Iterable<Piece>, axis: 0 | 1 | 2, around: [number, number, number], reach: number): number[] {
   const lines: number[] = [];
   for (const piece of pieces) {
     const box = boxOf(piece);
     if ([0, 1, 2].every((i) => around[i] > box.min[i] - reach && around[i] < box.max[i] + reach)) lines.push(box.min[axis], box.max[axis]);
   }
+  return lines;
+}
+
+/** Las líneas de la rejilla sobre un eje (cada celda en X/Z, cada placa en Y) cerca de `around`. */
+export function gridLines(axis: 0 | 1 | 2, around: [number, number, number], reach: number): number[] {
+  const lines: number[] = [];
   const pitch = axis === 1 ? 1 / 3 : 1;
   const first = Math.floor((around[axis] - reach) / pitch);
   for (let k = first; k <= first + Math.ceil((2 * reach) / pitch) + 1; k++) lines.push(k * pitch);
