@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { convexHull } from './hull';
 import { guideVertices } from './guides';
+import { seatOnSlope } from './slope';
 import { makePiece, type Vec3 } from './piece';
 
 const box = (x0: number, y0: number, z0: number, x1: number, y1: number, z1: number) => {
@@ -64,5 +65,40 @@ describe('guideVertices', () => {
     const { points } = guideVertices([0, 1.5, 3], [side, bump]);
     expect(has(points, [0, 0, 1.1])).toBe(true);
     expect(has(points, [0, 0.9, 4])).toBe(true);
+  });
+});
+
+describe('guideVertices sobre pendientes', () => {
+  const s = Math.SQRT1_2;
+  // Rampa de 2 celdas de ancho que sube 1 hacia +z: la cara inclinada mira hacia −z y arriba.
+  const ramp = convexHull([[0, 0, 0], [2, 0, 0], [0, 0, 1], [2, 0, 1], [0, 1, 1], [2, 1, 1]] as Vec3[])!;
+  const slope = makePiece(ramp, 0x88aacc);
+  // Un cubito asentado sobre ella: su base es la pendiente.
+  const n: Vec3 = [0, s, -s];
+  const chimney = seatOnSlope([box(0, 0, 0, 0.5, 0.5, 0.5)], n, [1, 0.5, 0.5], [0.75, 0.5])[0];
+
+  it('las aristas de la base de la pieza asentada se prolongan hasta el borde de la rampa', () => {
+    const { points } = guideVertices([1.5, 0.5, 0.5], [slope, chimney]);
+    // La base de la chimenea cubre x de 0,5 a 1; sus aristas paralelas a z llegan a los bordes alto y bajo de la rampa.
+    expect(has(points, [0.5, 0, 0])).toBe(true);
+    expect(has(points, [0.5, 1, 1])).toBe(true);
+    expect(has(points, [1, 0, 0])).toBe(true);
+    expect(has(points, [1, 1, 1])).toBe(true);
+  });
+
+  it('también hay vértices en los bordes laterales de la rampa', () => {
+    const { points } = guideVertices([1.5, 0.5, 0.5], [slope, chimney]);
+    // Las aristas de la base paralelas a x salen hasta x = 0 y x = 2 en la cara inclinada.
+    expect(points.some((p) => Math.abs(p[0]) < 1e-6 && p[1] > 0.1 && p[1] < 0.9)).toBe(true);
+    expect(points.some((p) => Math.abs(p[0] - 2) < 1e-6 && p[1] > 0.1 && p[1] < 0.9)).toBe(true);
+  });
+
+  it('agrupa caras coplanares aunque sus normales difieran en la precisión de los decimales', () => {
+    const nudged = seatOnSlope([box(0, 0, 0, 0.5, 0.5, 0.5)], [1e-8, s, -s], [1, 0.5, 0.5], [0.75, 0.5])[0];
+    expect(guideVertices([1.5, 0.5, 0.5], [slope, nudged]).points.length).toBeGreaterThan(0);
+  });
+
+  it('sin una pieza apoyada en la pendiente no hay guías', () => {
+    expect(guideVertices([1, 0.5, 0.5], [slope]).points).toEqual([]);
   });
 });
