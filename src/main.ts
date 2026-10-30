@@ -900,12 +900,12 @@ function toggleGroup(id: number): void {
   else selection.set([...selection.list(), ...ids]);
 }
 
-/** Texto de estado con el número de piezas elegidas y la caja que ocupan (celdas y placas de alto). */
+/** Texto de estado con el número de piezas elegidas y la caja que ocupan (en celdas). */
 function selectionLabel(): string {
   const size = sizeOf(selectedPieces());
   if (!size) return '';
   const round = (v: number) => Math.round(v * 100) / 100;
-  return `${selection.size} seleccionada(s) · ${round(size[0])} × ${round(size[2])} celdas, alto ${round(size[1] * 3)} placas (X × Z, Y)`;
+  return `${selection.size} seleccionada(s) · ${round(size[0])} × ${round(size[2])} celdas, alto ${round(size[1])} celdas (X × Z, Y)`;
 }
 
 /** Clic elige una pieza (y su grupo); Ctrl+clic la añade o quita; clic en vacío limpia la selección. */
@@ -1645,7 +1645,7 @@ const slabThickOf = bindAmount('thick', document.getElementById('slabThickInput'
 const growAmountOf = bindAmount('grow-amount', document.getElementById('growAmount') as HTMLInputElement, null, () => gridSize);
 
 /** Un clic sin arrastrar hace crecer lo elegido en el panel; en automático, una celda en horizontal o una placa en vertical. */
-const growClickDistance = (normal: Vec3): number => growAmountOf() ?? (Math.abs(normal[1]) > 0.5 ? 1 / 3 : 1);
+const growClickDistance = (normal: Vec3): number => growAmountOf() ?? (Math.abs(normal[1]) > 0.5 ? 1 / 4 : 1);
 
 function showGrowPreview(): void {
   if (!growDrag) return;
@@ -2446,7 +2446,7 @@ const GUIDE: Record<Mode, [string, string][]> = {
   place: [
     ['Clic', 'colocar la pieza elegida (la lámina crece desde la cara apuntada)'],
     ['En pendientes', 'sobre el techo de rampas o una cara inclinada la pieza se asienta (vertical, con la base cortada a la rampa) o se apoya perpendicular; se elige en el panel'],
-    ['Tamaño ¾ · ½ · ⅓ · ¼', 'la pieza sigue al cursor dentro de la cara, en pasos de un cuarto de su tamaño, y se imanta a las aristas de las piezas cercanas y a la rejilla'],
+    ['Tamaño ¾ · ½ · ¼', 'la pieza sigue al cursor dentro de la cara, en pasos de un cuarto de su tamaño, y se imanta a las aristas de las piezas cercanas y a la rejilla'],
     ['Ctrl+clic', 'borrar la pieza apuntada'],
     ['R', 'rotar la pieza 90°'],
     ['1 – 9', 'elegir pieza del catálogo'],
@@ -2498,7 +2498,7 @@ const GUIDE: Record<Mode, [string, string][]> = {
     ['Clic', 'marcar un punto de la figura (3 o más, en una misma cara); se pega a vértices, aristas prolongadas y vértices virtuales'],
     ['Clic en el primer punto / Enter', 'hacer crecer o hundir solo esa figura, en perpendicular a la cara'],
     ['Crecer / Hundir (panel)', 'elige el sentido; la vista previa es morada al crecer y roja al hundir'],
-    ['Panel “Cuánto”', '¼, ⅓, ½, 1 celda, valor exacto o Auto'],
+    ['Panel “Cuánto”', '¼, ½, ¾, 1 celda, valor exacto o Auto'],
     ['Ctrl+Z / Ctrl+Y', 'quitar / reponer el último punto'],
     ['Esc', 'cancelar'],
     ...VIEW_GUIDE.slice(0, 2),
@@ -2516,7 +2516,7 @@ const GUIDE: Record<Mode, [string, string][]> = {
     ['Ctrl+clic', 'invierte “Toda la cara conectada” solo para ese clic'],
     ['Arrastrar', 'elegir otra distancia al momento'],
     ['Esc', 'cancelar el arrastre / volver'],
-    ['Panel “Cuánto”', '¼, ⅓, ½, 1 celda, valor exacto o Auto'],
+    ['Panel “Cuánto”', '¼, ½, ¾, 1 celda, valor exacto o Auto'],
     ...VIEW_GUIDE.slice(0, 2),
   ],
   sink: [
@@ -2524,7 +2524,7 @@ const GUIDE: Record<Mode, [string, string][]> = {
     ['Ctrl+clic', 'invierte “Toda la cara conectada” solo para ese clic'],
     ['Arrastrar', 'elegir otra distancia al momento (hacia dentro)'],
     ['Esc', 'cancelar el arrastre / volver'],
-    ['Panel “Cuánto”', '¼, ⅓, ½, 1 celda, valor exacto o Auto'],
+    ['Panel “Cuánto”', '¼, ½, ¾, 1 celda, valor exacto o Auto'],
     ...VIEW_GUIDE.slice(0, 2),
   ],
   paint: [

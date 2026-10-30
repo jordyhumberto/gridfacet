@@ -10,7 +10,7 @@ import type { ModelScene } from '../scene';
 import type { Selection } from '../selection';
 
 const SNAP_XZ = 0.5;
-const SNAP_Y = 1 / 6;
+const SNAP_Y = 1 / 4;
 const VERTEX_RADIUS = 0.2;
 /** Cierra la región si el punto repite el primero; en pantalla, main lo ajusta al primero cuando el cursor está cerca. */
 const CLOSE_EPS = 1e-6;

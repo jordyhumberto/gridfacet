@@ -94,7 +94,7 @@ export function snapSpan(cursor: number, size: number, lines: Iterable<number>, 
 
 /**
  * Líneas sobre un eje a las que puede imantarse una pieza que se coloca cerca de `around`: los bordes de las piezas próximas
- * y las líneas de la rejilla (cada celda en X/Z, cada placa en Y).
+ * y las líneas de la rejilla (cada celda en X/Z, cada cuarto de celda en Y).
  */
 export function magnetLines(pieces: Iterable<Piece>, axis: 0 | 1 | 2, around: [number, number, number], reach: number): number[] {
   return [...edgeLines(pieces, axis, around, reach), ...gridLines(axis, around, reach)];
@@ -110,10 +110,10 @@ export function edgeLines(pieces: Iterable<Piece>, axis: 0 | 1 | 2, around: [num
   return lines;
 }
 
-/** Las líneas de la rejilla sobre un eje (cada celda en X/Z, cada placa en Y) cerca de `around`. */
+/** Las líneas de la rejilla sobre un eje (cada celda en X/Z, cada cuarto de celda en Y) cerca de `around`. */
 export function gridLines(axis: 0 | 1 | 2, around: [number, number, number], reach: number): number[] {
   const lines: number[] = [];
-  const pitch = axis === 1 ? 1 / 3 : 1;
+  const pitch = axis === 1 ? 1 / 4 : 1;
   const first = Math.floor((around[axis] - reach) / pitch);
   for (let k = first; k <= first + Math.ceil((2 * reach) / pitch) + 1; k++) lines.push(k * pitch);
   return lines;
