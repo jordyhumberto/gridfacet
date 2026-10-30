@@ -1779,6 +1779,33 @@ function startDrag(event: PointerEvent): void {
   };
 }
 
+/**
+ * Recorta un desplazamiento para que la selección no salga de la malla (X y Z entre ±mitad, Y de 0 al alto).
+ * Una pieza que ya estaba fuera (tras achicar la malla) solo puede volver hacia dentro.
+ */
+function clampToGrid(dx: number, dy: number, dz: number): [number, number, number] {
+  const box = boundsOf(selectedPieces());
+  if (!box) return [dx, dy, dz];
+  const half = gridSize / 2;
+  const limits: [number, number][] = [[-half, half], [0, gridSize], [-half, half]];
+  const clamp = (axis: number, d: number): number => {
+    const low = Math.min(limits[axis][0] - box.min[axis], 0);
+    const high = Math.max(limits[axis][1] - box.max[axis], 0);
+    return Math.round(Math.min(Math.max(d, low), high) * 1e6) / 1e6;
+  };
+  return [clamp(0, dx), clamp(1, dy), clamp(2, dz)];
+}
+
+/** Mueve la selección con el teclado sin salirse de la malla. */
+function moveSelectionBy(dx: number, dy: number, dz: number): void {
+  const [x, y, z] = clampToGrid(dx, dy, dz);
+  if (x === 0 && y === 0 && z === 0) {
+    statusEl.textContent = 'Límite de la malla';
+    return;
+  }
+  commitTransform(moveChange(selectedPieces(), x, y, z));
+}
+
 function updateDrag(event: PointerEvent): void {
   if (!drag) return;
   if (!drag.moved && Math.hypot(event.clientX - drag.startX, event.clientY - drag.startY) <= CLICK_MAX_MOVE) return;
@@ -1797,6 +1824,7 @@ function updateDrag(event: PointerEvent): void {
     const step = withCtrl(event) ? 2 * STEP_XZ : STEP_XZ;
     drag.offset.set(snapTo(delta.x, step), 0, snapTo(delta.z, step));
   }
+  drag.offset.set(...clampToGrid(drag.offset.x, drag.offset.y, drag.offset.z));
   for (const object of selectedObjects()) object.position.copy(drag.offset);
   const { x, y, z } = drag.offset;
   statusEl.textContent = `Mover: X ${x}, Y ${+y.toFixed(3)}, Z ${z} (Esc cancela)`;
@@ -2888,15 +2916,15 @@ window.addEventListener('keydown', (e) => {
     const dir = arrows[key];
     if (dir) {
       e.preventDefault();
-      commitTransform(moveChange(selectedPieces(), dir[0] * stepXZ, 0, dir[1] * stepXZ));
+      moveSelectionBy(dir[0] * stepXZ, 0, dir[1] * stepXZ);
       return;
     }
     if (key === 'pageup' || key === 'e') {
-      commitTransform(moveChange(selectedPieces(), 0, stepY, 0));
+      moveSelectionBy(0, stepY, 0);
       return;
     }
     if (key === 'pagedown' || key === 'q') {
-      commitTransform(moveChange(selectedPieces(), 0, -stepY, 0));
+      moveSelectionBy(0, -stepY, 0);
       return;
     }
   }
