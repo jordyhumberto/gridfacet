@@ -59,16 +59,16 @@ export function seatOnSlope(parts: Piece[], n: Vec3, point: Vec3, center: [numbe
  * Apoya la pieza plana sobre la pendiente, apuntando hacia fuera de ella (en la dirección de la normal): el centro de su
  * base cae en `point`. Sirve para clavar algo en una superficie inclinada.
  */
-export function standOnSlope(parts: Piece[], n: Vec3, point: Vec3): Piece[] {
+export function standOnSlope(parts: Piece[], n: Vec3, point: Vec3, spin = 0): Piece[] {
   const box = boundsOf(parts);
   if (!box) return [];
   const base: Vec3 = [(box.min[0] + box.max[0]) / 2, box.min[1], (box.min[2] + box.max[2]) / 2];
-  const tilt = tiltUpTo(n);
+  const orient = orientation(n, spin);
   return parts.map((part) =>
     makePiece(
       part.faces.map((face) =>
         face.map((p): Vec3 => {
-          const r = tilt([p[0] - base[0], p[1] - base[1], p[2] - base[2]]);
+          const r = orient([p[0] - base[0], p[1] - base[1], p[2] - base[2]]);
           return [r[0] + point[0], r[1] + point[1], r[2] + point[2]];
         }),
       ),
@@ -76,4 +76,54 @@ export function standOnSlope(parts: Piece[], n: Vec3, point: Vec3): Piece[] {
       part.faceColors,
     ),
   );
+}
+
+const unitOf = (v: Vec3): Vec3 => {
+  const length = Math.hypot(v[0], v[1], v[2]) || 1;
+  return [v[0] / length, v[1] / length, v[2] / length];
+};
+const crossOf = (a: Vec3, b: Vec3): Vec3 => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+const dotOf = (a: Vec3, b: Vec3): number => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+
+/** El giro de `standOnSlope`: lleva +Y hacia la normal y después gira `spin` radianes alrededor de ella. */
+function orientation(normal: Vec3, spin: number): (p: Vec3) => Vec3 {
+  const n = unitOf(normal);
+  const tilt = tiltUpTo(n);
+  if (Math.abs(spin) < 1e-9) return tilt;
+  const [cos, sin] = [Math.cos(spin), Math.sin(spin)];
+  return (p) => {
+    const r = tilt(p);
+    const nxr = crossOf(n, r);
+    const along = dotOf(n, r) * (1 - cos);
+    return [r[0] * cos + nxr[0] * sin + n[0] * along, r[1] * cos + nxr[1] * sin + n[1] * along, r[2] * cos + nxr[2] * sin + n[2] * along];
+  };
+}
+
+/** Los dos ejes de la pieza (sus lados X y Z) apoyada sobre una cara con la normal dada y girada `spin`; es el marco con el que se alinea. */
+export function slopeAxes(n: Vec3, spin = 0): [Vec3, Vec3] {
+  const orient = orientation(n, spin);
+  return [orient([1, 0, 0]), orient([0, 0, 1])];
+}
+
+/**
+ * Giro (radianes) con el que una pieza apoyada en esa cara queda con sus lados paralelos a los de la cara: se toma la arista
+ * más larga y se resuelve módulo 90°, así un cuadrado no tiene "delante". Con la cara de una rampa recta es 0.
+ */
+export function faceSpin(n: Vec3, face: Vec3[]): number {
+  const [ax, az] = slopeAxes(n);
+  let best = 0;
+  let longest = 1e-6;
+  face.forEach((p, i) => {
+    const q = face[(i + 1) % face.length];
+    const edge: Vec3 = [q[0] - p[0], q[1] - p[1], q[2] - p[2]];
+    const length = Math.hypot(...edge);
+    if (length <= longest + 1e-9) return;
+    longest = length;
+    // Giro positivo alrededor de la normal lleva X hacia −Z, así que alinear X con la arista pide el ángulo opuesto.
+    best = -Math.atan2(dotOf(edge, az), dotOf(edge, ax));
+  });
+  const quarter = Math.PI / 2;
+  let spin = best - Math.round(best / quarter) * quarter;
+  if (Math.abs(spin) < 1e-6) spin = 0;
+  return spin;
 }

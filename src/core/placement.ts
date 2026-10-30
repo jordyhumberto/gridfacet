@@ -1,7 +1,9 @@
 import { boundsOf } from './transform';
-import { faceNormal, type Piece, type Vec3 } from './piece';
+import { clipPiece, faceNormal, makePiece, volume, type Piece, type Vec3 } from './piece';
 
 const OVERLAP = 1e-4;
+/** Volumen compartido (celdas cúbicas) por debajo del cual dos piezas solo se tocan. */
+const SHARED_VOLUME = 1e-6;
 /** Las piezas se suben en pasos de media placa (1/6 de celda), el paso vertical más fino de la rejilla. */
 const LIFT_STEP = 1 / 6;
 
@@ -15,10 +17,24 @@ function boxOf(piece: Piece): { min: number[]; max: number[] } {
   return box;
 }
 
+/** Si `part`, subida `lift`, comparte volumen con `other`: se recorta contra cada cara de `other` (ambas son convexas). */
+function intersects(part: Piece, lift: number, other: Piece): boolean {
+  let rest: Piece | null = lift === 0 ? part : makePiece(part.faces.map((face) => face.map((p): Vec3 => [p[0], p[1] + lift, p[2]])), part.color);
+  for (const face of other.faces) {
+    const n = faceNormal(face);
+    const length = Math.hypot(n[0], n[1], n[2]) || 1;
+    const unit: Vec3 = [n[0] / length, n[1] / length, n[2] / length];
+    rest = clipPiece(rest, { n: unit, d: unit[0] * face[0][0] + unit[1] * face[0][1] + unit[2] * face[0][2] });
+    if (!rest) return false;
+  }
+  return volume(rest) > SHARED_VOLUME;
+}
+
 /**
  * Cuánto hay que subir (en celdas, múltiplo de media placa) las piezas nuevas para que no se metan en las existentes:
  * al apoyarse sobre un desnivel, el cubo de 1 × 1 cubre también celdas más altas que la que se apunta.
- * Compara cajas envolventes, así que es conservador con las piezas inclinadas.
+ * Las cajas envolventes descartan lo lejano y el recorte exacto confirma el choque, así que una pieza pegada a una cara
+ * inclinada o entre otras muy juntas no sube sin motivo.
  */
 export function clearanceLift(parts: Piece[], others: Iterable<Piece>): number {
   const box = boundsOf(parts);
@@ -31,7 +47,8 @@ export function clearanceLift(parts: Piece[], others: Iterable<Piece>): number {
       return (
         box.min[0] < o.max[0] - OVERLAP && o.min[0] < box.max[0] - OVERLAP &&
         box.min[2] < o.max[2] - OVERLAP && o.min[2] < box.max[2] - OVERLAP &&
-        box.min[1] + lift < o.max[1] - OVERLAP && o.min[1] < box.max[1] + lift - OVERLAP
+        box.min[1] + lift < o.max[1] - OVERLAP && o.min[1] < box.max[1] + lift - OVERLAP &&
+        parts.some((part) => intersects(part, lift, other))
       );
     });
     if (!blocker) return lift;

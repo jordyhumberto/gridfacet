@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { buildPieces, CATALOG } from './catalog';
-import { slopeKindOf, planeHeight, seatOnSlope, standOnSlope } from './slope';
+import { faceSpin, slopeAxes, slopeKindOf, planeHeight, seatOnSlope, standOnSlope } from './slope';
 import { volume, type Vec3 } from './piece';
 import { boundsOf } from './transform';
 
@@ -57,5 +57,32 @@ describe('pendientes', () => {
     expect(centroid[1]).toBeCloseTo(1 + n[1] * 0.25, 6);
     // Nada atraviesa el plano de la pendiente.
     for (const p of pts) expect(-s * (p[0] - 1) + s * (p[1] - 1)).toBeGreaterThan(-1e-6);
+  });
+
+  it('el giro alinea los lados de la pieza con las aristas de la cara', () => {
+    const n: Vec3 = [-s, s, 0];
+    const [ax, az] = slopeAxes(n);
+    // Cara rectangular de la pendiente girada 30° alrededor de su normal.
+    const a = Math.PI / 6;
+    const u: Vec3 = [ax[0] * Math.cos(a) + az[0] * Math.sin(a), ax[1] * Math.cos(a) + az[1] * Math.sin(a), ax[2] * Math.cos(a) + az[2] * Math.sin(a)];
+    const v: Vec3 = [az[0] * Math.cos(a) - ax[0] * Math.sin(a), az[1] * Math.cos(a) - ax[1] * Math.sin(a), az[2] * Math.cos(a) - ax[2] * Math.sin(a)];
+    const face: Vec3[] = [[0, 0, 0], u, [u[0] + v[0] * 0.5, u[1] + v[1] * 0.5, u[2] + v[2] * 0.5], [v[0] * 0.5, v[1] * 0.5, v[2] * 0.5]];
+    const spin = faceSpin(n, face);
+    const [bx] = slopeAxes(n, spin);
+    expect(Math.abs(bx[0] * u[0] + bx[1] * u[1] + bx[2] * u[2])).toBeCloseTo(1, 6);
+  });
+
+  it('una cara alineada con los ejes no necesita giro', () => {
+    const n: Vec3 = [-s, s, 0];
+    const [ax, az] = slopeAxes(n);
+    const face: Vec3[] = [[0, 0, 0], ax, [ax[0] + az[0], ax[1] + az[1], ax[2] + az[2]], az];
+    expect(faceSpin(n, face)).toBe(0);
+  });
+
+  it('perpendicular con giro: la base sigue apoyada en el punto', () => {
+    const n: Vec3 = [-s, s, 0];
+    const [stood] = standOnSlope(cube(0.5), n, [1, 1, 0], 0.4);
+    expect(volume(stood)).toBeCloseTo(0.125, 6);
+    for (const p of stood.faces.flat()) expect(-s * (p[0] - 1) + s * (p[1] - 1)).toBeGreaterThan(-1e-6);
   });
 });

@@ -10,6 +10,18 @@ const at = (id: string, cx: number, cyPlates: number, cz: number, scale = 1) => 
 const small = (cx: number, cyPlates: number, cz: number) => at('cube', cx, cyPlates, cz, 0.5);
 
 describe('subir para no meterse en otras piezas', () => {
+  it('una pieza pegada a una rampa no sube aunque sus cajas se solapen', () => {
+    // La rampa sube hacia +z (alto = z); su caja ocupa toda la celda pero sobre la parte baja hay aire.
+    const ramp = at('ramp', 0, 0, 0);
+    const box = boundsOf(ramp)!;
+    // Cubito de ¼ sobre la pendiente (alto 0,75 a z = 0,5, donde la rampa llega a 0,5), dentro de su caja envolvente.
+    const bit = at('cube', 0.25, 2.25, 0.5, 0.25);
+    const bitBox = boundsOf(bit)!;
+    const overlapsBox = [0, 1, 2].every((i) => bitBox.min[i] < box.max[i] && box.min[i] < bitBox.max[i]);
+    expect(overlapsBox).toBe(true);
+    expect(clearanceLift(bit, ramp)).toBe(0);
+  });
+
   it('sin nada debajo no sube', () => {
     expect(clearanceLift(at('cube', 0, 0, 0), [])).toBe(0);
   });
