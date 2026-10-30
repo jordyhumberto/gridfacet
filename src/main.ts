@@ -533,9 +533,12 @@ function updateHover(event: PointerEvent): void {
   // Sobre una cara plana la pieza se apoya justo en ella, aunque no caiga en la rejilla de placas (por ejemplo encima de una lámina);
   // sobre una inclinada se alinea a media placa.
   const flatTop = hit.face.normal.y > 0.999;
+  // Colgada de una cara plana de abajo, la pieza queda debajo de ella: su base es la cara menos su alto.
+  const flatBottom = hit.face.normal.y < -0.999;
+  const hangHeight = (CATALOG[selected].heightPlates / 3) * (placeSizeOf() ?? 1);
   target = {
     cx: Math.floor(probe.x),
-    cy: flatTop ? (Math.round(hit.point.y * 1e4) / 1e4) * 3 : Math.abs(hit.face.normal.y) > 0.5 ? Math.floor(probe.y * 6 + 1e-6) / 2 : Math.floor(probe.y * 3),
+    cy: flatTop ? (Math.round(hit.point.y * 1e4) / 1e4) * 3 : flatBottom ? (Math.round((hit.point.y - hangHeight) * 1e4) / 1e4) * 3 : Math.abs(hit.face.normal.y) > 0.5 ? Math.floor(probe.y * 6 + 1e-6) / 2 : Math.floor(probe.y * 3),
     cz: Math.floor(probe.z),
     ox: 0,
     oz: 0,
