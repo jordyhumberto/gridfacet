@@ -19,6 +19,8 @@ export interface Guides {
   lines: Segment[];
   /** Las aristas de las piezas vecinas (de otros planos) proyectadas sobre esa cara, recortadas a ella. */
   projected: Segment[];
+  /** Puntos de la rejilla de marcado cerca del cursor (subdivisiones de aristas y cuadrícula de las caras). Los rellena quien llama. */
+  grid: Vec3[];
 }
 
 const sub = (a: Vec3, b: Vec3): Vec3 => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
@@ -115,7 +117,7 @@ export function guideVertices(hit: Vec3, pieces: Piece[]): Guides {
   const lines: Segment[] = [];
   const projected: Segment[] = [];
   for (const group of groups) collect(group, near, hit, points, lines, projected);
-  return { points: [...points.values()], lines, projected };
+  return { points: [...points.values()], lines, projected, grid: [] };
 }
 
 type Line2 = { p: [number, number]; r: [number, number] };

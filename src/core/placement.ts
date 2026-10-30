@@ -68,9 +68,10 @@ const GRID_PENALTY = 0.03;
 
 /**
  * Dónde empieza (por su lado menor) una pieza de largo `size` que sigue al cursor sobre un eje: se mueve en pasos
- * de `size / FREE_STEPS` y se imanta a las `lines` cercanas con su borde o con su centro. Se queda dentro de [lo, hi] si se dan.
+ * de `size / FREE_STEPS` y se imanta a las `lines` cercanas con su borde o con su centro. Se queda dentro de [lo, hi] si se dan,
+ * pudiendo sobresalir `overhang` por cada extremo (así sigue la alineación de la rejilla más allá del borde de la cara).
  */
-export function snapSpan(cursor: number, size: number, lines: Iterable<number>, lo = -Infinity, hi = Infinity, weak: Iterable<number> = []): number {
+export function snapSpan(cursor: number, size: number, lines: Iterable<number>, lo = -Infinity, hi = Infinity, weak: Iterable<number> = [], overhang = 0): number {
   const step = size / FREE_STEPS;
   const wanted = cursor - size / 2;
   let best = Math.round(wanted / step) * step;
@@ -88,13 +89,13 @@ export function snapSpan(cursor: number, size: number, lines: Iterable<number>, 
   };
   for (const line of lines) consider(line, 0);
   for (const line of weak) consider(line, GRID_PENALTY);
-  if (hi - lo >= size) best = Math.min(Math.max(best, lo), hi - size);
+  if (hi - lo >= size - overhang * 2) best = Math.min(Math.max(best, lo - overhang), hi - size + overhang);
   return Math.round(best * 1e6) / 1e6;
 }
 
 /**
  * Líneas sobre un eje a las que puede imantarse una pieza que se coloca cerca de `around`: los bordes de las piezas próximas
- * y las líneas de la rejilla (cada celda en X/Z, cada placa en Y).
+ * y las líneas de la rejilla (cada celda en X/Z, cada cuarto de celda en Y).
  */
 export function magnetLines(pieces: Iterable<Piece>, axis: 0 | 1 | 2, around: [number, number, number], reach: number): number[] {
   return [...edgeLines(pieces, axis, around, reach), ...gridLines(axis, around, reach)];
@@ -110,10 +111,10 @@ export function edgeLines(pieces: Iterable<Piece>, axis: 0 | 1 | 2, around: [num
   return lines;
 }
 
-/** Las líneas de la rejilla sobre un eje (cada celda en X/Z, cada placa en Y) cerca de `around`. */
+/** Las líneas de la rejilla sobre un eje (cada celda en X/Z, cada cuarto de celda en Y) cerca de `around`. */
 export function gridLines(axis: 0 | 1 | 2, around: [number, number, number], reach: number): number[] {
   const lines: number[] = [];
-  const pitch = axis === 1 ? 1 / 3 : 1;
+  const pitch = axis === 1 ? 1 / 4 : 1;
   const first = Math.floor((around[axis] - reach) / pitch);
   for (let k = first; k <= first + Math.ceil((2 * reach) / pitch) + 1; k++) lines.push(k * pitch);
   return lines;

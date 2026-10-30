@@ -1,9 +1,9 @@
 import type { Change } from './cut';
 import { keepGroup, makePiece, type Piece, type Vec3 } from './piece';
 
-/** Paso horizontal (celdas) y vertical (celdas) más fino al mover: media celda y media placa. */
-export const STEP_XZ = 0.5;
-export const STEP_Y = 1 / 6;
+/** Paso más fino al mover, en horizontal y en vertical: un cuarto de celda. */
+export const STEP_XZ = 0.25;
+export const STEP_Y = 0.25;
 
 function mapPiece(piece: Piece, map: (p: Vec3) => Vec3): Piece {
   return keepGroup(makePiece(piece.faces.map((face) => face.map(map)), piece.color, piece.faceColors), piece);

@@ -190,4 +190,11 @@ describe('imán: bordes de piezas antes que rejilla y centros', () => {
     const around: [number, number, number] = [1.5, 0.1, 0.4];
     expect(magnetLines([cube], 0, around, 0.6)).toEqual([...edgeLines([cube], 0, around, 0.6), ...gridLines(0, around, 0.6)]);
   });
+
+  it('puede sobresalir hasta la mitad de su largo del borde de la cara para seguir la rejilla', () => {
+    // Cara de 1.5 a 3.5: un cubo de 1 se alinea con la línea 1 y con la 4 aunque sobresalga medio cubo.
+    expect(snapSpan(1.5, 1, [1, 4], 1.5, 3.5, [], 0.5)).toBeCloseTo(1);
+    expect(snapSpan(4.0, 1, [1, 4], 1.5, 3.5, [], 0.5)).toBeCloseTo(3);
+    expect(snapSpan(1.5, 1, [], 1.5, 3.5)).toBeCloseTo(1.5);
+  });
 });
