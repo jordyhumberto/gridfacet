@@ -47,15 +47,15 @@ function canonical(n: Vec3, d: number): { n: Vec3; d: number } {
  * vértices de ninguna pieza, pero son los puntos que hace falta poder marcar para cortar o rellenar.
  */
 export function guideVertices(hit: Vec3, pieces: Piece[]): Guides {
-  const groups = new Map<string, PlaneGroup>();
+  const groups: PlaneGroup[] = [];
   for (const piece of pieces) {
     for (const face of piece.faces) {
       const raw = unit(faceNormal(face));
       const { n, d } = canonical(raw, dot(raw, face[0]));
       if (Math.abs(dot(n, hit) - d) > PLANE_RANGE) continue;
-      const key = `${n.map((v) => Math.round(v * 1e4)).join(',')}|${Math.round(d * 1e4)}`;
-      let group = groups.get(key);
-      if (!group) groups.set(key, (group = { n, d, faces: [], pieces: new Set() }));
+      // Mismo plano si la normal coincide y la distancia al origen también (con margen: las caras inclinadas no salen exactas).
+      let group = groups.find((g) => dot(g.n, n) > 1 - 1e-7 && Math.abs(g.d - d) < 1e-4);
+      if (!group) groups.push((group = { n, d, faces: [], pieces: new Set() }));
       group.faces.push({ face });
       group.pieces.add(piece);
     }
@@ -63,7 +63,7 @@ export function guideVertices(hit: Vec3, pieces: Piece[]): Guides {
 
   const points = new Map<string, Vec3>();
   const lines: Segment[] = [];
-  for (const group of groups.values()) {
+  for (const group of groups) {
     if (group.pieces.size < 2) continue;
     collect(group, hit, points, lines);
   }
