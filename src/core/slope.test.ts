@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { buildPieces, CATALOG } from './catalog';
-import { slopeKindOf, planeHeight, seatOnSlope, standOnSlope } from './slope';
+import { faceSpin, leanOnWall, slopeAxes, slopeKindOf, planeHeight, seatOnSlope, standOnSlope } from './slope';
 import { volume, type Vec3 } from './piece';
 import { boundsOf } from './transform';
 
@@ -11,7 +11,8 @@ describe('pendientes', () => {
   it('reconoce pendientes y deja las caras rectas y verticales como están', () => {
     expect(slopeKindOf([0, 1, 0], 'seat')).toBeNull();
     expect(slopeKindOf([1, 0, 0], 'seat')).toBeNull();
-    expect(slopeKindOf([0.7, 0.01, 0.7], 'seat')).toBeNull(); // faceta vertical de un cilindro
+    expect(slopeKindOf([0.7, 0.01, 0.7], 'seat')).toBe('wall'); // faceta vertical de un cilindro o pared oblicua
+    expect(slopeKindOf([0.7, 0.01, 0.7], 'grid')).toBeNull();
     expect(slopeKindOf([s, s, 0], 'seat')).toBe('seat');
     expect(slopeKindOf([s, s, 0], 'perp')).toBe('perp');
     expect(slopeKindOf([s, s, 0], 'grid')).toBeNull();
@@ -57,5 +58,47 @@ describe('pendientes', () => {
     expect(centroid[1]).toBeCloseTo(1 + n[1] * 0.25, 6);
     // Nada atraviesa el plano de la pendiente.
     for (const p of pts) expect(-s * (p[0] - 1) + s * (p[1] - 1)).toBeGreaterThan(-1e-6);
+  });
+
+  it('el giro alinea los lados de la pieza con las aristas de la cara', () => {
+    const n: Vec3 = [-s, s, 0];
+    const [ax, az] = slopeAxes(n);
+    // Cara rectangular de la pendiente girada 30° alrededor de su normal.
+    const a = Math.PI / 6;
+    const u: Vec3 = [ax[0] * Math.cos(a) + az[0] * Math.sin(a), ax[1] * Math.cos(a) + az[1] * Math.sin(a), ax[2] * Math.cos(a) + az[2] * Math.sin(a)];
+    const v: Vec3 = [az[0] * Math.cos(a) - ax[0] * Math.sin(a), az[1] * Math.cos(a) - ax[1] * Math.sin(a), az[2] * Math.cos(a) - ax[2] * Math.sin(a)];
+    const face: Vec3[] = [[0, 0, 0], u, [u[0] + v[0] * 0.5, u[1] + v[1] * 0.5, u[2] + v[2] * 0.5], [v[0] * 0.5, v[1] * 0.5, v[2] * 0.5]];
+    const spin = faceSpin(n, face);
+    const [bx] = slopeAxes(n, spin);
+    expect(Math.abs(bx[0] * u[0] + bx[1] * u[1] + bx[2] * u[2])).toBeCloseTo(1, 6);
+  });
+
+  it('una cara alineada con los ejes no necesita giro', () => {
+    const n: Vec3 = [-s, s, 0];
+    const [ax, az] = slopeAxes(n);
+    const face: Vec3[] = [[0, 0, 0], ax, [ax[0] + az[0], ax[1] + az[1], ax[2] + az[2]], az];
+    expect(faceSpin(n, face)).toBe(0);
+  });
+
+  it('perpendicular con giro: la base sigue apoyada en el punto', () => {
+    const n: Vec3 = [-s, s, 0];
+    const [stood] = standOnSlope(cube(0.5), n, [1, 1, 0], 0.4);
+    expect(volume(stood)).toBeCloseTo(0.125, 6);
+    for (const p of stood.faces.flat()) expect(-s * (p[0] - 1) + s * (p[1] - 1)).toBeGreaterThan(-1e-6);
+  });
+
+  it('de pie contra una pared oblicua: a ras, sin atravesarla y centrada en el ancla', () => {
+    const n: Vec3 = [s, 0, s]; // pared a 45° que mira a +x +z
+    const [leaned] = leanOnWall(cube(0.5), n, [1, 0, 1]);
+    expect(volume(leaned)).toBeCloseTo(0.125, 6);
+    const pts = leaned.faces.flat();
+    // Ningún punto queda detrás de la pared (n · (p − ancla) ≥ 0) y la cara de atrás la toca.
+    const depth = pts.map((p) => s * (p[0] - 1) + s * (p[2] - 1));
+    expect(Math.min(...depth)).toBeCloseTo(0, 6);
+    expect(Math.max(...depth)).toBeCloseTo(0.5, 6);
+    expect(Math.min(...pts.map((p) => p[1]))).toBeCloseTo(0, 6);
+    // Centrada a lo largo de la pared: la tangente es (s, 0, −s).
+    const along = pts.map((p) => s * (p[0] - 1) - s * (p[2] - 1));
+    expect((Math.min(...along) + Math.max(...along)) / 2).toBeCloseTo(0, 6);
   });
 });

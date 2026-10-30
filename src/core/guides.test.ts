@@ -102,3 +102,37 @@ describe('guideVertices sobre pendientes', () => {
     expect(guideVertices([1, 0.5, 0.5], [slope]).points).toEqual([]);
   });
 });
+
+describe('guideVertices: aristas de piezas vecinas proyectadas', () => {
+  // Cubo grande (0..2) y un cubito encima que no toca la cara frontal z = 2: está retranqueado 0,5 y desplazado.
+  const big = box(0, 0, 0, 2, 2, 2);
+  const top = box(0.6, 2, 0.4, 1.1, 2.5, 1.2);
+
+  it('las aristas del cubito de arriba se proyectan sobre la cara frontal del cubo grande', () => {
+    const { points, projected } = guideVertices([1, 1.8, 2], [big, top]);
+    // Sus aristas verticales x = 0,6 y x = 1,1 caen sobre la cara frontal y llegan al borde superior (y = 2).
+    expect(has(points, [0.6, 2, 2])).toBe(true);
+    expect(has(points, [1.1, 2, 2])).toBe(true);
+    expect(projected.length).toBeGreaterThan(0);
+  });
+
+  it('también en una cara lateral', () => {
+    const { points } = guideVertices([2, 1.8, 1], [big, top]);
+    // Aristas de z = 0,4 y z = 1,2 proyectadas sobre la cara x = 2.
+    expect(has(points, [2, 2, 0.4])).toBe(true);
+    expect(has(points, [2, 2, 1.2])).toBe(true);
+  });
+
+  it('en la cara inclinada de una rampa con una pieza al lado', () => {
+    const ramp = makePiece(convexHull([[0, 0, 0], [2, 0, 0], [0, 0, 1], [2, 0, 1], [0, 1, 1], [2, 1, 1]] as Vec3[])!, 0x88aacc);
+    const post = box(2, 0, 0.3, 2.4, 0.8, 0.7);
+    const { points } = guideVertices([1.6, 0.5, 0.5], [ramp, post]);
+    // La arista x = 2 del poste, proyectada sobre la rampa, cruza las del borde de la rampa en su borde lateral.
+    expect(points.length).toBeGreaterThan(0);
+  });
+
+  it('no marca como virtuales los vértices reales', () => {
+    const { points } = guideVertices([1, 1.8, 2], [big, top]);
+    expect(has(points, [0, 0, 2])).toBe(false);
+  });
+});

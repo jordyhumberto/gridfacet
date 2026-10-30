@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { buildPieces, buildSlab, CATALOG, SLAB_THICKNESS } from './catalog';
-import { clearanceLift, flatSurface, magnetLines, snapSpan } from './placement';
+import { clearanceLift, edgeLines, flatSurface, gridLines, magnetLines, snapSpan } from './placement';
 import { volume } from './piece';
 import { boundsOf } from './transform';
 
@@ -10,6 +10,18 @@ const at = (id: string, cx: number, cyPlates: number, cz: number, scale = 1) => 
 const small = (cx: number, cyPlates: number, cz: number) => at('cube', cx, cyPlates, cz, 0.5);
 
 describe('subir para no meterse en otras piezas', () => {
+  it('una pieza pegada a una rampa no sube aunque sus cajas se solapen', () => {
+    // La rampa sube hacia +z (alto = z); su caja ocupa toda la celda pero sobre la parte baja hay aire.
+    const ramp = at('ramp', 0, 0, 0);
+    const box = boundsOf(ramp)!;
+    // Cubito de ¼ sobre la pendiente (alto 0,75 a z = 0,5, donde la rampa llega a 0,5), dentro de su caja envolvente.
+    const bit = at('cube', 0.25, 2.25, 0.5, 0.25);
+    const bitBox = boundsOf(bit)!;
+    const overlapsBox = [0, 1, 2].every((i) => bitBox.min[i] < box.max[i] && box.min[i] < bitBox.max[i]);
+    expect(overlapsBox).toBe(true);
+    expect(clearanceLift(bit, ramp)).toBe(0);
+  });
+
   it('sin nada debajo no sube', () => {
     expect(clearanceLift(at('cube', 0, 0, 0), [])).toBe(0);
   });
@@ -156,5 +168,26 @@ describe('superficie continua', () => {
 
   it('sin cara bajo el cursor devuelve null', () => {
     expect(flatSurface([cube(0, 0)], 2, 1, [3, 0.5, 1])).toBeNull();
+  });
+});
+
+describe('imán: bordes de piezas antes que rejilla y centros', () => {
+  it('un borde de pieza gana a la línea de la rejilla de placas', () => {
+    // Escalón de cubitos de ¼ cuyo borde está en 0,25; la rejilla de placas (⅓) cae a 0,0083 de distancia del centro.
+    expect(snapSpan(0.31, 0.25, [0.25, 0.5], undefined, undefined, [1 / 3])).toBeCloseTo(0.25);
+  });
+
+  it('un borde de pieza gana al centrado en esa misma pieza si ambos están cerca', () => {
+    expect(snapSpan(0.4, 0.25, [0.25, 0.5])).toBeCloseTo(0.25);
+  });
+
+  it('sin piezas cerca la rejilla sigue imantando', () => {
+    expect(snapSpan(1.27, 0.5, [], undefined, undefined, [1])).toBeCloseTo(1);
+  });
+
+  it('edgeLines y gridLines por separado forman magnetLines', () => {
+    const cube = at('cube', 1, 0, 0)[0];
+    const around: [number, number, number] = [1.5, 0.1, 0.4];
+    expect(magnetLines([cube], 0, around, 0.6)).toEqual([...edgeLines([cube], 0, around, 0.6), ...gridLines(0, around, 0.6)]);
   });
 });

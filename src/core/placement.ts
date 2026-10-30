@@ -1,7 +1,9 @@
 import { boundsOf } from './transform';
-import { faceNormal, type Piece, type Vec3 } from './piece';
+import { clipPiece, faceNormal, makePiece, volume, type Piece, type Vec3 } from './piece';
 
 const OVERLAP = 1e-4;
+/** Volumen compartido (celdas cúbicas) por debajo del cual dos piezas solo se tocan. */
+const SHARED_VOLUME = 1e-6;
 /** Las piezas se suben en pasos de media placa (1/6 de celda), el paso vertical más fino de la rejilla. */
 const LIFT_STEP = 1 / 6;
 
@@ -15,10 +17,24 @@ function boxOf(piece: Piece): { min: number[]; max: number[] } {
   return box;
 }
 
+/** Si `part`, subida `lift`, comparte volumen con `other`: se recorta contra cada cara de `other` (ambas son convexas). */
+function intersects(part: Piece, lift: number, other: Piece): boolean {
+  let rest: Piece | null = lift === 0 ? part : makePiece(part.faces.map((face) => face.map((p): Vec3 => [p[0], p[1] + lift, p[2]])), part.color);
+  for (const face of other.faces) {
+    const n = faceNormal(face);
+    const length = Math.hypot(n[0], n[1], n[2]) || 1;
+    const unit: Vec3 = [n[0] / length, n[1] / length, n[2] / length];
+    rest = clipPiece(rest, { n: unit, d: unit[0] * face[0][0] + unit[1] * face[0][1] + unit[2] * face[0][2] });
+    if (!rest) return false;
+  }
+  return volume(rest) > SHARED_VOLUME;
+}
+
 /**
  * Cuánto hay que subir (en celdas, múltiplo de media placa) las piezas nuevas para que no se metan en las existentes:
  * al apoyarse sobre un desnivel, el cubo de 1 × 1 cubre también celdas más altas que la que se apunta.
- * Compara cajas envolventes, así que es conservador con las piezas inclinadas.
+ * Las cajas envolventes descartan lo lejano y el recorte exacto confirma el choque, así que una pieza pegada a una cara
+ * inclinada o entre otras muy juntas no sube sin motivo.
  */
 export function clearanceLift(parts: Piece[], others: Iterable<Piece>): number {
   const box = boundsOf(parts);
@@ -31,7 +47,8 @@ export function clearanceLift(parts: Piece[], others: Iterable<Piece>): number {
       return (
         box.min[0] < o.max[0] - OVERLAP && o.min[0] < box.max[0] - OVERLAP &&
         box.min[2] < o.max[2] - OVERLAP && o.min[2] < box.max[2] - OVERLAP &&
-        box.min[1] + lift < o.max[1] - OVERLAP && o.min[1] < box.max[1] + lift - OVERLAP
+        box.min[1] + lift < o.max[1] - OVERLAP && o.min[1] < box.max[1] + lift - OVERLAP &&
+        parts.some((part) => intersects(part, lift, other))
       );
     });
     if (!blocker) return lift;
@@ -45,25 +62,32 @@ export function clearanceLift(parts: Piece[], others: Iterable<Piece>): number {
 export const FREE_STEPS = 4;
 /** A qué distancia (en celdas) de una arista o línea de la rejilla se imanta una pieza pequeña. */
 export const MAGNET = 0.1;
+/** Lo que se encarece (en celdas de distancia) imantarse al centro de una línea y a una línea de la rejilla frente a un borde de pieza. */
+const CENTER_PENALTY = 0.03;
+const GRID_PENALTY = 0.03;
 
 /**
  * Dónde empieza (por su lado menor) una pieza de largo `size` que sigue al cursor sobre un eje: se mueve en pasos
  * de `size / FREE_STEPS` y se imanta a las `lines` cercanas con su borde o con su centro. Se queda dentro de [lo, hi] si se dan.
  */
-export function snapSpan(cursor: number, size: number, lines: Iterable<number>, lo = -Infinity, hi = Infinity): number {
+export function snapSpan(cursor: number, size: number, lines: Iterable<number>, lo = -Infinity, hi = Infinity, weak: Iterable<number> = []): number {
   const step = size / FREE_STEPS;
   const wanted = cursor - size / 2;
   let best = Math.round(wanted / step) * step;
   let bestDist = MAGNET;
-  for (const line of lines) {
-    for (const start of [line, line - size, line - size / 2]) {
-      const dist = Math.abs(start - wanted);
+  // Alinear un borde con otra pieza vale más que centrarse en ella, y las líneas de la rejilla valen menos que los bordes de las piezas:
+  // así dos piezas pequeñas se apilan o se alinean sin que las posiciones intermedias les ganen.
+  const consider = (line: number, penalty: number): void => {
+    for (const [start, extra] of [[line, 0], [line - size, 0], [line - size / 2, CENTER_PENALTY]] as const) {
+      const dist = Math.abs(start - wanted) + extra + penalty;
       if (dist < bestDist) {
         bestDist = dist;
         best = start;
       }
     }
-  }
+  };
+  for (const line of lines) consider(line, 0);
+  for (const line of weak) consider(line, GRID_PENALTY);
   if (hi - lo >= size) best = Math.min(Math.max(best, lo), hi - size);
   return Math.round(best * 1e6) / 1e6;
 }
@@ -73,11 +97,22 @@ export function snapSpan(cursor: number, size: number, lines: Iterable<number>, 
  * y las líneas de la rejilla (cada celda en X/Z, cada placa en Y).
  */
 export function magnetLines(pieces: Iterable<Piece>, axis: 0 | 1 | 2, around: [number, number, number], reach: number): number[] {
+  return [...edgeLines(pieces, axis, around, reach), ...gridLines(axis, around, reach)];
+}
+
+/** Los bordes, sobre un eje, de las piezas próximas a `around`. */
+export function edgeLines(pieces: Iterable<Piece>, axis: 0 | 1 | 2, around: [number, number, number], reach: number): number[] {
   const lines: number[] = [];
   for (const piece of pieces) {
     const box = boxOf(piece);
     if ([0, 1, 2].every((i) => around[i] > box.min[i] - reach && around[i] < box.max[i] + reach)) lines.push(box.min[axis], box.max[axis]);
   }
+  return lines;
+}
+
+/** Las líneas de la rejilla sobre un eje (cada celda en X/Z, cada placa en Y) cerca de `around`. */
+export function gridLines(axis: 0 | 1 | 2, around: [number, number, number], reach: number): number[] {
+  const lines: number[] = [];
   const pitch = axis === 1 ? 1 / 3 : 1;
   const first = Math.floor((around[axis] - reach) / pitch);
   for (let k = first; k <= first + Math.ceil((2 * reach) / pitch) + 1; k++) lines.push(k * pitch);

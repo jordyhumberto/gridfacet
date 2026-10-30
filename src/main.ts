@@ -1,8 +1,8 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { CATALOG, SLAB_THICKNESS, buildPieces, buildSlab } from './core/catalog';
-import { clearanceLift, flatSurface, magnetLines, snapSpan } from './core/placement';
-import { seatOnSlope, slopeKindOf, standOnSlope, type SlopeKind } from './core/slope';
+import { clearanceLift, edgeLines, flatSurface, gridLines as cellLines, snapSpan } from './core/placement';
+import { faceSpin, leanOnWall, seatOnSlope, slopeAxes, slopeKindOf, standOnSlope, type SlopeKind } from './core/slope';
 import { coplanarRegion, type FaceOf } from './core/region';
 import type { Change } from './core/cut';
 import type { ExportMode } from './core/export';
@@ -25,7 +25,7 @@ import { connectedPieces, sizeOf } from './core/connected';
 import { bevelChange, edgeBetween, nearestEdge, type PieceEdge } from './core/bevel';
 import { buildShape, MAX_RINGS, MAX_SIDES, MIN_RINGS, MIN_SIDES, SECTIONS, SHAPES, type ShapeKind, type ShapeSpec, type SphereSection } from './core/shapes';
 import { facesAt, paintChange, type FaceRef } from './core/paint';
-import { faceColorOf, newGroupId, withGroup } from './core/piece';
+import { faceColorOf, faceNormal, newGroupId, withGroup } from './core/piece';
 import { VertexTool } from './tools/vertexTool';
 import { excavateChange, extrudeFaceChange, mergeChange, repeatChange, sinkCutters, sinkFacesChange, splitFaceChange, triangleCount } from './core/modeling';
 
@@ -200,6 +200,7 @@ if (import.meta.env.DEV) {
   dev.__fill = fillTool;
   dev.__camera = camera;
   dev.__controls = controls;
+  dev.__ghost = () => ghost && new THREE.Box3().setFromObject(ghost);
   // Utilidades de medición: rellenan la escena con cubos y miden el coste de dibujo.
   dev.__stress = (count: number) => {
     const side = Math.ceil(Math.cbrt(count));
@@ -327,10 +328,14 @@ function showGuides(guides: Guides | null, center?: Vec3): void {
   const near = (p: Vec3) => Math.hypot(p[0] - center[0], p[1] - center[1], p[2] - center[2]) < GUIDE_RADIUS;
   const positions: number[] = [];
   for (const [a, b] of guides.lines.slice(0, MAX_GUIDE_LINES)) positions.push(...a, ...b);
-  if (positions.length > 0) {
+  const shadows: number[] = [];
+  for (const [a, b] of guides.projected.slice(0, MAX_GUIDE_LINES)) shadows.push(...a, ...b);
+  // Naranja: aristas prolongadas del mismo plano; turquesa tenue: aristas de piezas vecinas proyectadas sobre la cara.
+  for (const [coords, color, opacity] of [[positions, 0xffb020, 0.8], [shadows, 0x35d0c0, 0.45]] as const) {
+    if (coords.length === 0) continue;
     const geometry = new THREE.BufferGeometry();
-    geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
-    const lines = new THREE.LineSegments(geometry, new THREE.LineBasicMaterial({ color: 0xffb020, transparent: true, opacity: 0.8, depthTest: false }));
+    geometry.setAttribute('position', new THREE.Float32BufferAttribute(coords as number[], 3));
+    const lines = new THREE.LineSegments(geometry, new THREE.LineBasicMaterial({ color, transparent: true, opacity, depthTest: false }));
     lines.renderOrder = 9;
     guideOverlay.add(lines);
   }
@@ -485,7 +490,16 @@ function updateHover(event: PointerEvent): void {
   // Sobre una pendiente (el techo de rampas) la pieza se asienta o se apoya perpendicular, en vez de caer a la rejilla.
   const slope = slopeKindOf([hit.face.normal.x, hit.face.normal.y, hit.face.normal.z], slopeMode);
   if (slope) {
-    slopeAim = { kind: slope, n: [hit.face.normal.x, hit.face.normal.y, hit.face.normal.z], point: [hit.point.x, hit.point.y, hit.point.z] };
+    const n: Vec3 = [hit.face.normal.x, hit.face.normal.y, hit.face.normal.z];
+    const hitId = pieceIdOf(hit);
+    const hitPiece = hitId === undefined ? undefined : model.get(hitId);
+    // El polígono de la cara apuntada: la pieza que la tiene y el plano que pasa por el punto.
+    const face = hitPiece?.faces.find((f) => {
+      const fn = faceNormal(f);
+      const length = Math.hypot(...fn) || 1;
+      return (fn[0] * n[0] + fn[1] * n[1] + fn[2] * n[2]) / length > 0.999 && Math.abs((fn[0] * (hit.point.x - f[0][0]) + fn[1] * (hit.point.y - f[0][1]) + fn[2] * (hit.point.z - f[0][2])) / length) < 1e-3;
+    });
+    slopeAim = { kind: slope, n, point: [hit.point.x, hit.point.y, hit.point.z], face: face ?? null };
     hasTarget = Math.abs(hit.point.x - 0.5) < gridSize / 2 + 0.5 && Math.abs(hit.point.z - 0.5) < gridSize / 2 + 0.5 && hit.point.y >= 0;
     refreshGhost();
     return;
@@ -531,7 +545,7 @@ function freePlacement(hit: THREE.Intersection, footW: number, footD: number, sc
   const hostBox = flat ?? (host ? boundsOf([host]) : null);
   const place = (a: 0 | 2, size: number): number => {
     if (axis === a) return sign > 0 ? Math.round(point[a] * 1e4) / 1e4 : Math.round(point[a] * 1e4) / 1e4 - size;
-    return snapSpan(point[a], size, magnetLines(others, a, point, size + 0.6), hostBox?.min[a], hostBox?.max[a]);
+    return snapSpan(point[a], size, edgeLines(others, a, point, size + 0.6), hostBox?.min[a], hostBox?.max[a], cellLines(a, point, size + 0.6));
   };
   // Una pieza de una celda o más también se mueve libre sobre una superficie formada por varias figuras, si cabe en ella.
   const fits = (a: 0 | 1 | 2, size: number): boolean => flat !== null && (axis === a || flat.max[a] - flat.min[a] >= size - 1e-6);
@@ -547,7 +561,7 @@ function freePlacement(hit: THREE.Intersection, footW: number, footD: number, sc
   }
   const height = (CATALOG[selected].heightPlates / 3) * scale;
   if (axis !== 1 && (scale < 1 || fits(1, height))) {
-    const start = snapSpan(point[1], height, magnetLines(others, 1, point, height + 0.6), hostBox?.min[1], hostBox?.max[1]);
+    const start = snapSpan(point[1], height, edgeLines(others, 1, point, height + 0.6), hostBox?.min[1], hostBox?.max[1], cellLines(1, point, height + 0.6));
     target.cy = start * 3;
   }
 }
@@ -606,7 +620,7 @@ function slabAt(hit: THREE.Intersection, probe: THREE.Vector3): typeof slabTarge
 }
 
 /** Qué hacer al apuntar a una cara inclinada, y a dónde. */
-let slopeAim: { kind: SlopeKind; n: Vec3; point: Vec3 } | null = null;
+let slopeAim: { kind: SlopeKind; n: Vec3; point: Vec3; face: Vec3[] | null } | null = null;
 let slopeMode: SlopeKind | 'grid' = 'seat';
 const slopeModeEl = document.getElementById('slopeMode') as HTMLSelectElement;
 slopeModeEl.addEventListener('change', () => {
@@ -628,14 +642,41 @@ function slopeParts(def: (typeof CATALOG)[number], others: Piece[]): Piece[] {
   const unit: Vec3 = [n[0] / length, n[1] / length, n[2] / length];
   if (kind === 'seat') {
     // El centro de la huella sigue al cursor en pasos de un cuarto de su tamaño y se imanta a las aristas cercanas.
-    const x = snapSpan(point[0], w, magnetLines(others, 0, point, w + 0.6)) + w / 2;
-    const z = snapSpan(point[2], d, magnetLines(others, 2, point, d + 0.6)) + d / 2;
+    const x = snapSpan(point[0], w, edgeLines(others, 0, point, w + 0.6), undefined, undefined, cellLines(0, point, w + 0.6)) + w / 2;
+    const z = snapSpan(point[2], d, edgeLines(others, 2, point, d + 0.6), undefined, undefined, cellLines(2, point, d + 0.6)) + d / 2;
     return seatOnSlope(parts, unit, point, [x, z]);
   }
-  // Perpendicular: el punto se ajusta a 1/8 de celda en horizontal y se recalcula su altura sobre el plano.
-  const [x, z] = [Math.round(point[0] / 0.125) * 0.125, Math.round(point[2] / 0.125) * 0.125];
-  const y = point[1] - (unit[0] * (x - point[0]) + unit[2] * (z - point[2])) / unit[1];
-  return standOnSlope(parts, unit, [x, y, z]);
+  // Perpendicular: la pieza se alinea con los lados de la cara que la recibe y se mueve sobre ella en pasos de un cuarto de su
+  // tamaño, imantada a los bordes de esa cara y de las vecinas del mismo plano. Así se pega a otras y se apila en línea.
+  const spin = slopeAim.face ? faceSpin(unit, slopeAim.face) : 0;
+  const [ax, az] = slopeAxes(unit, spin);
+  const along = (v: Vec3, axis: Vec3): number => v[0] * axis[0] + v[1] * axis[1] + v[2] * axis[2];
+  const coplanar = [slopeAim.face, ...others.flatMap((piece) => piece.faces)].filter((f): f is Vec3[] => {
+    if (!f) return false;
+    const fn = faceNormal(f);
+    const length = Math.hypot(...fn) || 1;
+    const offset = (fn[0] * (point[0] - f[0][0]) + fn[1] * (point[1] - f[0][1]) + fn[2] * (point[2] - f[0][2])) / length;
+    return (fn[0] * unit[0] + fn[1] * unit[1] + fn[2] * unit[2]) / length > 0.9995 && Math.abs(offset) < 1e-3 && f.some((p) => Math.hypot(p[0] - point[0], p[1] - point[1], p[2] - point[2]) < Math.max(w, d) + 0.8);
+  });
+  const slide = (axis: Vec3, size: number): number => {
+    const cursor = along(point, axis);
+    const origin = slopeAim!.face ? Math.min(...slopeAim!.face.map((p) => along(p, axis))) : 0;
+    const lines = coplanar.flatMap((f) => f.map((p) => along(p, axis) - origin));
+    return origin + snapSpan(cursor - origin, size, lines) + size / 2 - cursor;
+  };
+  if (kind === 'wall') {
+    // Pared que no sigue los ejes: de pie contra ella, girada para quedar a ras, moviéndose a lo largo y en altura.
+    const flat = Math.hypot(unit[0], unit[2]) || 1;
+    const out: Vec3 = [unit[0] / flat, 0, unit[2] / flat];
+    const tangent: Vec3 = [out[2], 0, -out[0]];
+    const shift = slide(tangent, w);
+    const height = box.max[1] - box.min[1];
+    const y = snapSpan(point[1], height, edgeLines(others, 1, point, height + 0.6), undefined, undefined, cellLines(1, point, height + 0.6));
+    return leanOnWall(parts, out, [point[0] + tangent[0] * shift, Math.max(0, y), point[2] + tangent[2] * shift]);
+  }
+  const [da, db] = [slide(ax, w), slide(az, d)];
+  const center: Vec3 = [point[0] + ax[0] * da + az[0] * db, point[1] + ax[1] * da + az[1] * db, point[2] + ax[2] * da + az[2] * db];
+  return standOnSlope(parts, unit, center, spin);
 }
 
 /** Piezas que se colocarían ahora; un elemento del catálogo puede componerse de varias partes convexas. */
