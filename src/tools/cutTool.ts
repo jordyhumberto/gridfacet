@@ -226,6 +226,9 @@ export class CutTool {
     this.redoStack = [];
     this.flipped = false;
     this.refresh();
+    // Un vértice que no estaba en el plano de los tres primeros se mueve a él: se avisa para que no parezca que se marcó mal.
+    const moved = dist(point, next);
+    if (moved > 0.01) this.setStatus(`Ese punto no estaba en el plano de los tres primeros: se movió ${Math.round(moved * 100) / 100} celdas hasta el plano`);
   }
 
   flip(): void {
