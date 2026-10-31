@@ -405,11 +405,50 @@ function pointVisible(p: Vec3): boolean {
   return !first || first.distance > distance - 0.03;
 }
 
+/** A cuántos píxeles del cursor un vértice se "agarra" al marcar puntos, aunque el rayo del cursor no toque la pieza (esquinas del contorno). */
+const VERTEX_GRAB_PX = 12;
+const viewProjection = new THREE.Matrix4();
+
+/**
+ * El vértice (de una pieza o punto de referencia) más cercano al cursor en pantalla, si está a menos de VERTEX_GRAB_PX.
+ * Sirve para esquinas de otra figura que el rayo roza sin tocar: sin esto el punto caía al suelo o a la cara de atrás.
+ */
+function screenVertex(event: PointerEvent): Vec3 | null {
+  const rect = renderer.domElement.getBoundingClientRect();
+  camera.updateMatrixWorld();
+  viewProjection.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
+  const e = viewProjection.elements;
+  const candidates: { p: Vec3; dist: number }[] = [];
+  const consider = (p: Vec3): void => {
+    const w = e[3] * p[0] + e[7] * p[1] + e[11] * p[2] + e[15];
+    if (w <= 0) return;
+    const x = rect.left + (((e[0] * p[0] + e[4] * p[1] + e[8] * p[2] + e[12]) / w + 1) / 2) * rect.width;
+    const y = rect.top + ((1 - (e[1] * p[0] + e[5] * p[1] + e[9] * p[2] + e[13]) / w) / 2) * rect.height;
+    const dist = Math.hypot(x - event.clientX, y - event.clientY);
+    if (dist < VERTEX_GRAB_PX) candidates.push({ p, dist });
+  };
+  for (const p of model.points()) consider(p);
+  for (const piece of model.all()) {
+    if (hidden.has(piece.id)) continue;
+    for (const face of piece.faces) for (const p of face) consider(p);
+  }
+  candidates.sort((a, b) => a.dist - b.dist);
+  // El más cercano a la vista que no esté tapado (con "Solo visibles"); sin la casilla, el más cercano al cursor.
+  for (const { p } of candidates.slice(0, 12)) if (!visibleVerticesOnly || pointVisible(p)) return p;
+  return null;
+}
+
 /** Punto que se marcaría ahora: sobre el plano de trabajo si hay uno, si no sobre lo que apunta el cursor. */
 function markTarget(event: PointerEvent, hit: THREE.Intersection | undefined): Vec3 | null {
   const center = (point: THREE.Vector3): Vec3 => [point.x, point.y, point.z];
   const options = (point: THREE.Vector3): SnapOptions => ({ edge: event.altKey, divisions: snapDivisions, isVisible: visibleVerticesOnly ? pointVisible : undefined, onGuides: (guides) => showGuides(guides, center(point)) });
   if (!workPlane) {
+    // Un vértice a pocos píxeles del cursor gana a todo lo demás: así se pueden marcar las esquinas de otra figura.
+    const grabbed = screenVertex(event);
+    if (grabbed) {
+      showGuides(null);
+      return grabbed;
+    }
     if (!hit) showGuides(null);
     return hit ? snapPoint(hit.point, model, options(hit.point)) : null;
   }
