@@ -369,11 +369,15 @@ function showGuides(guides: Guides | null, center?: Vec3): void {
   // Con "solo vértices visibles" los puntos se dibujan con profundidad: los que quedan detrás de una cara no se ven.
   const dotMaterial = (color: number, opacity?: number): THREE.MeshBasicMaterial =>
     new THREE.MeshBasicMaterial({ color, transparent: opacity !== undefined, opacity: opacity ?? 1, depthTest: visibleVerticesOnly, depthWrite: false });
-  for (const p of guides.grid.filter(near)) {
-    const dot = new THREE.Mesh(new THREE.SphereGeometry(0.02, 8, 6), dotMaterial(0xd8dcea, 0.85));
-    dot.position.set(p[0], p[1], p[2]);
-    dot.renderOrder = 9;
-    guideOverlay.add(dot);
+  // Con muchos puntos (Máximo) cada uno como malla propia sería lento: todos van en una sola malla instanciada.
+  const gridNear = guides.grid.filter(near);
+  if (gridNear.length > 0) {
+    const dots = new THREE.InstancedMesh(new THREE.SphereGeometry(0.02, 6, 4), dotMaterial(0xd8dcea, 0.85), gridNear.length);
+    const at = new THREE.Matrix4();
+    gridNear.forEach((p, k) => dots.setMatrixAt(k, at.makeTranslation(p[0], p[1], p[2])));
+    dots.renderOrder = 9;
+    dots.frustumCulled = false;
+    guideOverlay.add(dots);
   }
   for (const p of guides.points.filter(near)) {
     const dot = new THREE.Mesh(new THREE.SphereGeometry(0.035, 10, 8), dotMaterial(0x9a7bff));
@@ -405,11 +409,50 @@ function pointVisible(p: Vec3): boolean {
   return !first || first.distance > distance - 0.03;
 }
 
+/** A cuántos píxeles del cursor un vértice se "agarra" al marcar puntos, aunque el rayo del cursor no toque la pieza (esquinas del contorno). */
+const VERTEX_GRAB_PX = 12;
+const viewProjection = new THREE.Matrix4();
+
+/**
+ * El vértice (de una pieza o punto de referencia) más cercano al cursor en pantalla, si está a menos de VERTEX_GRAB_PX.
+ * Sirve para esquinas de otra figura que el rayo roza sin tocar: sin esto el punto caía al suelo o a la cara de atrás.
+ */
+function screenVertex(event: PointerEvent): Vec3 | null {
+  const rect = renderer.domElement.getBoundingClientRect();
+  camera.updateMatrixWorld();
+  viewProjection.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
+  const e = viewProjection.elements;
+  const candidates: { p: Vec3; dist: number }[] = [];
+  const consider = (p: Vec3): void => {
+    const w = e[3] * p[0] + e[7] * p[1] + e[11] * p[2] + e[15];
+    if (w <= 0) return;
+    const x = rect.left + (((e[0] * p[0] + e[4] * p[1] + e[8] * p[2] + e[12]) / w + 1) / 2) * rect.width;
+    const y = rect.top + ((1 - (e[1] * p[0] + e[5] * p[1] + e[9] * p[2] + e[13]) / w) / 2) * rect.height;
+    const dist = Math.hypot(x - event.clientX, y - event.clientY);
+    if (dist < VERTEX_GRAB_PX) candidates.push({ p, dist });
+  };
+  for (const p of model.points()) consider(p);
+  for (const piece of model.all()) {
+    if (hidden.has(piece.id)) continue;
+    for (const face of piece.faces) for (const p of face) consider(p);
+  }
+  candidates.sort((a, b) => a.dist - b.dist);
+  // El más cercano a la vista que no esté tapado (con "Solo visibles"); sin la casilla, el más cercano al cursor.
+  for (const { p } of candidates.slice(0, 12)) if (!visibleVerticesOnly || pointVisible(p)) return p;
+  return null;
+}
+
 /** Punto que se marcaría ahora: sobre el plano de trabajo si hay uno, si no sobre lo que apunta el cursor. */
 function markTarget(event: PointerEvent, hit: THREE.Intersection | undefined): Vec3 | null {
   const center = (point: THREE.Vector3): Vec3 => [point.x, point.y, point.z];
   const options = (point: THREE.Vector3): SnapOptions => ({ edge: event.altKey, divisions: snapDivisions, isVisible: visibleVerticesOnly ? pointVisible : undefined, onGuides: (guides) => showGuides(guides, center(point)) });
   if (!workPlane) {
+    // Un vértice a pocos píxeles del cursor gana a todo lo demás: así se pueden marcar las esquinas de otra figura.
+    const grabbed = screenVertex(event);
+    if (grabbed) {
+      showGuides(null);
+      return grabbed;
+    }
     if (!hit) showGuides(null);
     return hit ? snapPoint(hit.point, model, options(hit.point)) : null;
   }
@@ -2246,6 +2289,8 @@ const outlineActionsEl = document.getElementById('outlineActions')!;
 function syncOutlineActions(): void {
   outlineActionsEl.hidden = mode !== 'outline';
   snapRowEl.hidden = mode !== 'outline' && mode !== 'cut' && mode !== 'fill' && mode !== 'vertex';
+  // El plano de trabajo solo vale al marcar puntos para cortar, rellenar o hacer una figura.
+  document.getElementById('planeRow')!.hidden = mode !== 'outline' && mode !== 'cut' && mode !== 'fill';
   outlineActionsEl.querySelector<HTMLButtonElement>('[data-outline="undo"]')!.hidden = !outlineTool.hasPoints;
   outlineActionsEl.querySelector('[data-outline="grow"]')!.classList.toggle('active', !outlineSink);
   outlineActionsEl.querySelector('[data-outline="sink"]')!.classList.toggle('active', outlineSink);
@@ -2532,11 +2577,102 @@ function toggleHud(): void {
 hudToggle.addEventListener('click', toggleHud);
 
 const helpModal = document.getElementById('helpModal')!;
-const setHelp = (open: boolean): void => {
+let setHelp = (open: boolean): void => {
   helpModal.hidden = !open;
 };
 document.getElementById('helpOpen')!.addEventListener('click', () => setHelp(true));
 document.getElementById('helpClose')!.addEventListener('click', () => setHelp(false));
+
+// Buscador de la ayuda: filtra la ayuda escrita y lista los atajos de cada herramienta que coinciden (por ejemplo "rotar").
+const helpSearchEl = document.getElementById('helpSearch') as HTMLInputElement;
+const helpResultsEl = document.getElementById('helpResults')!;
+const helpBodyEl = document.getElementById('helpBody')!;
+const plain = (text: string): string => text.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+const SYNONYMS: string[][] = [
+  ['rot', 'gir', 'giro', 'tumb', 'volte'],
+  ['mov', 'desplaz', 'trasl'],
+  ['borr', 'elimin', 'quit', 'supr'],
+  ['cort', 'tajo'],
+  ['copi', 'duplic', 'peg'],
+  ['ocult', 'escond', 'ojo'],
+  ['bloque', 'candado'],
+  ['capa', 'piso'],
+  ['escal', 'tamano', 'tamaño', 'agrand'],
+  ['color', 'pint'],
+  ['deshac', 'undo', 'rehac', 'redo'],
+];
+function searchHelp(): void {
+  const words = plain(helpSearchEl.value).split(/\s+/).filter(Boolean);
+  // Palabras que significan lo mismo: buscar "rotar" también encuentra "girar" o "tumbar".
+  const alike = (word: string): string[] => [word, ...(SYNONYMS.find((group) => group.some((w) => word.startsWith(w) || (word.length >= 3 && w.startsWith(word))))?.filter((w) => w !== word) ?? [])];
+  const matches = (text: string): boolean => {
+    const haystack = plain(text);
+    // Cada palabra debe empezar una palabra del texto: así "gir" encuentra "girar" pero no "elegir".
+    return words.every((word) => alike(word).some((option) => new RegExp(`(^|[^a-z0-9])${option.replace(/[^a-z0-9]/g, '')}`).test(haystack)));
+  };
+  // La ayuda escrita: se esconden las entradas que no coinciden y los títulos que se quedan vacíos.
+  let shown = 0;
+  for (const dl of helpBodyEl.querySelectorAll('dl')) {
+    let any = false;
+    for (const dt of dl.querySelectorAll('dt')) {
+      const dd = dt.nextElementSibling as HTMLElement | null;
+      const ok = words.length === 0 || matches(`${dt.textContent} ${dd?.textContent ?? ''}`);
+      dt.hidden = !ok;
+      if (dd) dd.hidden = !ok;
+      any = any || ok;
+      if (ok) shown++;
+    }
+    dl.hidden = !any;
+    (dl.previousElementSibling as HTMLElement | null)?.toggleAttribute('hidden', !any);
+  }
+  // Los atajos de cada herramienta (la barra de ayuda de abajo): los repetidos entre herramientas se juntan.
+  helpResultsEl.replaceChildren();
+  helpResultsEl.hidden = words.length === 0;
+  if (words.length === 0) return;
+  const seen = new Map<string, { keys: string; text: string; modes: string[] }>();
+  for (const [name, entries] of Object.entries(GUIDE) as [Mode, [string, string][]][]) {
+    for (const [keys, text] of entries) {
+      if (!matches(`${keys} ${text} ${MODE_INFO[name].name}`)) continue;
+      const entry = seen.get(`${keys}|${text}`) ?? { keys, text, modes: [] };
+      entry.modes.push(MODE_INFO[name].name);
+      seen.set(`${keys}|${text}`, entry);
+    }
+  }
+  if (seen.size > 0) {
+    const title = document.createElement('h3');
+    title.textContent = 'Atajos por herramienta';
+    const list = document.createElement('div');
+    list.className = 'hrow';
+    for (const { keys, text, modes } of seen.values()) {
+      const k = document.createElement('b');
+      k.textContent = keys;
+      const t = document.createElement('span');
+      t.textContent = text;
+      const where = document.createElement('small');
+      where.className = 'hmode';
+      where.textContent = modes.length > 4 ? ` · en varias herramientas` : ` · ${modes.join(', ')}`;
+      t.append(where);
+      list.append(k, t);
+    }
+    helpResultsEl.append(title, list);
+  }
+  if (seen.size === 0 && shown === 0) {
+    const none = document.createElement('div');
+    none.id = 'helpNone';
+    none.textContent = 'No hay nada con esa palabra. Prueba con otra (por ejemplo: girar, borrar, copiar).';
+    helpResultsEl.append(none);
+  }
+}
+helpSearchEl.addEventListener('input', searchHelp);
+const openHelp = setHelp;
+setHelp = (open: boolean): void => {
+  openHelp(open);
+  if (open) {
+    helpSearchEl.value = '';
+    searchHelp();
+    helpSearchEl.focus();
+  }
+};
 helpModal.addEventListener('pointerdown', (e) => {
   if (e.target === helpModal) setHelp(false);
 });
@@ -2971,7 +3107,8 @@ function updatePan(dt: number): void {
 
 window.addEventListener('keydown', (e) => {
   if (!helpModal.hidden) {
-    if (e.key === 'Escape' || e.key === '?') setHelp(false);
+    // Con el foco en el buscador, "?" es una letra más.
+    if (e.key === 'Escape' || (e.key === '?' && e.target !== helpSearchEl)) setHelp(false);
     return;
   }
   if (e.key === '?' || e.key === 'F1') {
@@ -2981,7 +3118,7 @@ window.addEventListener('keydown', (e) => {
   }
   // Con el foco en un selector las teclas le pertenecen a él.
   if (e.target instanceof HTMLSelectElement || e.target instanceof HTMLTextAreaElement) return;
-  if (e.target instanceof HTMLInputElement && e.target.type === 'number') return;
+  if (e.target instanceof HTMLInputElement && (e.target.type === 'number' || e.target.type === 'text' || e.target.type === 'search')) return;
   const key = e.key.toLowerCase();
   if ((e.ctrlKey || e.metaKey) && key === 'z') {
     e.preventDefault();

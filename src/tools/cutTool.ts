@@ -226,6 +226,9 @@ export class CutTool {
     this.redoStack = [];
     this.flipped = false;
     this.refresh();
+    // Un vértice que no estaba en el plano de los tres primeros se mueve a él: se avisa para que no parezca que se marcó mal.
+    const moved = dist(point, next);
+    if (moved > 0.01) this.setStatus(`Ese punto no estaba en el plano de los tres primeros: se movió ${Math.round(moved * 100) / 100} celdas hasta el plano`);
   }
 
   flip(): void {
@@ -336,9 +339,18 @@ export class CutTool {
     this.setStatus(this.hint());
     this.onPhaseChange();
 
-    const drawing = !this.closed && this.hover ? [...this.points, this.hover] : this.points;
+    // Desde el cuarto punto el clic marca el punto proyectado al plano de los tres primeros: la vista previa se dibuja ahí,
+    // con una línea fina hasta el vértice apuntado cuando no coinciden.
+    const landing = this.hover && !this.closed && this.points.length >= 3 ? projectToPlane(this.hover, planeFromPoints(this.points[0], this.points[1], this.points[2])) : this.hover;
+    const drawing = !this.closed && landing ? [...this.points, landing] : this.points;
     this.points.forEach((p, i) => this.overlay.add(marker(p, false, i === 0 && this.points.length >= 3 && !this.closed)));
-    if (!this.closed && this.hover) this.overlay.add(marker(this.hover, true, false));
+    if (!this.closed && landing) this.overlay.add(marker(landing, true, false));
+    if (!this.closed && landing && this.hover && dist(landing, this.hover) > 0.01) {
+      this.overlay.add(marker(this.hover, true, false, 0x9a7bff, 0.03));
+      const link = polyline([this.hover, landing]);
+      (link.material as THREE.LineBasicMaterial).color.set(0x9a7bff);
+      this.overlay.add(link);
+    }
     if (drawing.length >= 2) this.overlay.add(polyline(this.closed ? [...this.points, this.points[0]] : drawing));
 
     const plane = this.plane();
@@ -375,10 +387,10 @@ function overlayMaterial<T extends THREE.Material>(material: T): T {
   return material;
 }
 
-function marker(p: Vec3, preview: boolean, closeTarget: boolean): THREE.Mesh {
+function marker(p: Vec3, preview: boolean, closeTarget: boolean, color = ACCENT, radius = 0.06): THREE.Mesh {
   const mesh = new THREE.Mesh(
-    new THREE.SphereGeometry(closeTarget ? 0.11 : 0.06, 16, 12),
-    overlayMaterial(new THREE.MeshBasicMaterial({ color: closeTarget ? 0x40e0a0 : ACCENT, transparent: true, opacity: preview ? 0.55 : 1 })),
+    new THREE.SphereGeometry(closeTarget ? 0.11 : radius, 16, 12),
+    overlayMaterial(new THREE.MeshBasicMaterial({ color: closeTarget ? 0x40e0a0 : color, transparent: true, opacity: preview ? 0.55 : 1 })),
   );
   mesh.position.set(p[0], p[1], p[2]);
   mesh.renderOrder = 10;
