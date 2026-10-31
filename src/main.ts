@@ -16,6 +16,7 @@ import { downloadBlob, exportGlb } from './render/glb';
 import { PieceBatches } from './render/batches';
 import { createPieceObject, disposeObject, isWireframeView, setHighlight, setSmoothShading, setWireframeView } from './render/meshes';
 import { ModelScene } from './scene';
+import { Layers, layerOf } from './core/layers';
 import { Selection } from './selection';
 import type { Guides } from './core/guides';
 import { CutTool, snapPoint, type SnapOptions } from './tools/cutTool';
@@ -162,6 +163,8 @@ model.onChange = ({ added, removed, marksAdded, marksRemoved }) => {
   }
   for (const id of removed.map((piece) => piece.id)) hidden.delete(id);
   for (const piece of added) showPiece(piece);
+  const toHide = added.filter((piece) => layers.isHidden(piece) && !hidden.has(piece.id)).map((piece) => piece.id);
+  if (toHide.length > 0) hidePieces(toHide);
   setEraseHover(undefined);
   if (marksAdded?.length || marksRemoved?.length) refreshMarks();
   dirty = true;
@@ -169,6 +172,7 @@ model.onChange = ({ added, removed, marksAdded, marksRemoved }) => {
   selection.remove(removed.map((piece) => piece.id));
   syncInspector();
   refreshGroups();
+  refreshLayers();
   syncTriangles();
   if (mode === 'fill' && added.length > 0) useColor(color);
 };
@@ -195,6 +199,7 @@ selection.onChange = () => {
   syncSelectionActions();
   syncInspector();
   syncGroupName();
+  layerMoveEl.hidden = selection.size === 0;
 };
 
 if (import.meta.env.DEV) {
@@ -255,8 +260,18 @@ function castRay(event: PointerEvent, includeGround: boolean): THREE.Intersectio
   const targets = [...objects.values(), ...batches.meshes()];
   if (includeGround) targets.push(...(gridVisible ? backdrops : [backdrops[0]]));
   // Los contornos (líneas) no tienen cara y estorbarían al apuntar a una pieza.
-  return raycaster.intersectObjects(targets, true).find((hit) => hit.object instanceof THREE.Mesh);
+  const first = raycaster.intersectObjects(targets, true).find((hit) => hit.object instanceof THREE.Mesh);
+  // Una pieza bloqueada tapa lo que hay detrás, pero las herramientas que la modificarían no la ven.
+  if (first && EDIT_MODES.has(mode)) {
+    const id = pieceIdOf(first);
+    const piece = id === undefined ? undefined : model.get(id);
+    if (piece && layers.isLocked(piece)) return undefined;
+  }
+  return first;
 }
+
+/** Modos que modifican la pieza apuntada: no actúan sobre capas bloqueadas. */
+const EDIT_MODES = new Set<string>(['select', 'erase', 'paint', 'face', 'shape', 'bevel', 'grow', 'sink']);
 
 function pieceIdOf(hit: THREE.Intersection | undefined): number | undefined {
   if (!hit) return undefined;
@@ -769,7 +784,114 @@ function refreshHidden(): void {
   showHiddenButton.textContent = `Mostrar ocultas (${hidden.size})`;
   refreshGroups();
 }
-showHiddenButton.addEventListener('click', () => showHidden());
+showHiddenButton.addEventListener('click', () => {
+  // "Mostrar ocultas" también muestra las capas ocultas.
+  for (const layer of layers.all()) layers.setHidden(layer.id, false);
+  showHidden();
+});
+
+// Capas: cada pieza está en una; una capa se oculta (no se ve ni se apunta) o se bloquea (se ve y choca, pero no se modifica).
+const layers = new Layers();
+model.isLocked = (piece) => layers.isLocked(piece);
+selection.canSelect = (id) => {
+  const piece = model.get(id);
+  return !piece || !layers.isLocked(piece);
+};
+const layerListEl = document.getElementById('layerList')!;
+const layerMoveEl = document.getElementById('layerMove')!;
+const idsOfLayer = (id: number): number[] => model.all().filter((piece) => layerOf(piece) === id).map((piece) => piece.id);
+
+/** Aplica a las piezas el estado de las capas: las de capas ocultas se esconden y las de bloqueadas dejan de estar elegidas. */
+function applyLayerState(): void {
+  for (const layer of layers.all()) {
+    const ids = idsOfLayer(layer.id);
+    if (layer.hidden) hidePieces(ids.filter((id) => !hidden.has(id)));
+    if (layer.locked) selection.remove(ids);
+  }
+}
+function toggleLayerHidden(id: number): void {
+  const layer = layers.get(id);
+  if (!layer) return;
+  layers.setHidden(id, !layer.hidden);
+  if (layer.hidden) applyLayerState();
+  else showHidden(idsOfLayer(id).filter((pid) => hidden.has(pid)));
+}
+function toggleLayerLocked(id: number): void {
+  const layer = layers.get(id);
+  if (!layer) return;
+  layers.setLocked(id, !layer.locked);
+  applyLayerState();
+}
+function removeLayer(id: number): void {
+  const layer = layers.get(id);
+  if (!layer || id === 1) return;
+  // Sus piezas pasan a la primera capa.
+  const ids = idsOfLayer(id);
+  for (const piece of model.all()) if (layerOf(piece) === id) delete piece.layer;
+  const wasHidden = layer.hidden;
+  layers.remove(id);
+  model.activeLayer = layers.active;
+  if (wasHidden) showHidden(ids.filter((pid) => hidden.has(pid)));
+  applyLayerState();
+}
+/** Pasa las piezas elegidas a la capa activa. */
+function moveSelectionToActiveLayer(): void {
+  const target = layers.active;
+  for (const id of selection.list()) {
+    const piece = model.get(id);
+    if (!piece) continue;
+    if (target === 1) delete piece.layer;
+    else piece.layer = target;
+  }
+  applyLayerState();
+  refreshLayers();
+}
+function refreshLayers(): void {
+  const counts = new Map<number, number>();
+  for (const piece of model.all()) counts.set(layerOf(piece), (counts.get(layerOf(piece)) ?? 0) + 1);
+  layerListEl.replaceChildren();
+  for (const layer of layers.all()) {
+    const row = document.createElement('div');
+    row.className = `lrow${layer.id === layers.active ? ' active' : ''}${layer.hidden ? ' off' : ''}`;
+    const name = document.createElement('button');
+    name.className = 'lname';
+    name.textContent = `${layer.name} (${counts.get(layer.id) ?? 0})`;
+    name.title = 'Capa activa: lo que coloques o crees va aquí. Doble clic: renombrar';
+    name.addEventListener('click', () => layers.setActive(layer.id));
+    name.addEventListener('dblclick', () => {
+      const next = window.prompt('Nombre de la capa', layer.name);
+      if (next !== null) layers.rename(layer.id, next);
+    });
+    const eye = document.createElement('button');
+    eye.className = `tool${layer.hidden ? ' on' : ''}`;
+    eye.textContent = layer.hidden ? 'Oculta' : 'Ojo';
+    eye.title = layer.hidden ? 'Mostrar la capa' : 'Ocultar la capa';
+    eye.addEventListener('click', () => toggleLayerHidden(layer.id));
+    const lock = document.createElement('button');
+    lock.className = `tool${layer.locked ? ' on' : ''}`;
+    lock.textContent = layer.locked ? 'Bloq.' : 'Candado';
+    lock.title = layer.locked ? 'Desbloquear la capa' : 'Bloquear la capa: se ve y choca, pero no se puede modificar';
+    lock.addEventListener('click', () => toggleLayerLocked(layer.id));
+    row.append(name, eye, lock);
+    if (layer.id !== 1) {
+      const del = document.createElement('button');
+      del.className = 'tool';
+      del.textContent = '✕';
+      del.title = 'Quitar la capa (sus piezas pasan a la primera)';
+      del.addEventListener('click', () => removeLayer(layer.id));
+      row.append(del);
+    }
+    layerListEl.appendChild(row);
+  }
+  layerMoveEl.hidden = selection.size === 0;
+}
+layers.onChange = () => {
+  model.activeLayer = layers.active;
+  refreshLayers();
+};
+document.getElementById('layerAdd')!.addEventListener('click', () => layers.add());
+layerMoveEl.addEventListener('click', moveSelectionToActiveLayer);
+refreshLayers();
 function hideSelected(): void {
   if (selection.size > 0) hidePieces(selection.list());
 }
@@ -1718,7 +1840,7 @@ function finishGrow(commit: boolean): void {
   statusEl.textContent = '';
   if (!commit) return;
   if (current.sink) {
-    const change = sinkFacesChange(current.faces, model.all(), current.distance);
+    const change = sinkFacesChange(current.faces, model.editable(), current.distance);
     if (change.removed.length === 0) {
       statusEl.textContent = 'No hay nada que hundir ahí';
       return;
@@ -2261,7 +2383,7 @@ const errorText = (error: unknown): string => (error instanceof Error ? error.me
 /** Guardar escribe sobre el archivo actual; "Guardar como" (o un proyecto nuevo) abre el diálogo para elegir carpeta y nombre. */
 async function saveProject(asNew = false): Promise<void> {
   const pieces = model.all();
-  const data = serializeProject(pieces, model.points(), gridSize);
+  const data = serializeProject(pieces, model.points(), gridSize, layers.toJSON());
   const suggested = fileName === 'Sin título' ? 'gridfacet-proyecto.json' : fileName.replace(/(\.json)?$/i, '.json');
   let name = suggested;
   try {
@@ -2290,10 +2412,14 @@ async function saveProject(asNew = false): Promise<void> {
 /** Abrir reemplaza la escena como un cambio más, así que se puede deshacer. */
 async function openProject(file: File, handle: FileHandle | null = null): Promise<void> {
   try {
-    const { pieces: loaded, marks, gridSize: savedSize } = parseProjectFull(await file.text());
+    const { pieces: loaded, marks, gridSize: savedSize, layers: savedLayers } = parseProjectFull(await file.text());
     if (savedSize !== undefined) setGridSize(savedSize);
     if (mode === 'cut') cutTool.cancel();
+    // Las piezas abiertas traen su capa: las nuevas no deben tomar la activa de antes.
+    model.activeLayer = 1;
     model.apply({ added: loaded, removed: model.all(), marksAdded: marks, marksRemoved: model.points() });
+    layers.load(savedLayers, loaded);
+    applyLayerState();
     fileHandle = handle;
     fileName = file.name;
     dirty = false;

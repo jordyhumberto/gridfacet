@@ -190,6 +190,8 @@ export function mergeChange(pieces: Piece[]): { change: Change } | { error: stri
   const result = makePiece(faces, merged.color, colors);
   const groups = new Set(pieces.map((piece) => piece.group));
   if (groups.size === 1) keepGroup(result, pieces[0]);
+  const layers = new Set(pieces.map((piece) => piece.layer));
+  if (layers.size === 1 && pieces[0].layer !== undefined) result.layer = pieces[0].layer;
   return { change: { added: [result], removed: pieces } };
 }
 
@@ -231,6 +233,7 @@ export function repeatChange(pieces: Piece[], spec: RepeatSpec): Change {
     const groups = new Map<number, number>();
     for (const piece of pieces) {
       const copy = makePiece(piece.faces.map((face) => face.map(map)), piece.color, piece.faceColors);
+      if (piece.layer !== undefined) copy.layer = piece.layer;
       if (piece.group === undefined) {
         added.push(copy);
         continue;
