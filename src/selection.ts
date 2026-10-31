@@ -2,6 +2,9 @@
 export class Selection {
   private ids = new Set<number>();
 
+  /** Dice si una pieza se puede elegir (las de capas bloqueadas no). Se aplica en toda vía: clic, recuadro, todo, conectadas. */
+  canSelect: (id: number) => boolean = () => true;
+
   /** Se llama cada vez que cambia el conjunto. */
   onChange: () => void = () => {};
 
@@ -18,12 +21,12 @@ export class Selection {
   }
 
   set(ids: Iterable<number>): void {
-    this.ids = new Set(ids);
+    this.ids = new Set([...ids].filter((id) => this.canSelect(id)));
     this.onChange();
   }
 
   toggle(id: number): void {
-    if (!this.ids.delete(id)) this.ids.add(id);
+    if (!this.ids.delete(id) && this.canSelect(id)) this.ids.add(id);
     this.onChange();
   }
 

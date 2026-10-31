@@ -8,6 +8,8 @@ const FACE_MARGIN = 0.3;
 const PROJECT_REACH = 1.5;
 /** Máximo de rectas proyectadas por cara: las más cercanas al cursor. */
 const MAX_PROJECTED = 48;
+/** Solo cuentan las piezas a esta distancia (celdas) del cursor: en una escena grande, recorrerlas todas haría lento cada movimiento del ratón. */
+const GUIDE_REACH = 4;
 const EPS = 1e-6;
 
 export type Segment = [Vec3, Vec3];
@@ -96,6 +98,8 @@ function boxOf(piece: Piece): { min: Vec3; max: Vec3 } {
 export function guideVertices(hit: Vec3, pieces: Piece[]): Guides {
   const groups: PlaneGroup[] = [];
   for (const piece of pieces) {
+    const box = boxOf(piece);
+    if ([0, 1, 2].some((i) => hit[i] < box.min[i] - GUIDE_REACH || hit[i] > box.max[i] + GUIDE_REACH)) continue;
     for (const face of piece.faces) {
       const raw = unit(faceNormal(face));
       const { n, d } = canonical(raw, dot(raw, face[0]));
@@ -122,6 +126,13 @@ export function guideVertices(hit: Vec3, pieces: Piece[]): Guides {
 
 type Line2 = { p: [number, number]; r: [number, number] };
 
+/** Distancia de un punto de la cara a un segmento de ella. */
+function segmentDistance(e: Line2, cursor: [number, number]): number {
+  const len2 = e.r[0] * e.r[0] + e.r[1] * e.r[1] || 1;
+  const t = Math.max(0, Math.min(1, ((cursor[0] - e.p[0]) * e.r[0] + (cursor[1] - e.p[1]) * e.r[1]) / len2));
+  return Math.hypot(e.p[0] + e.r[0] * t - cursor[0], e.p[1] + e.r[1] * t - cursor[1]);
+}
+
 function collect(group: PlaneGroup, near: Piece[], hit: Vec3, points: Map<string, Vec3>, lines: Segment[], projectedOut: Segment[]): void {
   const { n } = group;
   const helper: Vec3 = Math.abs(n[1]) < 0.9 ? [0, 1, 0] : [1, 0, 0];
@@ -141,11 +152,15 @@ function collect(group: PlaneGroup, near: Piece[], hit: Vec3, points: Map<string
       const [a, b] = [poly[i], poly[(i + 1) % poly.length]];
       area += a[0] * b[1] - b[0] * a[1];
     }
-    return { poly, orient: area < 0 ? -1 : 1 };
+    const xs = poly.map((q) => q[0]);
+    const ys = poly.map((q) => q[1]);
+    return { poly, orient: area < 0 ? -1 : 1, box: [Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)] };
   });
 
+  // La caja de cada polígono descarta de entrada casi todos: con muchas caras en el plano, probar cada punto contra todas sería lento.
   const inside = (p: [number, number], margin: number) =>
-    polygons.some(({ poly, orient }) =>
+    polygons.some(({ poly, orient, box }) =>
+      p[0] >= box[0] - margin && p[0] <= box[2] + margin && p[1] >= box[1] - margin && p[1] <= box[3] + margin &&
       poly.every((a, i) => {
         const b = poly[(i + 1) % poly.length];
         const len = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1;
@@ -171,6 +186,11 @@ function collect(group: PlaneGroup, near: Piece[], hit: Vec3, points: Map<string
       edges.push({ p: pa, r: [pb[0] - pa[0], pb[1] - pa[1]] });
     }
   }
+
+  // Las rectas del grupo que quedan lejos del cursor no aportan cruces que marcar: sin este límite, un plano con muchas piezas cuesta cada vez más.
+  const nearEdges = edges.filter((e) => segmentDistance(e, cursor) < GUIDE_REACH);
+  edges.length = 0;
+  edges.push(...nearEdges);
 
   // Aristas de las piezas vecinas proyectadas en perpendicular sobre el plano. Las que ya están en él se descartan (ya son rectas del grupo).
   const flat = (p: Vec3) => Math.abs(dot(n, p) - group.d) < 1e-4;
@@ -202,13 +222,8 @@ function collect(group: PlaneGroup, near: Piece[], hit: Vec3, points: Map<string
     }
   }
   // Las más cercanas al cursor: la distancia del cursor al segmento.
-  const distance = (e: Line2): number => {
-    const len2 = e.r[0] * e.r[0] + e.r[1] * e.r[1];
-    const t = Math.max(0, Math.min(1, ((cursor[0] - e.p[0]) * e.r[0] + (cursor[1] - e.p[1]) * e.r[1]) / len2));
-    return Math.hypot(e.p[0] + e.r[0] * t - cursor[0], e.p[1] + e.r[1] * t - cursor[1]);
-  };
   const nearShadows = shadows
-    .map((e) => ({ e, dist: distance(e) }))
+    .map((e) => ({ e, dist: segmentDistance(e, cursor) }))
     .filter(({ dist }) => dist < PROJECT_REACH)
     .sort((a, b) => a.dist - b.dist)
     .slice(0, MAX_PROJECTED)

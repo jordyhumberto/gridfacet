@@ -1,4 +1,11 @@
+import type { Layer } from './layers';
 import { makePiece, volume, type Piece, type Vec3 } from './piece';
+
+/** Las capas guardadas con el proyecto. */
+export interface LayerState {
+  layers: Layer[];
+  active: number;
+}
 
 const FORMAT = 'gridfacet';
 /** Nombres que tuvo el formato antes de llamarse Gridfacet (Novoxel y Polygrid): los proyectos guardados así se siguen abriendo. */
@@ -8,24 +15,28 @@ const VERSION = 1;
 interface ProjectFile {
   format: typeof FORMAT;
   version: number;
-  pieces: { color: number; faces: Vec3[][]; faceColors?: number[]; group?: number; groupName?: string }[];
+  pieces: { color: number; faces: Vec3[][]; faceColors?: number[]; group?: number; groupName?: string; layer?: number }[];
+  /** Capas (opcional: los proyectos antiguos tienen solo la primera). */
+  layers?: LayerState;
   /** Puntos de referencia (opcional: los proyectos antiguos no lo tienen). */
   marks?: Vec3[];
   /** Celdas por lado de la sala (opcional: los proyectos antiguos no lo guardan). */
   gridSize?: number;
 }
 
-export function serializeProject(pieces: Piece[], marks: Vec3[] = [], gridSize?: number): string {
+export function serializeProject(pieces: Piece[], marks: Vec3[] = [], gridSize?: number, layers?: LayerState): string {
   const project: ProjectFile = {
     format: FORMAT,
     version: VERSION,
-    pieces: pieces.map(({ color, faces, faceColors, group, groupName }) => ({
+    pieces: pieces.map(({ color, faces, faceColors, group, groupName, layer }) => ({
       color,
       faces,
       ...(faceColors ? { faceColors } : {}),
       ...(group !== undefined ? { group } : {}),
       ...(group !== undefined && groupName ? { groupName } : {}),
+      ...(layer !== undefined && layer !== 1 ? { layer } : {}),
     })),
+    ...(layers && (layers.layers.length > 1 || layers.layers.some((l) => l.hidden || l.locked) || layers.layers[0]?.name !== 'Capa 1') ? { layers } : {}),
     ...(marks.length > 0 ? { marks } : {}),
     ...(gridSize !== undefined ? { gridSize } : {}),
   };
@@ -41,7 +52,7 @@ export function parseProject(text: string): Piece[] {
 }
 
 /** Como `parseProject`, pero devuelve también los puntos de referencia. */
-export function parseProjectFull(text: string): { pieces: Piece[]; marks: Vec3[]; gridSize?: number } {
+export function parseProjectFull(text: string): { pieces: Piece[]; marks: Vec3[]; gridSize?: number; layers?: Partial<LayerState> } {
   let data: unknown;
   try {
     data = JSON.parse(text);
@@ -58,7 +69,7 @@ export function parseProjectFull(text: string): { pieces: Piece[]; marks: Vec3[]
 
   const pieces = file.pieces.map((raw, i) => {
     const label = `Pieza ${i + 1}`;
-    const { color, faces, faceColors, group, groupName } = raw ?? {};
+    const { color, faces, faceColors, group, groupName, layer } = raw ?? {};
     if (!Number.isInteger(color) || color < 0 || color > 0xffffff) throw new Error(`${label}: color no válido`);
     if (!Array.isArray(faces) || faces.length < 4) throw new Error(`${label}: le faltan caras`);
     if (!faces.every((f) => Array.isArray(f) && f.length >= 3 && f.every(isVec3))) {
@@ -71,10 +82,12 @@ export function parseProjectFull(text: string): { pieces: Piece[]; marks: Vec3[]
       piece.group = group as number;
       if (typeof groupName === 'string' && groupName.trim()) piece.groupName = groupName.trim().slice(0, 60);
     }
+    if (Number.isInteger(layer) && (layer as number) > 1) piece.layer = layer as number;
     if (!(volume(piece) > 1e-9)) throw new Error(`${label}: no encierra volumen`);
     return piece;
   });
   const marks = Array.isArray(file.marks) ? file.marks.filter(isVec3) : [];
   const gridSize = Number.isInteger(file.gridSize) && file.gridSize! >= 2 && file.gridSize! <= 1024 ? file.gridSize : undefined;
-  return { pieces, marks, ...(gridSize !== undefined ? { gridSize } : {}) };
+  const layers = file.layers && Array.isArray(file.layers.layers) ? file.layers : undefined;
+  return { pieces, marks, ...(gridSize !== undefined ? { gridSize } : {}), ...(layers ? { layers } : {}) };
 }

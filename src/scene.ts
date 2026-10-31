@@ -10,6 +10,11 @@ export class ModelScene {
   private undoStack: Change[] = [];
   private redoStack: Change[] = [];
 
+  /** Capa en la que quedan las piezas nuevas que no traen una (la activa del panel). */
+  activeLayer = 1;
+  /** Dice si una pieza está bloqueada: se ve y cuenta para choques e imanes, pero las herramientas de edición no la tocan. */
+  isLocked: (piece: Piece) => boolean = () => false;
+
   /** Se llama con el cambio efectivo cada vez que el contenido se modifica. */
   onChange: (change: Change) => void = () => {};
 
@@ -19,6 +24,11 @@ export class ModelScene {
 
   all(): Piece[] {
     return [...this.pieces.values()];
+  }
+
+  /** Las piezas que se pueden modificar (las de capas no bloqueadas). */
+  editable(): Piece[] {
+    return this.all().filter((piece) => !this.isLocked(piece));
   }
 
   /** Puntos de referencia: vértices sueltos que se pueden usar al marcar puntos. */
@@ -35,6 +45,7 @@ export class ModelScene {
     };
     if (effective.added.length === 0 && effective.removed.length === 0 && effective.marksAdded!.length === 0 && effective.marksRemoved!.length === 0) return;
     change = effective;
+    for (const piece of change.added) if (piece.layer === undefined && this.activeLayer !== 1) piece.layer = this.activeLayer;
     this.write(change);
     this.undoStack.push(change);
     this.redoStack = [];

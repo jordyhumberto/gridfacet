@@ -114,7 +114,7 @@ export class OutlineTool {
     }
     const distance = this.distanceFor(outline.normal);
     if (this.isSink()) {
-      const change = sinkFacesChange(outline.faces, this.model.all(), distance);
+      const change = sinkFacesChange(outline.faces, this.model.editable(), distance);
       if (change.removed.length === 0) {
         this.setStatus('No hay nada que hundir ahí');
         return;

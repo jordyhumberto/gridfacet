@@ -39,6 +39,12 @@
       #groupList .grow { display: flex; gap: 4px; }
       #groupList .grow button:first-child { flex: 1; text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
       #groupList .grow.hiddenGroup button:first-child { opacity: 0.5; }
+      #layerList .lrow { display: flex; gap: 4px; margin-bottom: 3px; }
+      #layerList .lrow .lname { flex: 1; text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      #layerList .lrow.active .lname { border-color: #4a90ff; background: #2b4f8c; }
+      #layerList .lrow.off .lname { opacity: 0.5; }
+      #layerList .lrow button.on { background: #7a3d2e; }
+      #layerList .lrow button.tool { padding: 2px 6px; }
       #groupNameInput { width: 130px; background: #2a2f3a; color: inherit; border: 1px solid #3d4452; border-radius: 6px; padding: 2px 6px; font-size: 12px; }
       #inspector small { width: 44px; }
       #faceActions input[type=number], #triRow input[type=number], #repeatRow input[type=number] { width: 48px; background: #2a2f3a; color: inherit; border: 1px solid #3d4452; border-radius: 6px; padding: 2px 4px; font-size: 12px; }
@@ -278,6 +284,15 @@
             <input type="number" id="planeValue" step="0.5" />
             <button data-plane="+" title="Subir medio paso">+</button>
           </div>
+        </section>
+        <section id="layers">
+          <h4><span class="title">Capas</span></h4>
+          <div id="layerList"></div>
+          <div class="row">
+            <button id="layerAdd" title="Crear una capa nueva; lo que coloques o crees a partir de ahora va a la capa activa">+ Capa</button>
+            <button id="layerMove" title="Pasar la selección a la capa activa" hidden>Selección → activa</button>
+          </div>
+          <small>Ojo: oculta. Candado: bloqueada, se ve y choca pero no se puede elegir ni modificar. Doble clic en el nombre: renombrar.</small>
         </section>
         <section id="groups" hidden>
           <h4><span class="title">Grupos</span></h4>

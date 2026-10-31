@@ -291,7 +291,7 @@ export class CutTool {
 
   /** Con selección, el corte solo actúa sobre ella; sin selección, sobre todas las piezas. */
   private targets(): Piece[] {
-    const all = this.model.all();
+    const all = this.model.editable();
     return this.selection.size > 0 ? all.filter((piece) => this.selection.has(piece.id)) : all;
   }
 

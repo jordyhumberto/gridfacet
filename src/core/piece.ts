@@ -11,6 +11,8 @@ export interface Piece {
   group?: number;
   /** Nombre del grupo (el mismo en todas sus piezas); sirve para nombrar los objetos del GLB. */
   groupName?: string;
+  /** Capa a la que pertenece (sin valor: la primera). Las capas se pueden ocultar y bloquear. */
+  layer?: number;
 }
 
 let nextGroup = 1;
@@ -19,6 +21,7 @@ export const newGroupId = (): number => nextGroup++;
 /** Copia de `piece` con otro grupo (o sin grupo si `group` es undefined) y un id nuevo. */
 export function withGroup(piece: Piece, group: number | undefined, groupName?: string): Piece {
   const copy = makePiece(piece.faces, piece.color, piece.faceColors);
+  if (piece.layer !== undefined) copy.layer = piece.layer;
   if (group !== undefined) {
     copy.group = group;
     if (groupName) copy.groupName = groupName;
@@ -30,6 +33,7 @@ export function withGroup(piece: Piece, group: number | undefined, groupName?: s
 export function keepGroup(to: Piece, from: Piece): Piece {
   if (from.group !== undefined) to.group = from.group;
   if (from.groupName) to.groupName = from.groupName;
+  if (from.layer !== undefined) to.layer = from.layer;
   return to;
 }
 
