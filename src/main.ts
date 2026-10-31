@@ -338,6 +338,14 @@ scene3d.add(guideOverlay);
 const GUIDE_RADIUS = 1.5;
 const MAX_GUIDE_LINES = 60;
 
+/** Muestra solo los puntos de las caras que se ven (no los que quedan detrás de otra cara). */
+let visibleVerticesOnly = true;
+const visibleOnlyEl = document.getElementById('visibleOnly') as HTMLInputElement;
+visibleOnlyEl.addEventListener('change', () => {
+  visibleVerticesOnly = visibleOnlyEl.checked;
+  visibleOnlyEl.blur();
+});
+
 function showGuides(guides: Guides | null, center?: Vec3): void {
   for (const child of [...guideOverlay.children]) {
     guideOverlay.remove(child);
@@ -358,14 +366,17 @@ function showGuides(guides: Guides | null, center?: Vec3): void {
     lines.renderOrder = 9;
     guideOverlay.add(lines);
   }
+  // Con "solo vértices visibles" los puntos se dibujan con profundidad: los que quedan detrás de una cara no se ven.
+  const dotMaterial = (color: number, opacity?: number): THREE.MeshBasicMaterial =>
+    new THREE.MeshBasicMaterial({ color, transparent: opacity !== undefined, opacity: opacity ?? 1, depthTest: visibleVerticesOnly, depthWrite: false });
   for (const p of guides.grid.filter(near)) {
-    const dot = new THREE.Mesh(new THREE.SphereGeometry(0.02, 8, 6), new THREE.MeshBasicMaterial({ color: 0xd8dcea, transparent: true, opacity: 0.85, depthTest: false }));
+    const dot = new THREE.Mesh(new THREE.SphereGeometry(0.02, 8, 6), dotMaterial(0xd8dcea, 0.85));
     dot.position.set(p[0], p[1], p[2]);
     dot.renderOrder = 9;
     guideOverlay.add(dot);
   }
   for (const p of guides.points.filter(near)) {
-    const dot = new THREE.Mesh(new THREE.SphereGeometry(0.035, 10, 8), new THREE.MeshBasicMaterial({ color: 0x9a7bff, depthTest: false }));
+    const dot = new THREE.Mesh(new THREE.SphereGeometry(0.035, 10, 8), dotMaterial(0x9a7bff));
     dot.position.set(p[0], p[1], p[2]);
     dot.renderOrder = 9;
     guideOverlay.add(dot);
