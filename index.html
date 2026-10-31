@@ -259,12 +259,13 @@
             <label title="Crece o hunde toda la cara conectada a la apuntada (por ejemplo un muro de 3×3 cubos) y no solo el cuadrito. Ctrl invierte la opción mientras se hace clic"><input type="checkbox" id="growAll" /> Toda la cara conectada</label>
           </div>
           <div class="row" id="snapRow" hidden title="Puntos que se ofrecen al marcar en Cortar, Rellenar y Figura: cada arista y cada cara se divide en esa cantidad de partes (se ven como puntos claros cerca del cursor)">
-            <small>Puntos por cara:</small>
+            <small>Cantidad de vértices:</small>
             <select id="snapDensity">
-              <option value="0">Pocos (solo vértices)</option>
-              <option value="2">Mitades</option>
-              <option value="4" selected>Cuartos</option>
-              <option value="8">Octavos</option>
+              <option value="0">Bajo (solo vértices)</option>
+              <option value="2">Medio (mitades)</option>
+              <option value="4" selected>Alto (cuartos)</option>
+              <option value="8">Muy alto (octavos)</option>
+              <option value="16">Máximo (dieciseisavos)</option>
             </select>
             <label title="Con la casilla marcada solo se ven los puntos de las caras que se ven; sin marcar, también los que quedan detrás"><input type="checkbox" id="visibleOnly" checked /> Solo visibles</label>
           </div>

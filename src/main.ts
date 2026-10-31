@@ -369,11 +369,15 @@ function showGuides(guides: Guides | null, center?: Vec3): void {
   // Con "solo vértices visibles" los puntos se dibujan con profundidad: los que quedan detrás de una cara no se ven.
   const dotMaterial = (color: number, opacity?: number): THREE.MeshBasicMaterial =>
     new THREE.MeshBasicMaterial({ color, transparent: opacity !== undefined, opacity: opacity ?? 1, depthTest: visibleVerticesOnly, depthWrite: false });
-  for (const p of guides.grid.filter(near)) {
-    const dot = new THREE.Mesh(new THREE.SphereGeometry(0.02, 8, 6), dotMaterial(0xd8dcea, 0.85));
-    dot.position.set(p[0], p[1], p[2]);
-    dot.renderOrder = 9;
-    guideOverlay.add(dot);
+  // Con muchos puntos (Máximo) cada uno como malla propia sería lento: todos van en una sola malla instanciada.
+  const gridNear = guides.grid.filter(near);
+  if (gridNear.length > 0) {
+    const dots = new THREE.InstancedMesh(new THREE.SphereGeometry(0.02, 6, 4), dotMaterial(0xd8dcea, 0.85), gridNear.length);
+    const at = new THREE.Matrix4();
+    gridNear.forEach((p, k) => dots.setMatrixAt(k, at.makeTranslation(p[0], p[1], p[2])));
+    dots.renderOrder = 9;
+    dots.frustumCulled = false;
+    guideOverlay.add(dots);
   }
   for (const p of guides.points.filter(near)) {
     const dot = new THREE.Mesh(new THREE.SphereGeometry(0.035, 10, 8), dotMaterial(0x9a7bff));
