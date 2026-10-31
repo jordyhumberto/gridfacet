@@ -68,6 +68,17 @@ describe('guideVertices', () => {
   });
 });
 
+describe('guideVertices en escenas grandes', () => {
+  it('las piezas lejanas del cursor no cuentan, las cercanas siguen dando guías', () => {
+    const far = box(30, 0, 0, 31, 1, 0.5);
+    const near = box(1.1, 0.9, 0, 2, 1.7, 0.5);
+    const base = guideVertices([1.5, 1.2, 0], [wall, near, far]);
+    expect(base.points.length).toBeGreaterThan(0);
+    // Una pieza apoyada en el mismo plano pero a 30 celdas no añade nada ni cambia lo que hay junto al cursor.
+    expect(guideVertices([1.5, 1.2, 0], [wall, near]).points).toEqual(base.points);
+  });
+});
+
 describe('guideVertices sobre pendientes', () => {
   const s = Math.SQRT1_2;
   // Rampa de 2 celdas de ancho que sube 1 hacia +z: la cara inclinada mira hacia −z y arriba.
