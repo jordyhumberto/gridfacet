@@ -2532,11 +2532,102 @@ function toggleHud(): void {
 hudToggle.addEventListener('click', toggleHud);
 
 const helpModal = document.getElementById('helpModal')!;
-const setHelp = (open: boolean): void => {
+let setHelp = (open: boolean): void => {
   helpModal.hidden = !open;
 };
 document.getElementById('helpOpen')!.addEventListener('click', () => setHelp(true));
 document.getElementById('helpClose')!.addEventListener('click', () => setHelp(false));
+
+// Buscador de la ayuda: filtra la ayuda escrita y lista los atajos de cada herramienta que coinciden (por ejemplo "rotar").
+const helpSearchEl = document.getElementById('helpSearch') as HTMLInputElement;
+const helpResultsEl = document.getElementById('helpResults')!;
+const helpBodyEl = document.getElementById('helpBody')!;
+const plain = (text: string): string => text.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+const SYNONYMS: string[][] = [
+  ['rot', 'gir', 'giro', 'tumb', 'volte'],
+  ['mov', 'desplaz', 'trasl'],
+  ['borr', 'elimin', 'quit', 'supr'],
+  ['cort', 'tajo'],
+  ['copi', 'duplic', 'peg'],
+  ['ocult', 'escond', 'ojo'],
+  ['bloque', 'candado'],
+  ['capa', 'piso'],
+  ['escal', 'tamano', 'tamaño', 'agrand'],
+  ['color', 'pint'],
+  ['deshac', 'undo', 'rehac', 'redo'],
+];
+function searchHelp(): void {
+  const words = plain(helpSearchEl.value).split(/\s+/).filter(Boolean);
+  // Palabras que significan lo mismo: buscar "rotar" también encuentra "girar" o "tumbar".
+  const alike = (word: string): string[] => [word, ...(SYNONYMS.find((group) => group.some((w) => word.startsWith(w) || (word.length >= 3 && w.startsWith(word))))?.filter((w) => w !== word) ?? [])];
+  const matches = (text: string): boolean => {
+    const haystack = plain(text);
+    // Cada palabra debe empezar una palabra del texto: así "gir" encuentra "girar" pero no "elegir".
+    return words.every((word) => alike(word).some((option) => new RegExp(`(^|[^a-z0-9])${option.replace(/[^a-z0-9]/g, '')}`).test(haystack)));
+  };
+  // La ayuda escrita: se esconden las entradas que no coinciden y los títulos que se quedan vacíos.
+  let shown = 0;
+  for (const dl of helpBodyEl.querySelectorAll('dl')) {
+    let any = false;
+    for (const dt of dl.querySelectorAll('dt')) {
+      const dd = dt.nextElementSibling as HTMLElement | null;
+      const ok = words.length === 0 || matches(`${dt.textContent} ${dd?.textContent ?? ''}`);
+      dt.hidden = !ok;
+      if (dd) dd.hidden = !ok;
+      any = any || ok;
+      if (ok) shown++;
+    }
+    dl.hidden = !any;
+    (dl.previousElementSibling as HTMLElement | null)?.toggleAttribute('hidden', !any);
+  }
+  // Los atajos de cada herramienta (la barra de ayuda de abajo): los repetidos entre herramientas se juntan.
+  helpResultsEl.replaceChildren();
+  helpResultsEl.hidden = words.length === 0;
+  if (words.length === 0) return;
+  const seen = new Map<string, { keys: string; text: string; modes: string[] }>();
+  for (const [name, entries] of Object.entries(GUIDE) as [Mode, [string, string][]][]) {
+    for (const [keys, text] of entries) {
+      if (!matches(`${keys} ${text} ${MODE_INFO[name].name}`)) continue;
+      const entry = seen.get(`${keys}|${text}`) ?? { keys, text, modes: [] };
+      entry.modes.push(MODE_INFO[name].name);
+      seen.set(`${keys}|${text}`, entry);
+    }
+  }
+  if (seen.size > 0) {
+    const title = document.createElement('h3');
+    title.textContent = 'Atajos por herramienta';
+    const list = document.createElement('div');
+    list.className = 'hrow';
+    for (const { keys, text, modes } of seen.values()) {
+      const k = document.createElement('b');
+      k.textContent = keys;
+      const t = document.createElement('span');
+      t.textContent = text;
+      const where = document.createElement('small');
+      where.className = 'hmode';
+      where.textContent = modes.length > 4 ? ` · en varias herramientas` : ` · ${modes.join(', ')}`;
+      t.append(where);
+      list.append(k, t);
+    }
+    helpResultsEl.append(title, list);
+  }
+  if (seen.size === 0 && shown === 0) {
+    const none = document.createElement('div');
+    none.id = 'helpNone';
+    none.textContent = 'No hay nada con esa palabra. Prueba con otra (por ejemplo: girar, borrar, copiar).';
+    helpResultsEl.append(none);
+  }
+}
+helpSearchEl.addEventListener('input', searchHelp);
+const openHelp = setHelp;
+setHelp = (open: boolean): void => {
+  openHelp(open);
+  if (open) {
+    helpSearchEl.value = '';
+    searchHelp();
+    helpSearchEl.focus();
+  }
+};
 helpModal.addEventListener('pointerdown', (e) => {
   if (e.target === helpModal) setHelp(false);
 });
@@ -2971,7 +3062,8 @@ function updatePan(dt: number): void {
 
 window.addEventListener('keydown', (e) => {
   if (!helpModal.hidden) {
-    if (e.key === 'Escape' || e.key === '?') setHelp(false);
+    // Con el foco en el buscador, "?" es una letra más.
+    if (e.key === 'Escape' || (e.key === '?' && e.target !== helpSearchEl)) setHelp(false);
     return;
   }
   if (e.key === '?' || e.key === 'F1') {
@@ -2981,7 +3073,7 @@ window.addEventListener('keydown', (e) => {
   }
   // Con el foco en un selector las teclas le pertenecen a él.
   if (e.target instanceof HTMLSelectElement || e.target instanceof HTMLTextAreaElement) return;
-  if (e.target instanceof HTMLInputElement && e.target.type === 'number') return;
+  if (e.target instanceof HTMLInputElement && (e.target.type === 'number' || e.target.type === 'text' || e.target.type === 'search')) return;
   const key = e.key.toLowerCase();
   if ((e.ctrlKey || e.metaKey) && key === 'z') {
     e.preventDefault();
