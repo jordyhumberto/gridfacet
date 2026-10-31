@@ -26,6 +26,8 @@ export interface SnapOptions {
   onGuides?: (guides: Guides) => void;
   /** En cuántas partes se divide cada arista y el lado de cada cara para ofrecer más puntos (0 o 1: sin subdivisiones). */
   divisions?: number;
+  /** Si se da, solo cuentan los puntos para los que devuelve verdadero (los que no quedan tapados por una cara). */
+  isVisible?: (point: Vec3) => boolean;
 }
 
 const EDGE_RADIUS = 0.15;
@@ -44,7 +46,8 @@ export function snapPoint(hit: THREE.Vector3, model: ModelScene, options: SnapOp
   const near: Piece[] = [];
   const consider = (p: Vec3, limit = Infinity) => {
     const dist = Math.hypot(p[0] - hit.x, p[1] - hit.y, p[2] - hit.z);
-    if (dist < bestDist && dist < limit) {
+    // La comprobación de visibilidad cuesta un rayo: solo se hace a los que mejorarían el resultado.
+    if (dist < bestDist && dist < limit && (!options.isVisible || options.isVisible(p))) {
       bestDist = dist;
       best = p;
     }

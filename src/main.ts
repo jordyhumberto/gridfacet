@@ -392,10 +392,23 @@ snapDensityEl.addEventListener('change', () => {
   snapDensityEl.blur();
 });
 
+/** Verdadero si ninguna cara tapa el punto visto desde la cámara (los que están sobre una cara visible cuentan). */
+const visibilityRay = new THREE.Raycaster();
+function pointVisible(p: Vec3): boolean {
+  const from = camera.position;
+  const dir = new THREE.Vector3(p[0] - from.x, p[1] - from.y, p[2] - from.z);
+  const distance = dir.length();
+  if (distance < 1e-6) return true;
+  visibilityRay.set(from, dir.divideScalar(distance));
+  batches.flush();
+  const first = visibilityRay.intersectObjects([...objects.values(), ...batches.meshes()], true).find((hit) => hit.object instanceof THREE.Mesh);
+  return !first || first.distance > distance - 0.03;
+}
+
 /** Punto que se marcaría ahora: sobre el plano de trabajo si hay uno, si no sobre lo que apunta el cursor. */
 function markTarget(event: PointerEvent, hit: THREE.Intersection | undefined): Vec3 | null {
   const center = (point: THREE.Vector3): Vec3 => [point.x, point.y, point.z];
-  const options = (point: THREE.Vector3): SnapOptions => ({ edge: event.altKey, divisions: snapDivisions, onGuides: (guides) => showGuides(guides, center(point)) });
+  const options = (point: THREE.Vector3): SnapOptions => ({ edge: event.altKey, divisions: snapDivisions, isVisible: visibleVerticesOnly ? pointVisible : undefined, onGuides: (guides) => showGuides(guides, center(point)) });
   if (!workPlane) {
     if (!hit) showGuides(null);
     return hit ? snapPoint(hit.point, model, options(hit.point)) : null;
@@ -439,7 +452,8 @@ function updateHover(event: PointerEvent): void {
     const rect = renderer.domElement.getBoundingClientRect();
     pointer.set(((event.clientX - rect.left) / rect.width) * 2 - 1, -((event.clientY - rect.top) / rect.height) * 2 + 1);
     raycaster.setFromCamera(pointer, camera);
-    vertexTool.hoverAt({ x: event.clientX, y: event.clientY }, raycaster.ray, screenOf, event.altKey);
+    const view = camera.matrixWorld.elements.map((v) => v.toFixed(3)).join(',');
+    vertexTool.hoverAt({ x: event.clientX, y: event.clientY }, raycaster.ray, screenOf, event.altKey, visibleVerticesOnly ? pointVisible : null, view);
     updateCursor(false);
     return;
   }
@@ -2231,7 +2245,7 @@ fillActionsEl.addEventListener('click', (e) => {
 const outlineActionsEl = document.getElementById('outlineActions')!;
 function syncOutlineActions(): void {
   outlineActionsEl.hidden = mode !== 'outline';
-  snapRowEl.hidden = mode !== 'outline' && mode !== 'cut' && mode !== 'fill';
+  snapRowEl.hidden = mode !== 'outline' && mode !== 'cut' && mode !== 'fill' && mode !== 'vertex';
   outlineActionsEl.querySelector<HTMLButtonElement>('[data-outline="undo"]')!.hidden = !outlineTool.hasPoints;
   outlineActionsEl.querySelector('[data-outline="grow"]')!.classList.toggle('active', !outlineSink);
   outlineActionsEl.querySelector('[data-outline="sink"]')!.classList.toggle('active', outlineSink);
