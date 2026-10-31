@@ -175,6 +175,7 @@
         <section>
           <h4><span class="title">Herramientas</span></h4>
           <div class="row grid" id="tools"></div>
+          <small id="status"></small>
           <div class="row" id="selActions" hidden>
             <button data-sel="hide" title="O">Ocultar (O)</button>
             <button data-sel="isolate" title="I">Aislar (I)</button>
@@ -198,12 +199,57 @@
             <button data-cut="cancel">Cancelar (Esc)</button>
             <label><input type="checkbox" id="keepBoth" /> Conservar la otra mitad</label>
           </div>
+          <div class="row" id="fillActions" hidden>
+            <button data-fill="undo">Quitar punto (Ctrl+Z)</button>
+            <button data-fill="apply">Rellenar (Enter)</button>
+            <button data-fill="cancel">Cancelar (Esc)</button>
+          </div>
+          <div class="row" id="outlineActions" hidden>
+            <button data-outline="grow" class="active" title="La figura marcada sube, como un saliente">Crecer</button>
+            <button data-outline="sink" title="La figura marcada baja, como un hueco">Hundir</button>
+            <button data-outline="undo">Quitar punto (Ctrl+Z)</button>
+            <button data-outline="apply">Aplicar (Enter)</button>
+            <button data-outline="cancel">Cancelar (Esc)</button>
+          </div>
           <div class="row" id="vertexActions" hidden>
             <button data-vertex="less" title="Menos puntos por arista">− puntos</button>
             <small id="vertexInfo"></small>
             <button data-vertex="more" title="Más puntos por arista">+ puntos</button>
             <label title="Cuadrícula de puntos dentro de cada cara"><input type="checkbox" id="vertexFaces" /> Caras</label>
             <button data-vertex="done">Listo (Esc)</button>
+          </div>
+          <div class="row" id="snapRow" hidden title="Puntos que se ofrecen al marcar en Cortar, Rellenar y Figura: cada arista y cada cara se divide en esa cantidad de partes (se ven como puntos claros cerca del cursor)">
+            <small>Cantidad de vértices:</small>
+            <select id="snapDensity">
+              <option value="0">Bajo (solo vértices)</option>
+              <option value="2">Medio (mitades)</option>
+              <option value="4" selected>Alto (cuartos)</option>
+              <option value="8">Muy alto (octavos)</option>
+              <option value="16">Máximo (dieciseisavos)</option>
+            </select>
+            <label title="Con la casilla marcada solo se ven los puntos de las caras que se ven; sin marcar, también los que quedan detrás"><input type="checkbox" id="visibleOnly" checked /> Solo visibles</label>
+          </div>
+          <div class="row" id="planeRow" title="Marca los puntos de Cortar y Rellenar sobre un plano, también en el aire">
+            <small>Plano:</small>
+            <select id="planeAxis">
+              <option value="">Ninguno</option>
+              <option value="x">X =</option>
+              <option value="y">Y =</option>
+              <option value="z">Z =</option>
+            </select>
+            <button data-plane="-" title="Bajar medio paso">−</button>
+            <input type="number" id="planeValue" step="0.5" />
+            <button data-plane="+" title="Subir medio paso">+</button>
+          </div>
+          <div class="row" id="growActions" hidden>
+            <small>Cuánto (celdas):</small>
+            <button data-grow-amount="auto" class="active" title="Una celda de lado y un cuarto (¼) hacia arriba o abajo">Auto</button>
+            <button data-grow-amount="0.25">¼</button>
+            <button data-grow-amount="0.5">½</button>
+            <button data-grow-amount="0.75">¾</button>
+            <button data-grow-amount="1">1</button>
+            <input type="number" id="growAmount" min="0.05" step="0.05" placeholder="otro" title="Cantidad exacta en celdas (1 = el ancho de un cubo)" />
+            <label title="Crece o hunde toda la cara conectada a la apuntada (por ejemplo un muro de 3×3 cubos) y no solo el cuadrito. Ctrl invierte la opción mientras se hace clic"><input type="checkbox" id="growAll" /> Toda la cara conectada</label>
           </div>
           <div class="row" id="shapeActions" hidden>
             <select id="shapeKind" title="Forma"></select>
@@ -247,52 +293,6 @@
             <label title="Tamaño del extremo respecto a la cara: 1 recto, 0,5 estrecho, 0 en punta">Punta <input type="number" id="faceTaper" min="0" max="3" step="0.1" value="1" /></label>
             <label title="Cuánto se separa del borde de la cara (0 a 0,9): deja un reborde alrededor del cráter o del saliente">Borde <input type="number" id="faceInset" min="0" max="0.9" step="0.05" value="0" /></label>
             <label title="Dónde corta, contando desde la cara: 0,5 es por la mitad">Corte <input type="number" id="faceFraction" min="0.05" max="0.95" step="0.05" value="0.5" /></label>
-          </div>
-          <div class="row" id="growActions" hidden>
-            <small>Cuánto (celdas):</small>
-            <button data-grow-amount="auto" class="active" title="Una celda de lado y un cuarto (¼) hacia arriba o abajo">Auto</button>
-            <button data-grow-amount="0.25">¼</button>
-            <button data-grow-amount="0.5">½</button>
-            <button data-grow-amount="0.75">¾</button>
-            <button data-grow-amount="1">1</button>
-            <input type="number" id="growAmount" min="0.05" step="0.05" placeholder="otro" title="Cantidad exacta en celdas (1 = el ancho de un cubo)" />
-            <label title="Crece o hunde toda la cara conectada a la apuntada (por ejemplo un muro de 3×3 cubos) y no solo el cuadrito. Ctrl invierte la opción mientras se hace clic"><input type="checkbox" id="growAll" /> Toda la cara conectada</label>
-          </div>
-          <div class="row" id="snapRow" hidden title="Puntos que se ofrecen al marcar en Cortar, Rellenar y Figura: cada arista y cada cara se divide en esa cantidad de partes (se ven como puntos claros cerca del cursor)">
-            <small>Cantidad de vértices:</small>
-            <select id="snapDensity">
-              <option value="0">Bajo (solo vértices)</option>
-              <option value="2">Medio (mitades)</option>
-              <option value="4" selected>Alto (cuartos)</option>
-              <option value="8">Muy alto (octavos)</option>
-              <option value="16">Máximo (dieciseisavos)</option>
-            </select>
-            <label title="Con la casilla marcada solo se ven los puntos de las caras que se ven; sin marcar, también los que quedan detrás"><input type="checkbox" id="visibleOnly" checked /> Solo visibles</label>
-          </div>
-          <div class="row" id="outlineActions" hidden>
-            <button data-outline="grow" class="active" title="La figura marcada sube, como un saliente">Crecer</button>
-            <button data-outline="sink" title="La figura marcada baja, como un hueco">Hundir</button>
-            <button data-outline="undo">Quitar punto (Ctrl+Z)</button>
-            <button data-outline="apply">Aplicar (Enter)</button>
-            <button data-outline="cancel">Cancelar (Esc)</button>
-          </div>
-          <div class="row" id="fillActions" hidden>
-            <button data-fill="undo">Quitar punto (Ctrl+Z)</button>
-            <button data-fill="apply">Rellenar (Enter)</button>
-            <button data-fill="cancel">Cancelar (Esc)</button>
-          </div>
-          <small id="status"></small>
-          <div class="row" id="planeRow" title="Marca los puntos de Cortar y Rellenar sobre un plano, también en el aire">
-            <small>Plano:</small>
-            <select id="planeAxis">
-              <option value="">Ninguno</option>
-              <option value="x">X =</option>
-              <option value="y">Y =</option>
-              <option value="z">Z =</option>
-            </select>
-            <button data-plane="-" title="Bajar medio paso">−</button>
-            <input type="number" id="planeValue" step="0.5" />
-            <button data-plane="+" title="Subir medio paso">+</button>
           </div>
         </section>
         <section id="layers">

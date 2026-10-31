@@ -2289,6 +2289,8 @@ const outlineActionsEl = document.getElementById('outlineActions')!;
 function syncOutlineActions(): void {
   outlineActionsEl.hidden = mode !== 'outline';
   snapRowEl.hidden = mode !== 'outline' && mode !== 'cut' && mode !== 'fill' && mode !== 'vertex';
+  // El plano de trabajo solo vale al marcar puntos para cortar, rellenar o hacer una figura.
+  document.getElementById('planeRow')!.hidden = mode !== 'outline' && mode !== 'cut' && mode !== 'fill';
   outlineActionsEl.querySelector<HTMLButtonElement>('[data-outline="undo"]')!.hidden = !outlineTool.hasPoints;
   outlineActionsEl.querySelector('[data-outline="grow"]')!.classList.toggle('active', !outlineSink);
   outlineActionsEl.querySelector('[data-outline="sink"]')!.classList.toggle('active', outlineSink);
