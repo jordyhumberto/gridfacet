@@ -338,6 +338,14 @@ scene3d.add(guideOverlay);
 const GUIDE_RADIUS = 1.5;
 const MAX_GUIDE_LINES = 60;
 
+/** Muestra solo los puntos de las caras que se ven (no los que quedan detrás de otra cara). */
+let visibleVerticesOnly = true;
+const visibleOnlyEl = document.getElementById('visibleOnly') as HTMLInputElement;
+visibleOnlyEl.addEventListener('change', () => {
+  visibleVerticesOnly = visibleOnlyEl.checked;
+  visibleOnlyEl.blur();
+});
+
 function showGuides(guides: Guides | null, center?: Vec3): void {
   for (const child of [...guideOverlay.children]) {
     guideOverlay.remove(child);
@@ -358,14 +366,17 @@ function showGuides(guides: Guides | null, center?: Vec3): void {
     lines.renderOrder = 9;
     guideOverlay.add(lines);
   }
+  // Con "solo vértices visibles" los puntos se dibujan con profundidad: los que quedan detrás de una cara no se ven.
+  const dotMaterial = (color: number, opacity?: number): THREE.MeshBasicMaterial =>
+    new THREE.MeshBasicMaterial({ color, transparent: opacity !== undefined, opacity: opacity ?? 1, depthTest: visibleVerticesOnly, depthWrite: false });
   for (const p of guides.grid.filter(near)) {
-    const dot = new THREE.Mesh(new THREE.SphereGeometry(0.02, 8, 6), new THREE.MeshBasicMaterial({ color: 0xd8dcea, transparent: true, opacity: 0.85, depthTest: false }));
+    const dot = new THREE.Mesh(new THREE.SphereGeometry(0.02, 8, 6), dotMaterial(0xd8dcea, 0.85));
     dot.position.set(p[0], p[1], p[2]);
     dot.renderOrder = 9;
     guideOverlay.add(dot);
   }
   for (const p of guides.points.filter(near)) {
-    const dot = new THREE.Mesh(new THREE.SphereGeometry(0.035, 10, 8), new THREE.MeshBasicMaterial({ color: 0x9a7bff, depthTest: false }));
+    const dot = new THREE.Mesh(new THREE.SphereGeometry(0.035, 10, 8), dotMaterial(0x9a7bff));
     dot.position.set(p[0], p[1], p[2]);
     dot.renderOrder = 9;
     guideOverlay.add(dot);
@@ -381,10 +392,23 @@ snapDensityEl.addEventListener('change', () => {
   snapDensityEl.blur();
 });
 
+/** Verdadero si ninguna cara tapa el punto visto desde la cámara (los que están sobre una cara visible cuentan). */
+const visibilityRay = new THREE.Raycaster();
+function pointVisible(p: Vec3): boolean {
+  const from = camera.position;
+  const dir = new THREE.Vector3(p[0] - from.x, p[1] - from.y, p[2] - from.z);
+  const distance = dir.length();
+  if (distance < 1e-6) return true;
+  visibilityRay.set(from, dir.divideScalar(distance));
+  batches.flush();
+  const first = visibilityRay.intersectObjects([...objects.values(), ...batches.meshes()], true).find((hit) => hit.object instanceof THREE.Mesh);
+  return !first || first.distance > distance - 0.03;
+}
+
 /** Punto que se marcaría ahora: sobre el plano de trabajo si hay uno, si no sobre lo que apunta el cursor. */
 function markTarget(event: PointerEvent, hit: THREE.Intersection | undefined): Vec3 | null {
   const center = (point: THREE.Vector3): Vec3 => [point.x, point.y, point.z];
-  const options = (point: THREE.Vector3): SnapOptions => ({ edge: event.altKey, divisions: snapDivisions, onGuides: (guides) => showGuides(guides, center(point)) });
+  const options = (point: THREE.Vector3): SnapOptions => ({ edge: event.altKey, divisions: snapDivisions, isVisible: visibleVerticesOnly ? pointVisible : undefined, onGuides: (guides) => showGuides(guides, center(point)) });
   if (!workPlane) {
     if (!hit) showGuides(null);
     return hit ? snapPoint(hit.point, model, options(hit.point)) : null;
@@ -428,7 +452,8 @@ function updateHover(event: PointerEvent): void {
     const rect = renderer.domElement.getBoundingClientRect();
     pointer.set(((event.clientX - rect.left) / rect.width) * 2 - 1, -((event.clientY - rect.top) / rect.height) * 2 + 1);
     raycaster.setFromCamera(pointer, camera);
-    vertexTool.hoverAt({ x: event.clientX, y: event.clientY }, raycaster.ray, screenOf, event.altKey);
+    const view = camera.matrixWorld.elements.map((v) => v.toFixed(3)).join(',');
+    vertexTool.hoverAt({ x: event.clientX, y: event.clientY }, raycaster.ray, screenOf, event.altKey, visibleVerticesOnly ? pointVisible : null, view);
     updateCursor(false);
     return;
   }
@@ -2220,7 +2245,7 @@ fillActionsEl.addEventListener('click', (e) => {
 const outlineActionsEl = document.getElementById('outlineActions')!;
 function syncOutlineActions(): void {
   outlineActionsEl.hidden = mode !== 'outline';
-  snapRowEl.hidden = mode !== 'outline' && mode !== 'cut' && mode !== 'fill';
+  snapRowEl.hidden = mode !== 'outline' && mode !== 'cut' && mode !== 'fill' && mode !== 'vertex';
   outlineActionsEl.querySelector<HTMLButtonElement>('[data-outline="undo"]')!.hidden = !outlineTool.hasPoints;
   outlineActionsEl.querySelector('[data-outline="grow"]')!.classList.toggle('active', !outlineSink);
   outlineActionsEl.querySelector('[data-outline="sink"]')!.classList.toggle('active', outlineSink);

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { CATALOG, buildPiece } from './catalog';
-import type { Vec3 } from './piece';
+import { clipPiece, type Vec3 } from './piece';
 import { translatePiece } from './transform';
 import { candidatePoints, uniqueEdges } from './vertexCandidates';
 
@@ -19,6 +19,15 @@ describe('candidatePoints', () => {
     expect(has(points, [0.5, 0, 0])).toBe(true);
     expect(has(points, [0.25, 0, 0])).toBe(true);
     expect(has(points, [0, 0, 0])).toBe(false);
+  });
+
+  it('en una arista acortada por un corte se ofrece la misma distancia desde el otro extremo', () => {
+    // Se quita 0.25 de un lado: la arista queda de 0.25 a 1 y sus cuartos relativos ya no caen en 0.75.
+    const cut = clipPiece(cube(), { n: [-1, 0, 0], d: -0.25 })!;
+    const { points } = candidatePoints([cut], [], { divisions: 4, faces: false });
+    expect(has(points, [0.75, 0, 0])).toBe(true);
+    expect(has(points, [0.5, 0, 0])).toBe(true);
+    expect(has(points, [0.5, 1, 1])).toBe(true);
   });
 
   it('con 2 divisiones solo salen los puntos medios', () => {

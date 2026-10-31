@@ -31,6 +31,10 @@ export class VertexTool {
   private hover: Vec3 | null = null;
   private active = false;
   private overlay = new THREE.Group();
+  /** Solo cuentan (y se dibujan) los candidatos que esta función da por visibles; null: todos. */
+  private isVisible: ((p: Vec3) => boolean) | null = null;
+  private visible = new Set<Vec3>();
+  private visibleKey = '';
 
   /** Se llama al cambiar el estado, para que el panel muestre la densidad actual. */
   onPhaseChange: () => void = () => {};
@@ -93,10 +97,19 @@ export class VertexTool {
   }
 
   /** Busca el punto candidato bajo el cursor; con `free`, el punto más cercano sobre cualquier arista. */
-  hoverAt(cursor: ScreenPoint, ray: THREE.Ray, screenOf: (p: Vec3) => ScreenPoint | null, free: boolean): void {
+  hoverAt(cursor: ScreenPoint, ray: THREE.Ray, screenOf: (p: Vec3) => ScreenPoint | null, free: boolean, isVisible: ((p: Vec3) => boolean) | null = null, viewKey = ''): void {
+    // Las comprobaciones de visibilidad cuestan un rayo por punto: se rehacen solo cuando la cámara o los candidatos cambian.
+    const key = `${viewKey}|${this.candidates.length}`;
+    if (isVisible && key !== this.visibleKey) {
+      this.visible = new Set(this.candidates.filter(isVisible));
+      this.visibleKey = key;
+    }
+    this.isVisible = isVisible;
     let best: Vec3 | null = null;
     let bestDist = PICK_RADIUS;
     const consider = (p: Vec3) => {
+      if (isVisible && !free && !this.visible.has(p)) return;
+      if (isVisible && free && !isVisible(p)) return;
       const s = screenOf(p);
       if (!s) return;
       const dist = Math.hypot(s.x - cursor.x, s.y - cursor.y);
@@ -135,6 +148,7 @@ export class VertexTool {
     const targets = this.getTargets();
     const result = candidatePoints(targets, this.model.all(), { divisions: this.divisions, faces: this.faces });
     this.candidates = result.points;
+    this.visibleKey = '';
     this.edges = result.edges;
     this.hover = null;
     this.refresh();
@@ -158,7 +172,8 @@ export class VertexTool {
       `Añadir vértice a ${this.getTargets().length} pieza(s): clic en un punto amarillo · Alt: libre sobre la arista · Esc: salir`,
     );
 
-    const geometry = new THREE.BufferGeometry().setFromPoints(this.candidates.map((p) => new THREE.Vector3(...p)));
+    const shown = this.isVisible ? this.candidates.filter((p) => this.visible.has(p)) : this.candidates;
+    const geometry = new THREE.BufferGeometry().setFromPoints(shown.map((p) => new THREE.Vector3(...p)));
     const dots = new THREE.Points(
       geometry,
       new THREE.PointsMaterial({ color: CANDIDATE_COLOR, size: 6, sizeAttenuation: false, depthTest: false }),

@@ -109,6 +109,18 @@ export function candidatePoints(targets: Piece[], all: Piece[], options: Candida
         const t = k / options.divisions;
         add([edge.a[0] + (edge.b[0] - edge.a[0]) * t, edge.a[1] + (edge.b[1] - edge.a[1]) * t, edge.a[2] + (edge.b[2] - edge.a[2]) * t]);
       }
+      // Una arista acortada por un corte ya no se divide en las mismas partes que antes: además se ofrecen puntos a pasos fijos
+      // (1 / divisiones de celda) medidos desde cada extremo, para poder repetir la misma distancia en el otro lado.
+      const length = Math.hypot(edge.b[0] - edge.a[0], edge.b[1] - edge.a[1], edge.b[2] - edge.a[2]);
+      const step = 1 / options.divisions;
+      if (options.divisions >= 2 && length > step + EPS) {
+        for (let d = step; d < length - EPS; d += step) {
+          for (const [from, to] of [[edge.a, edge.b], [edge.b, edge.a]] as const) {
+            const t = d / length;
+            add([from[0] + (to[0] - from[0]) * t, from[1] + (to[1] - from[1]) * t, from[2] + (to[2] - from[2]) * t]);
+          }
+        }
+      }
     }
     if (options.faces) for (const face of piece.faces) for (const p of faceGrid(face, options.divisions)) add(p);
     const others = all.filter((other) => other !== piece && overlap(piece, other));
