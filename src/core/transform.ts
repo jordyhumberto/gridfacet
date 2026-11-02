@@ -159,6 +159,26 @@ export function mirrorPiece(piece: Piece, axis: Axis, center: number): Piece {
   return keepGroup(makePiece(piece.faces.map((face) => face.map(flip).reverse()), piece.color, piece.faceColors), piece);
 }
 
+/**
+ * Añade el reflejo de las piezas respecto al plano `axis = center`, sin tocar las originales.
+ * `nextGroup` da un grupo nuevo a cada grupo copiado, para que la copia no se una al original.
+ */
+export function mirrorCopyChange(pieces: Piece[], axis: Axis, center: number, nextGroup: () => number): Change {
+  const groups = new Map<number, number>();
+  const added = pieces.map((piece) => {
+    const copy = mirrorPiece(piece, axis, center);
+    if (piece.group === undefined) {
+      delete copy.group;
+      delete copy.groupName;
+      return copy;
+    }
+    if (!groups.has(piece.group)) groups.set(piece.group, nextGroup());
+    copy.group = groups.get(piece.group);
+    return copy;
+  });
+  return { added, removed: [] };
+}
+
 export function mirrorChange(pieces: Piece[], axis: Axis): Change {
   const center = mirrorCenter(pieces, axis);
   return { removed: pieces, added: pieces.map((piece) => mirrorPiece(piece, axis, center)) };

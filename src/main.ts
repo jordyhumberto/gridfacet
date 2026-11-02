@@ -9,7 +9,8 @@ import type { ExportMode } from './core/export';
 import { extrudeFace, faceAt, unitNormal } from './core/extrude';
 import { pieceKey, reflectPiece, reflections, withSymmetry, withSymmetryPoints, type Symmetry } from './core/symmetry';
 import type { Piece, Vec3 } from './core/piece';
-import { STEP_XZ, STEP_Y, mirrorChange, moveChange, rotateChange, rotateQuarterChange, translatePiece, type Axis } from './core/transform';
+import { STEP_XZ, STEP_Y, mirrorChange, mirrorCopyChange, moveChange, rotateChange, rotateQuarterChange, translatePiece, type Axis } from './core/transform';
+import { searchCommands, type Command } from './core/commands';
 import { parseProjectFull, serializeProject } from './core/project';
 import { canPickOpen, canPickSave, pickOpen, pickSave, writeHandle, type FileHandle } from './fileAccess';
 import { downloadBlob, exportGlb } from './render/glb';
@@ -143,6 +144,20 @@ const cutTool = new CutTool(scene3d, model, selection, (message) => (statusEl.te
 const fileNameEl = document.getElementById('fileName')!;
 let fileName = 'Sin título';
 let dirty = false;
+
+/** Copia automática de la escena en el navegador: si se cierra o recarga la página sin guardar, se recupera al volver. */
+const AUTOSAVE_KEY = 'gridfacet.autosave';
+let autosaveTimer: number | undefined;
+function scheduleAutosave(): void {
+  window.clearTimeout(autosaveTimer);
+  autosaveTimer = window.setTimeout(() => {
+    try {
+      localStorage.setItem(AUTOSAVE_KEY, serializeProject(model.all(), model.points(), gridSize, layers.toJSON()));
+    } catch {
+      // Sin espacio o sin acceso al almacenamiento: no se copia, pero el trabajo sigue.
+    }
+  }, 800);
+}
 function syncFileName(): void {
   const label = `${dirty ? '● ' : ''}${fileName}`;
   fileNameEl.textContent = label;
@@ -168,6 +183,7 @@ model.onChange = ({ added, removed, marksAdded, marksRemoved }) => {
   setEraseHover(undefined);
   if (marksAdded?.length || marksRemoved?.length) refreshMarks();
   dirty = true;
+  scheduleAutosave();
   syncFileName();
   selection.remove(removed.map((piece) => piece.id));
   syncInspector();
@@ -956,6 +972,7 @@ function refreshLayers(): void {
 layers.onChange = () => {
   model.activeLayer = layers.active;
   refreshLayers();
+  scheduleAutosave();
 };
 document.getElementById('layerAdd')!.addEventListener('click', () => layers.add());
 layerMoveEl.addEventListener('click', moveSelectionToActiveLayer);
@@ -1194,6 +1211,16 @@ function pasteClipboard(): void {
 function mirrorSelected(axis: Axis): void {
   if (selection.size === 0) return;
   commitTransform(mirrorChange(selectedPieces(), axis));
+}
+
+/** Copia reflejada de la selección respecto al plano de simetría (por defecto el origen); la copia queda elegida para moverla. */
+function mirrorCopySelected(axis: 'x' | 'z'): void {
+  if (selection.size === 0) return;
+  const center = symmetry.center[axis === 'x' ? 0 : 2];
+  const change = mirrorCopyChange(selectedPieces(), axis, center, newGroupId);
+  model.apply(change);
+  selection.set(change.added.map((piece) => piece.id));
+  statusEl.textContent = `Copia en espejo sobre ${axis.toUpperCase()} = ${center}: ${change.added.length} pieza(s)`;
 }
 
 const selActionsEl = document.getElementById('selActions')!;
@@ -2702,6 +2729,84 @@ const MODE_INFO: Record<Mode, { name: string; color: string }> = {
   face: { name: 'Cara', color: '#8ce08c' },
 };
 
+// Paleta de comandos (Ctrl+K): busca cualquier acción por nombre y la ejecuta.
+const hasSelection = (): boolean => selection.size > 0;
+const commands: Command[] = [
+  ...(Object.keys(MODE_INFO) as Mode[]).map((name): Command => ({ name: `Herramienta: ${MODE_INFO[name].name}`, keywords: 'modo', run: () => setMode(name) })),
+  { name: 'Deshacer', shortcut: 'Ctrl+Z', run: () => model.undo() },
+  { name: 'Rehacer', shortcut: 'Ctrl+Y', run: redo },
+  { name: 'Copiar', shortcut: 'Ctrl+C', enabled: hasSelection, run: copySelected },
+  { name: 'Pegar', shortcut: 'Ctrl+V', enabled: () => clipboard.length > 0, run: pasteClipboard },
+  { name: 'Borrar selección', keywords: 'eliminar suprimir', enabled: hasSelection, run: deleteSelected },
+  { name: 'Unir piezas', keywords: 'fusionar merge', enabled: hasSelection, run: mergeSelected },
+  { name: 'Agrupar', shortcut: 'Ctrl+G', enabled: hasSelection, run: groupSelected },
+  { name: 'Desagrupar', enabled: hasSelection, run: ungroupSelected },
+  { name: 'Ocultar selección', enabled: hasSelection, run: hideSelected },
+  { name: 'Aislar selección', keywords: 'solo', enabled: hasSelection, run: isolateSelected },
+  { name: 'Seleccionar conectadas', enabled: hasSelection, run: selectConnected },
+  { name: 'Excavar', keywords: 'restar hueco', enabled: hasSelection, run: excavateSelected },
+  ...(['x', 'y', 'z'] as const).map((axis): Command => ({ name: `Voltear en ${axis.toUpperCase()}`, keywords: 'espejo reflejar simetria', enabled: hasSelection, run: () => mirrorSelected(axis) })),
+  ...(['x', 'z'] as const).map((axis): Command => ({ name: `Espejo-copia en ${axis.toUpperCase()}`, keywords: 'duplicar reflejar simetria copia', enabled: hasSelection, run: () => mirrorCopySelected(axis) })),
+  ...(['x', 'y', 'z'] as const).map((axis): Command => ({ name: `Girar 90° sobre ${axis.toUpperCase()}`, keywords: 'rotar giro tumbar', enabled: hasSelection, run: () => commitTransform(rotateQuarterChange(selectedPieces(), axis, 1)) })),
+  { name: 'Nueva capa', keywords: 'capas', run: () => layers.add() },
+  { name: 'Guardar', shortcut: 'Ctrl+S', run: () => void saveProject(false) },
+  { name: 'Guardar como…', shortcut: 'Ctrl+Alt+S', run: () => void saveProject(true) },
+  { name: 'Abrir…', shortcut: 'Ctrl+O', run: () => void requestOpen() },
+  { name: 'Mostrar ayuda', shortcut: '?', keywords: 'atajos', run: () => setHelp(true) },
+];
+const paletteEl = document.getElementById('palette')!;
+const paletteInput = document.getElementById('paletteInput') as HTMLInputElement;
+const paletteList = document.getElementById('paletteList')!;
+let paletteMatches: Command[] = [];
+let paletteIndex = 0;
+const isPaletteOn = (c: Command): boolean => c.enabled?.() ?? true;
+
+function renderPalette(): void {
+  paletteMatches = searchCommands(commands, paletteInput.value);
+  paletteIndex = Math.max(0, paletteMatches.findIndex(isPaletteOn));
+  paletteList.replaceChildren();
+  paletteMatches.forEach((command, i) => {
+    const row = document.createElement('div');
+    row.className = `pcmd${i === paletteIndex ? ' active' : ''}${isPaletteOn(command) ? '' : ' off'}`;
+    row.append(Object.assign(document.createElement('span'), { textContent: command.name }));
+    if (command.shortcut) row.append(Object.assign(document.createElement('kbd'), { textContent: command.shortcut }));
+    row.addEventListener('click', () => runPaletteCommand(command));
+    paletteList.appendChild(row);
+  });
+}
+function runPaletteCommand(command: Command): void {
+  if (!isPaletteOn(command)) return;
+  setPalette(false);
+  command.run();
+}
+function setPalette(on: boolean): void {
+  paletteEl.hidden = !on;
+  if (!on) {
+    // Sin esto el campo oculto conserva el foco y se come los atajos siguientes.
+    paletteInput.blur();
+    return;
+  }
+  paletteInput.value = '';
+  renderPalette();
+  paletteInput.focus();
+}
+paletteInput.addEventListener('input', renderPalette);
+paletteInput.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') setPalette(false);
+  else if (e.key === 'Enter' && paletteMatches[paletteIndex]) runPaletteCommand(paletteMatches[paletteIndex]);
+  else if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+    e.preventDefault();
+    const step = e.key === 'ArrowDown' ? 1 : -1;
+    paletteIndex = (paletteIndex + step + paletteMatches.length) % Math.max(1, paletteMatches.length);
+    [...paletteList.children].forEach((row, i) => row.classList.toggle('active', i === paletteIndex));
+    paletteList.children[paletteIndex]?.scrollIntoView({ block: 'nearest' });
+  }
+  e.stopPropagation();
+});
+paletteEl.addEventListener('pointerdown', (e) => {
+  if (e.target === paletteEl) setPalette(false);
+});
+
 /** Línea de “ahora”: dice qué toca hacer en este momento y cambia con la fase de la herramienta y la selección. */
 function hintText(): string {
   switch (mode) {
@@ -3120,6 +3225,11 @@ window.addEventListener('keydown', (e) => {
   if (e.target instanceof HTMLSelectElement || e.target instanceof HTMLTextAreaElement) return;
   if (e.target instanceof HTMLInputElement && (e.target.type === 'number' || e.target.type === 'text' || e.target.type === 'search')) return;
   const key = e.key.toLowerCase();
+  if ((e.ctrlKey || e.metaKey) && key === 'k') {
+    e.preventDefault();
+    setPalette(true);
+    return;
+  }
   if ((e.ctrlKey || e.metaKey) && key === 'z') {
     e.preventDefault();
     // Con una herramienta a medias, Ctrl+Z retrocede un punto en vez de deshacer el último bloque.
@@ -3292,6 +3402,26 @@ window.addEventListener('keydown', (e) => {
     refreshGhost();
   }
 });
+
+/** Al abrir la página con la escena vacía, recupera la última copia automática si la hay. */
+function restoreAutosave(): void {
+  if (model.all().length > 0) return;
+  try {
+    const text = localStorage.getItem(AUTOSAVE_KEY);
+    if (!text) return;
+    const { pieces: loaded, marks, gridSize: savedSize, layers: savedLayers } = parseProjectFull(text);
+    if (loaded.length === 0) return;
+    if (savedSize !== undefined) setGridSize(savedSize);
+    model.activeLayer = 1;
+    model.apply({ added: loaded, removed: [], marksAdded: marks });
+    layers.load(savedLayers, loaded);
+    applyLayerState();
+    statusEl.textContent = `Recuperado tu último trabajo (${loaded.length} piezas). Guárdalo en un archivo para no perderlo`;
+  } catch {
+    // Una copia dañada o ilegible se ignora: se empieza con la escena vacía.
+  }
+}
+restoreAutosave();
 
 function resize(): void {
   const { clientWidth: w, clientHeight: h } = container;
