@@ -75,6 +75,7 @@
       #slopeRow[hidden] { display: none; }
       #recentColors { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; margin: 8px 0 4px; }
       #recentColors button { height: 22px; padding: 0; border: 1px solid #3d4452; border-radius: 6px; cursor: pointer; }
+      #recentColors { max-height: 132px; overflow-y: auto; }
       #recentColors button:disabled { background: none; border-style: dashed; opacity: 0.4; cursor: default; }
       #recentColors button.active { outline: 2px solid #fff; outline-offset: 1px; }
       #faceActions label[hidden], #sphereActions label[hidden] { display: none; }
@@ -212,6 +213,14 @@
             <input type="number" id="slabThickInput" min="0.02" max="4" step="0.025" placeholder="otro" title="Grosor exacto en celdas" />
           </div>
           <div id="recentColors" title="Últimos 10 colores usados: clic para volver a elegir uno"></div>
+          <div class="row" id="paletteRow">
+            <select id="paletteSel" title="Paleta que se muestra: los últimos colores o una guardada"></select>
+            <button id="paletteSave" title="Guarda los últimos colores como una paleta con nombre">Guardar</button>
+            <button id="paletteImport" title="Abre un archivo .hex (un color por línea, como los de Lospec) como paleta">Importar</button>
+            <button id="paletteExport" title="Guarda la paleta mostrada como archivo .hex">Exportar</button>
+            <button id="paletteDel" title="Borra la paleta mostrada">✕</button>
+            <input type="file" id="paletteFile" accept=".hex,.txt,text/plain" hidden />
+          </div>
           <div class="row" id="triRow">
             <small id="triStats"></small>
             <label title="Presupuesto de triángulos: se pone en rojo al pasarlo (un personaje PS1 ronda 300–800)">Máx <input type="number" id="triBudget" min="0" step="100" value="800" /></label>
@@ -243,6 +252,7 @@
             <button data-cut="apply">Cortar (Enter)</button>
             <button data-cut="cancel">Cancelar (Esc)</button>
             <label><input type="checkbox" id="keepBoth" /> Conservar la otra mitad</label>
+            <label title="El corte solo toca las piezas de la capa activa; las demás capas quedan como están"><input type="checkbox" id="cutActiveLayer" /> Solo la capa activa</label>
           </div>
           <div class="row" id="fillActions" hidden>
             <button data-fill="undo">Quitar punto (Ctrl+Z)</button>
@@ -474,6 +484,8 @@
           <dt>Alinear, repartir, suelo y medida</dt><dd>En la paleta (<kbd>Ctrl</kbd>+<kbd>K</kbd>): “Alinear en X/Y/Z” deja las partes a ras por un borde o por el centro; “Distribuir” reparte tres o más con huecos iguales (las de los extremos no se mueven); “Mover al suelo” apoya la selección en y = 0; “Redimensionar…” fija la dimensión mayor conservando proporciones. Un grupo cuenta como una sola parte.</dd>
           <dt>Copia automática</dt><dd>La escena se copia sola en el navegador; si recargas o cierras la página sin guardar, al volver se recupera. Guarda en un archivo para conservarla de verdad.</dd>
           <dt>Exportar sprites</dt><dd>En Archivo: elige cámara (isométrica, lateral o cenital), 1, 4, 8 o 16 vistas alrededor del modelo, tamaño de 16 a 256 px, sombreado plano o con luz, y contorno. Se dibuja sin suavizado y con fondo transparente. Con “Hoja” sale un solo PNG con las vistas por filas; sin ella, un PNG por vista. Todas las vistas comparten escala.</dd>
+          <dt>Paletas de colores</dt><dd>Debajo de los colores recientes: “Guardar” convierte los últimos colores en una paleta con nombre; “Importar” abre un archivo .hex (un color por línea, como los de Lospec); “Exportar” la guarda como .hex. El selector alterna entre los recientes y tus paletas.</dd>
+          <dt>Cortar solo la capa activa</dt><dd>En Cortar, la casilla “Solo la capa activa” limita el corte a las piezas de esa capa, aunque otras estén cruzadas por el plano.</dd>
           <dt>“Solo visibles”</dt><dd>En Cortar, Rellenar, Figura y Vértice: con la casilla marcada los puntos tapados por otra cara no se dibujan ni se pueden elegir.</dd>
           <dt>Sección “Grupos”</dt><dd>Lista los grupos del modelo: un clic en el nombre elige el grupo, el botón “ojo” lo oculta o muestra (como una capa). Con un grupo elegido puedes darle nombre; ese nombre se usa en los objetos del GLB con “Una pieza por objeto” (por ejemplo <code>Cola_12</code>), útil para reconocer las partes en Blender. Se guarda en el proyecto.</dd>
         </dl>

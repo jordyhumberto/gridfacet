@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { guideVertices, type Guides } from '../core/guides';
 import { intersectionPoints } from '../core/intersections';
+import { layerOf } from '../core/layers';
 import { candidatePoints } from '../core/vertexCandidates';
 import { crossesPlane, cutPieces, flipPlane, planeOfPolygon, projectToPlane, regionTouchesPiece, triangulateRegion } from '../core/cut';
 import { clipPiece, planeFromPoints, type Piece, type Plane, type Vec3 } from '../core/piece';
@@ -117,6 +118,8 @@ export function closestOnSegment(point: { x: number; y: number; z: number }, p: 
 
 export class CutTool {
   keepBoth = false;
+  /** Con la casilla marcada el corte solo actúa sobre las piezas de la capa activa. */
+  activeLayerOnly = false;
 
   private points: Vec3[] = [];
   private closed = false;
@@ -297,7 +300,8 @@ export class CutTool {
 
   /** Con selección, el corte solo actúa sobre ella; sin selección, sobre todas las piezas. */
   private targets(): Piece[] {
-    const all = this.model.editable();
+    const editable = this.model.editable();
+    const all = this.activeLayerOnly ? editable.filter((piece) => layerOf(piece) === this.model.activeLayer) : editable;
     return this.selection.size > 0 ? all.filter((piece) => this.selection.has(piece.id)) : all;
   }
 

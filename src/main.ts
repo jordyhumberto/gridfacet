@@ -12,6 +12,7 @@ import type { Piece, Vec3 } from './core/piece';
 import { STEP_XZ, STEP_Y, mirrorChange, mirrorCopyChange, moveChange, rotateChange, rotateQuarterChange, translatePiece, type Axis } from './core/transform';
 import { alignChange, distributeChange, groundChange, partsOf, resizeLongestChange } from './core/arrange';
 import { searchCommands, type Command } from './core/commands';
+import { parseHexColors, parsePalettes, toHexText, upsertPalette, type Palette } from './core/palettes';
 import { parseProjectFull, serializeProject } from './core/project';
 import { canPickOpen, canPickSave, pickOpen, pickSave, writeHandle, type FileHandle } from './fileAccess';
 import { downloadBlob, exportGlb } from './render/glb';
@@ -2441,11 +2442,80 @@ try {
   // Sin almacenamiento empieza vacía.
 }
 const recentEl = document.getElementById('recentColors')!;
+
+// Paletas guardadas: una lista con nombre de colores, que se recuerda entre sesiones y se puede importar o exportar como .hex.
+const PALETTES_KEY = 'gridfacet.palettes';
+let palettes: Palette[] = [];
+try {
+  palettes = parsePalettes(JSON.parse(localStorage.getItem(PALETTES_KEY) ?? '[]'));
+} catch {
+  // Sin almacenamiento o con datos dañados no hay paletas guardadas.
+}
+const paletteSel = document.getElementById('paletteSel') as HTMLSelectElement;
+const paletteFile = document.getElementById('paletteFile') as HTMLInputElement;
+const shownPalette = (): Palette | undefined => palettes.find((p) => p.name === paletteSel.value);
+function persistPalettes(): void {
+  try {
+    localStorage.setItem(PALETTES_KEY, JSON.stringify(palettes));
+  } catch {
+    // Sin almacenamiento valen solo para esta sesión.
+  }
+}
+function refreshPaletteSelect(selectName = paletteSel.value): void {
+  paletteSel.replaceChildren(new Option('Recientes', ''), ...palettes.map((p) => new Option(`${p.name} (${p.colors.length})`, p.name)));
+  paletteSel.value = palettes.some((p) => p.name === selectName) ? selectName : '';
+  (document.getElementById('paletteExport') as HTMLButtonElement).disabled = !shownPalette();
+  (document.getElementById('paletteDel') as HTMLButtonElement).disabled = !shownPalette();
+  renderRecentColors();
+}
+function savePalette(name: string, colors: number[]): void {
+  const clean = name.trim();
+  if (!clean || colors.length === 0) return;
+  palettes = upsertPalette(palettes, { name: clean, colors });
+  persistPalettes();
+  refreshPaletteSelect(clean);
+  statusEl.textContent = `Paleta “${clean}” guardada (${colors.length} colores)`;
+}
+paletteSel.addEventListener('change', () => refreshPaletteSelect());
+document.getElementById('paletteSave')!.addEventListener('click', () => {
+  if (recentColors.length === 0) {
+    statusEl.textContent = 'Aún no hay colores recientes que guardar';
+    return;
+  }
+  const name = window.prompt('Nombre de la paleta (los últimos colores usados)', 'Mi paleta');
+  if (name !== null) savePalette(name, recentColors);
+});
+document.getElementById('paletteImport')!.addEventListener('click', () => paletteFile.click());
+paletteFile.addEventListener('change', async () => {
+  const file = paletteFile.files?.[0];
+  paletteFile.value = '';
+  if (!file) return;
+  const colors = parseHexColors(await file.text());
+  if (colors.length === 0) {
+    statusEl.textContent = `${file.name} no tiene colores válidos (un valor de 6 cifras por línea)`;
+    return;
+  }
+  savePalette(file.name.replace(/\.(hex|txt)$/i, ''), colors);
+});
+document.getElementById('paletteExport')!.addEventListener('click', () => {
+  const palette = shownPalette();
+  if (palette) downloadBlob(toHexText(palette.colors), `${palette.name.replace(/[\\/:*?"<>|]+/g, '_')}.hex`, 'text/plain');
+});
+document.getElementById('paletteDel')!.addEventListener('click', () => {
+  const palette = shownPalette();
+  if (!palette || !window.confirm(`¿Borrar la paleta “${palette.name}”?`)) return;
+  palettes = palettes.filter((p) => p !== palette);
+  persistPalettes();
+  refreshPaletteSelect('');
+});
+
 function renderRecentColors(): void {
   recentEl.replaceChildren();
-  for (let i = 0; i < RECENT_MAX; i++) {
+  const palette = shownPalette();
+  const slots = palette ? palette.colors.length : RECENT_MAX;
+  for (let i = 0; i < slots; i++) {
     const swatch = document.createElement('button');
-    const c = recentColors[i];
+    const c = palette ? palette.colors[i] : recentColors[i];
     if (c === undefined) {
       swatch.disabled = true;
     } else {
@@ -2468,9 +2538,12 @@ function useColor(c: number): void {
   }
   renderRecentColors();
 }
-renderRecentColors();
+refreshPaletteSelect('');
 document.getElementById('keepBoth')!.addEventListener('change', (e) => {
   cutTool.keepBoth = (e.target as HTMLInputElement).checked;
+});
+document.getElementById('cutActiveLayer')!.addEventListener('change', (e) => {
+  cutTool.activeLayerOnly = (e.target as HTMLInputElement).checked;
 });
 
 const openFileEl = document.getElementById('openFile') as HTMLInputElement;
