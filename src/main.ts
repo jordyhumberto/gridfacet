@@ -10,6 +10,7 @@ import { extrudeFace, faceAt, unitNormal } from './core/extrude';
 import { pieceKey, reflectPiece, reflections, withSymmetry, withSymmetryPoints, type Symmetry } from './core/symmetry';
 import type { Piece, Vec3 } from './core/piece';
 import { STEP_XZ, STEP_Y, mirrorChange, mirrorCopyChange, moveChange, rotateChange, rotateQuarterChange, translatePiece, type Axis } from './core/transform';
+import { alignChange, distributeChange, groundChange, partsOf, resizeLongestChange } from './core/arrange';
 import { searchCommands, type Command } from './core/commands';
 import { parseProjectFull, serializeProject } from './core/project';
 import { canPickOpen, canPickSave, pickOpen, pickSave, writeHandle, type FileHandle } from './fileAccess';
@@ -2698,6 +2699,9 @@ setHelp = (open: boolean): void => {
     helpSearchEl.value = '';
     searchHelp();
     helpSearchEl.focus();
+  } else {
+    // El campo oculto no debe conservar el foco: se comería los atajos siguientes.
+    helpSearchEl.blur();
   }
 };
 helpModal.addEventListener('pointerdown', (e) => {
@@ -2748,6 +2752,34 @@ const commands: Command[] = [
   ...(['x', 'y', 'z'] as const).map((axis): Command => ({ name: `Voltear en ${axis.toUpperCase()}`, keywords: 'espejo reflejar simetria', enabled: hasSelection, run: () => mirrorSelected(axis) })),
   ...(['x', 'z'] as const).map((axis): Command => ({ name: `Espejo-copia en ${axis.toUpperCase()}`, keywords: 'duplicar reflejar simetria copia', enabled: hasSelection, run: () => mirrorCopySelected(axis) })),
   ...(['x', 'y', 'z'] as const).map((axis): Command => ({ name: `Girar 90° sobre ${axis.toUpperCase()}`, keywords: 'rotar giro tumbar', enabled: hasSelection, run: () => commitTransform(rotateQuarterChange(selectedPieces(), axis, 1)) })),
+  ...(['x', 'y', 'z'] as const).flatMap((axis) =>
+    ([['min', 'al borde menor'], ['center', 'al centro'], ['max', 'al borde mayor']] as const).map(([edge, label]): Command => ({
+      name: `Alinear en ${axis.toUpperCase()} ${label}`,
+      keywords: 'alinear ras',
+      enabled: () => partsOf(selectedPieces()).length >= 2,
+      run: () => commitTransform(alignChange(selectedPieces(), axis, edge)),
+    })),
+  ),
+  ...(['x', 'y', 'z'] as const).map((axis): Command => ({
+    name: `Distribuir en ${axis.toUpperCase()} con huecos iguales`,
+    keywords: 'repartir separar espaciar',
+    enabled: () => partsOf(selectedPieces()).length >= 3,
+    run: () => commitTransform(distributeChange(selectedPieces(), axis)),
+  })),
+  { name: 'Mover al suelo', keywords: 'bajar apoyar y 0', enabled: hasSelection, run: () => commitTransform(groundChange(selectedPieces())) },
+  {
+    name: 'Redimensionar…',
+    keywords: 'escalar tamaño medida proporcion',
+    enabled: hasSelection,
+    run: () => {
+      const box = boundsOf(selectedPieces());
+      if (!box) return;
+      const current = Math.max(...[0, 1, 2].map((k) => box.max[k] - box.min[k]));
+      const text = window.prompt('Medida de la dimensión mayor, en celdas (se conservan las proporciones)', String(Math.round(current * 1000) / 1000));
+      const value = text === null ? NaN : Number(text.replace(',', '.'));
+      if (Number.isFinite(value) && value > 0) commitTransform(resizeLongestChange(selectedPieces(), value));
+    },
+  },
   { name: 'Nueva capa', keywords: 'capas', run: () => layers.add() },
   { name: 'Guardar', shortcut: 'Ctrl+S', run: () => void saveProject(false) },
   { name: 'Guardar como…', shortcut: 'Ctrl+Alt+S', run: () => void saveProject(true) },
