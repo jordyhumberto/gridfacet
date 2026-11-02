@@ -32,9 +32,9 @@ import { connectedPieces, sizeOf } from './core/connected';
 import { bevelChange, edgeBetween, nearestEdge, type PieceEdge } from './core/bevel';
 import { buildShape, MAX_RINGS, MAX_SIDES, MIN_RINGS, MIN_SIDES, SECTIONS, SHAPES, type ShapeKind, type ShapeSpec, type SphereSection } from './core/shapes';
 import { facesAt, paintChange, type FaceRef } from './core/paint';
-import { faceColorOf, faceNormal, newGroupId, withGroup } from './core/piece';
+import { faceColorOf, faceNormal, newGroupId, withGroup, withLayer } from './core/piece';
 import { VertexTool } from './tools/vertexTool';
-import { excavateChange, extrudeFaceChange, mergeChange, repeatChange, sinkCutters, sinkFacesChange, splitFaceChange, triangleCount } from './core/modeling';
+import { excavateChange, extrudeFaceChange, findSlivers, mergeChange, repeatChange, sinkCutters, sinkFacesChange, splitFaceChange, triangleCount } from './core/modeling';
 
 const DEFAULT_GRID_SIZE = 24;
 const MIN_GRID_SIZE = 4;
@@ -925,12 +925,12 @@ function removeLayer(id: number): void {
 /** Pasa las piezas elegidas a la capa activa. */
 function moveSelectionToActiveLayer(): void {
   const target = layers.active;
-  for (const id of selection.list()) {
-    const piece = model.get(id);
-    if (!piece) continue;
-    if (target === 1) delete piece.layer;
-    else piece.layer = target;
-  }
+  // Como un cambio más (piezas nuevas), para poder deshacerlo.
+  const removed = selection.list().map((id) => model.get(id)).filter((piece): piece is Piece => !!piece && layerOf(piece) !== target);
+  if (removed.length === 0) return;
+  const added = removed.map((piece) => withLayer(piece, target));
+  model.apply({ added, removed });
+  selection.set(added.map((piece) => piece.id));
   applyLayerState();
   refreshLayers();
 }
@@ -2635,7 +2635,7 @@ document.getElementById('export')!.addEventListener('click', async () => {
   const exportMode = (document.getElementById('exportMode') as HTMLSelectElement).value as ExportMode;
   const suggested = fileName === 'Sin título' ? 'gridfacet.glb' : fileName.replace(/\.json$/i, '') + '.glb';
   try {
-    const data = await exportGlb(pieces, exportMode);
+    const data = await exportGlb(pieces, exportMode, (id) => layers.get(id)?.name ?? `Capa_${id}`);
     let saved = suggested;
     if (canPickSave()) {
       const handle = await pickSave(suggested, 'Modelo GLB', 'model/gltf-binary', '.glb');
@@ -2874,6 +2874,21 @@ const commands: Command[] = [
     enabled: () => partsOf(selectedPieces()).length >= 3,
     run: () => commitTransform(distributeChange(selectedPieces(), axis)),
   })),
+  {
+    name: 'Limpiar astillas',
+    keywords: 'cortes diminutas pequeñas quitar basura',
+    run: () => {
+      // Con selección actúa sobre ella; sin selección, sobre las piezas que se pueden editar.
+      const scope = selection.size > 0 ? selectedPieces() : model.editable();
+      const slivers = findSlivers(scope);
+      if (slivers.length === 0) {
+        statusEl.textContent = 'No hay astillas: ninguna pieza es tan pequeña';
+        return;
+      }
+      model.apply({ added: [], removed: slivers });
+      statusEl.textContent = `Quitadas ${slivers.length} astilla(s). Ctrl+Z para volver atrás`;
+    },
+  },
   { name: 'Mover al suelo', keywords: 'bajar apoyar y 0', enabled: hasSelection, run: () => commitTransform(groundChange(selectedPieces())) },
   {
     name: 'Redimensionar…',

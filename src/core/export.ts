@@ -1,8 +1,9 @@
 import { faceColorOf, type Piece, type Vec3 } from './piece';
+import { layerOf } from './layers';
 import { mergeCoplanar } from './merge';
 import { unionSurface } from './union';
 
-export type ExportMode = 'merged' | 'perPiece';
+export type ExportMode = 'merged' | 'perPiece' | 'perLayer';
 
 /** Malla indexada y soldada, lista para volcar a un formato de intercambio. */
 export interface ExportMesh {
@@ -47,8 +48,9 @@ const hex = (color: number): string => color.toString(16).padStart(6, '0');
  * dentro de otras piezas, aunque se solapen o se toquen solo en parte, y con las caras coplanares
  * fusionadas en polígonos grandes.
  * `perPiece`: una malla por pieza, tal como están en la escena.
+ * `perLayer`: como `merged` pero por separado en cada capa, con el nombre de la capa en cada malla.
  */
-export function buildExportMeshes(pieces: Piece[], mode: ExportMode): ExportMesh[] {
+export function buildExportMeshes(pieces: Piece[], mode: ExportMode, layerName: (layer: number) => string = (layer) => `Capa_${layer}`): ExportMesh[] {
   if (mode === 'perPiece') {
     return pieces.flatMap((piece) => {
       // Un grupo con nombre da nombre a sus objetos: útil para reconocer las partes al hacer el rigging en Blender.
@@ -66,11 +68,25 @@ export function buildExportMeshes(pieces: Piece[], mode: ExportMode): ExportMesh
     });
   }
 
+  if (mode === 'perLayer') {
+    const byLayer = new Map<number, Piece[]>();
+    for (const piece of pieces) {
+      const list = byLayer.get(layerOf(piece));
+      if (list) list.push(piece);
+      else byLayer.set(layerOf(piece), [piece]);
+    }
+    return [...byLayer].sort(([a], [b]) => a - b).flatMap(([layer, list]) => mergedMeshes(list, safeName(layerName(layer))));
+  }
+  return mergedMeshes(pieces, 'Gridfacet');
+}
+
+/** Una malla por color con la unión de las piezas dadas; el nombre empieza por `prefix`. */
+function mergedMeshes(pieces: Piece[], prefix: string): ExportMesh[] {
   const byColor = new Map<number, Vec3[][]>();
   for (const { face, color } of mergeCoplanar(unionSurface(pieces))) {
     const group = byColor.get(color);
     if (group) group.push(face);
     else byColor.set(color, [face]);
   }
-  return [...byColor].map(([color, faces]) => ({ name: `Gridfacet_${hex(color)}`, color, ...weld(faces) }));
+  return [...byColor].map(([color, faces]) => ({ name: `${prefix}_${hex(color)}`, color, ...weld(faces) }));
 }

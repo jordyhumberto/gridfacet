@@ -1,9 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { buildPiece, CATALOG } from './catalog';
 import { convexHull } from './hull';
-import { boundsOf } from './transform';
+import { boundsOf, scaleChange } from './transform';
 import {
   excavateChange,
+  findSlivers,
   extrudeFaceChange,
   mergeChange,
   repeatChange,
@@ -239,5 +240,14 @@ describe('hundir caras', () => {
     const c = cube();
     expect(sinkFacesChange([faceOf(c, topFace(c))], [c], 0)).toEqual({ added: [], removed: [] });
     expect(sinkFacesChange([faceOf(c, topFace(c))], [c], -1)).toEqual({ added: [], removed: [] });
+  });
+});
+
+describe('findSlivers', () => {
+  it('encuentra las piezas diminutas y deja las normales', () => {
+    const cube = buildPiece(CATALOG[0], 0, 0, 0, 0, 0xff0000);
+    const tiny = scaleChange([buildPiece(CATALOG[0], 3, 0, 0, 0, 0xff0000)], [0.1, 0.1, 0.1]).added[0];
+    expect(findSlivers([cube, tiny])).toEqual([tiny]);
+    expect(findSlivers([cube])).toEqual([]);
   });
 });

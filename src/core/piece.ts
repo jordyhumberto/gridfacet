@@ -37,6 +37,14 @@ export function keepGroup(to: Piece, from: Piece): Piece {
   return to;
 }
 
+/** Copia de la pieza en otra capa (la primera no se anota en la pieza), con el mismo grupo. */
+export function withLayer(piece: Piece, layer: number): Piece {
+  const copy = keepGroup(makePiece(piece.faces, piece.color, piece.faceColors), piece);
+  if (layer === 1) delete copy.layer;
+  else copy.layer = layer;
+  return copy;
+}
+
 /** Color de una cara: el propio si está pintada, si no el de la pieza. */
 export function faceColorOf(piece: Piece, index: number): number {
   return piece.faceColors?.[index] ?? piece.color;
