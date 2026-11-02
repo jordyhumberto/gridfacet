@@ -27,7 +27,7 @@ Dentro de la app, el botón **Ayuda y atajos (?)** explica cada herramienta.
 
 ## Ejemplos
 
-En [`ejemplos/`](ejemplos) hay un gato, un árbol y un tiburón. Se generan con scripts reproducibles:
+En [`ejemplos/`](ejemplos) hay un gato, un árbol, un tiburón y una cabeza low poly (`cabeza.gridfacet.json`, de 22 piezas, para abrir con “Abrir”). Los tres primeros se generan con scripts reproducibles:
 
 ```bash
 npx vite-node scripts/tiburon.ts
