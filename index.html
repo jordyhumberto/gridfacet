@@ -153,6 +153,36 @@
             </select>
             <button id="export">Exportar GLB</button>
           </div>
+          <div class="row" title="Imágenes de píxel art del modelo, sin suavizado y con fondo transparente">
+            <select id="spriteCamera" title="Cámara">
+              <option value="isometric">Isométrica</option>
+              <option value="side">Lateral</option>
+              <option value="top">Cenital</option>
+            </select>
+            <select id="spriteViews" title="Direcciones alrededor del modelo">
+              <option value="1">1 vista</option>
+              <option value="4" selected>4 vistas</option>
+              <option value="8">8 vistas</option>
+              <option value="16">16 vistas</option>
+            </select>
+            <select id="spriteSize" title="Tamaño máximo en píxeles">
+              <option value="16">16 px</option>
+              <option value="32">32 px</option>
+              <option value="48">48 px</option>
+              <option value="64" selected>64 px</option>
+              <option value="128">128 px</option>
+              <option value="256">256 px</option>
+            </select>
+          </div>
+          <div class="row">
+            <select id="spriteShading" title="Plano: colores tal cual. Sombreado: luz y sombra por cara">
+              <option value="shaded">Sombreado</option>
+              <option value="flat">Plano</option>
+            </select>
+            <label title="Borde de un píxel alrededor del dibujo"><input type="checkbox" id="spriteOutline" /> Contorno</label>
+            <label title="Todas las vistas en un solo PNG"><input type="checkbox" id="spriteSheet" checked /> Hoja</label>
+            <button id="exportSprites">Exportar sprites</button>
+          </div>
         </section>
         <section>
           <h4><span class="title">Piezas</span><input type="color" id="color" value="#d9534f" title="Color de la pieza" /></h4>
@@ -443,6 +473,7 @@
           <dt>Paleta de comandos</dt><dd><kbd>Ctrl</kbd>+<kbd>K</kbd> abre un buscador de acciones: escribe “espejo”, “rotar” o “guardar”, elige con las flechas y <kbd>Intro</kbd>. Incluye “Espejo-copia” en X o Z, que añade el reflejo de la selección respecto al plano de simetría (el origen por defecto).</dd>
           <dt>Alinear, repartir, suelo y medida</dt><dd>En la paleta (<kbd>Ctrl</kbd>+<kbd>K</kbd>): “Alinear en X/Y/Z” deja las partes a ras por un borde o por el centro; “Distribuir” reparte tres o más con huecos iguales (las de los extremos no se mueven); “Mover al suelo” apoya la selección en y = 0; “Redimensionar…” fija la dimensión mayor conservando proporciones. Un grupo cuenta como una sola parte.</dd>
           <dt>Copia automática</dt><dd>La escena se copia sola en el navegador; si recargas o cierras la página sin guardar, al volver se recupera. Guarda en un archivo para conservarla de verdad.</dd>
+          <dt>Exportar sprites</dt><dd>En Archivo: elige cámara (isométrica, lateral o cenital), 1, 4, 8 o 16 vistas alrededor del modelo, tamaño de 16 a 256 px, sombreado plano o con luz, y contorno. Se dibuja sin suavizado y con fondo transparente. Con “Hoja” sale un solo PNG con las vistas por filas; sin ella, un PNG por vista. Todas las vistas comparten escala.</dd>
           <dt>“Solo visibles”</dt><dd>En Cortar, Rellenar, Figura y Vértice: con la casilla marcada los puntos tapados por otra cara no se dibujan ni se pueden elegir.</dd>
           <dt>Sección “Grupos”</dt><dd>Lista los grupos del modelo: un clic en el nombre elige el grupo, el botón “ojo” lo oculta o muestra (como una capa). Con un grupo elegido puedes darle nombre; ese nombre se usa en los objetos del GLB con “Una pieza por objeto” (por ejemplo <code>Cola_12</code>), útil para reconocer las partes en Blender. Se guarda en el proyecto.</dd>
         </dl>

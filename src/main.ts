@@ -15,6 +15,8 @@ import { searchCommands, type Command } from './core/commands';
 import { parseProjectFull, serializeProject } from './core/project';
 import { canPickOpen, canPickSave, pickOpen, pickSave, writeHandle, type FileHandle } from './fileAccess';
 import { downloadBlob, exportGlb } from './render/glb';
+import { framesToPngs, framesToSheet, renderSprites } from './render/sprites';
+import { spriteFileName, type SpriteCamera } from './core/sprites';
 import { PieceBatches } from './render/batches';
 import { createPieceObject, disposeObject, isWireframeView, setHighlight, setSmoothShading, setWireframeView } from './render/meshes';
 import { ModelScene } from './scene';
@@ -2573,6 +2575,39 @@ document.getElementById('export')!.addEventListener('click', async () => {
     statusEl.textContent = `Exportado ${saved} (${pieces.length} piezas)`;
   } catch (error) {
     statusEl.textContent = `No se pudo exportar: ${errorText(error)}`;
+  }
+});
+
+/** Sprites de píxel art: cada vista se dibuja con cámara ortográfica directo al tamaño pedido. */
+document.getElementById('exportSprites')!.addEventListener('click', async () => {
+  const pieces = model.all().filter((piece) => !hidden.has(piece.id));
+  if (pieces.length === 0) {
+    statusEl.textContent = 'No hay piezas visibles que exportar';
+    return;
+  }
+  const read = (id: string): string => (document.getElementById(id) as HTMLSelectElement).value;
+  const size = Number(read('spriteSize'));
+  const views = Number(read('spriteViews'));
+  const sheet = (document.getElementById('spriteSheet') as HTMLInputElement).checked;
+  const project = fileName === 'Sin título' ? 'gridfacet' : fileName;
+  try {
+    const frames = renderSprites(renderer, pieces, {
+      size,
+      views,
+      camera: read('spriteCamera') as SpriteCamera,
+      shading: read('spriteShading') as 'flat' | 'shaded',
+      outline: (document.getElementById('spriteOutline') as HTMLInputElement).checked,
+      outlineColor: 0x000000,
+    });
+    if (sheet && frames.length > 1) {
+      const { blob, cols, rows } = await framesToSheet(frames);
+      downloadBlob(blob, spriteFileName(project, size, 0).replace('-view0', `-sheet-${cols}x${rows}`), 'image/png');
+    } else {
+      (await framesToPngs(frames)).forEach((blob, i) => downloadBlob(blob, spriteFileName(project, size, i + 1), 'image/png'));
+    }
+    statusEl.textContent = `Exportado ${frames.length === 1 || !sheet ? `${frames.length} PNG` : 'hoja de sprites'} de ${size} px`;
+  } catch (error) {
+    statusEl.textContent = `No se pudo exportar los sprites: ${errorText(error)}`;
   }
 });
 
