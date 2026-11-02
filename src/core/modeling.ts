@@ -244,3 +244,11 @@ export function repeatChange(pieces: Piece[], spec: RepeatSpec): Change {
   }
   return { added, removed: [] };
 }
+
+/** Volumen (en celdas cúbicas) por debajo del cual una pieza se considera una astilla: un cuarto de cuarto de cuarto de celda. */
+export const SLIVER_VOLUME = 0.0156;
+
+/** Piezas tan pequeñas que casi no se ven: lo que dejan los cortes muy seguidos o muy cerca de una arista. */
+export function findSlivers(pieces: Piece[], maxVolume = SLIVER_VOLUME): Piece[] {
+  return pieces.filter((piece) => volume(piece) < maxVolume);
+}

@@ -25,6 +25,15 @@ describe('buildExportMeshes', () => {
     expect(triangles).toBe(20);
   });
 
+  it('en modo por capa une cada capa por separado y nombra las mallas con la capa', () => {
+    const base = cubeAt(0);
+    const other = { ...cubeAt(1), layer: 2 };
+    const meshes = buildExportMeshes([base, other], 'perLayer', (id) => (id === 2 ? 'Pelo suelto' : 'Cabeza'));
+    expect(meshes.map((m) => m.name)).toEqual(['Cabeza_ff0000', 'Pelo_suelto_ff0000']);
+    // Los dos cubos se tocan, pero al ir en capas distintas cada uno conserva su caja completa.
+    expect(meshes.every((m) => m.indices.length / 3 === 12)).toBe(true);
+  });
+
   it('en modo por pieza conserva una malla por pieza', () => {
     const meshes = buildExportMeshes([cubeAt(0), cubeAt(1)], 'perPiece');
     expect(meshes).toHaveLength(2);

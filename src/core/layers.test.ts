@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { CATALOG, buildPiece } from './catalog';
 import { Layers, layerOf } from './layers';
-import { clipPiece } from './piece';
+import { clipPiece, withLayer } from './piece';
 import { parseProjectFull, serializeProject } from './project';
 import { ModelScene } from '../scene';
 
@@ -82,5 +82,17 @@ describe('capas', () => {
     expect(piece.layer).toBeUndefined();
     layers.load(undefined);
     expect(layers.all().map((l) => l.id)).toEqual([1]);
+  });
+});
+
+describe('withLayer', () => {
+  it('copia la pieza en otra capa conservando grupo y color, y la primera capa no se anota', () => {
+    const piece = { ...cube(), group: 4, groupName: 'Brazo' };
+    const moved = withLayer(piece, 3);
+    expect(moved.id).not.toBe(piece.id);
+    expect(layerOf(moved)).toBe(3);
+    expect([moved.group, moved.groupName, moved.color]).toEqual([4, 'Brazo', piece.color]);
+    expect(withLayer(moved, 1).layer).toBeUndefined();
+    expect(piece.layer).toBeUndefined();
   });
 });

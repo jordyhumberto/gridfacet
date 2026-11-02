@@ -150,6 +150,7 @@
           <div class="row">
             <select id="exportMode" title="Cómo se agrupan las piezas en el GLB">
               <option value="merged">Unión por color (sin interior)</option>
+              <option value="perLayer">Una unión por capa</option>
               <option value="perPiece">Una pieza por objeto</option>
             </select>
             <button id="export">Exportar GLB</button>
@@ -485,6 +486,8 @@
           <dt>Copia automática</dt><dd>La escena se copia sola en el navegador; si recargas o cierras la página sin guardar, al volver se recupera. Guarda en un archivo para conservarla de verdad.</dd>
           <dt>Exportar sprites</dt><dd>En Archivo: elige cámara (isométrica, lateral o cenital), 1, 4, 8 o 16 vistas alrededor del modelo, tamaño de 16 a 256 px, sombreado plano o con luz, y contorno. Se dibuja sin suavizado y con fondo transparente. Con “Hoja” sale un solo PNG con las vistas por filas; sin ella, un PNG por vista. Todas las vistas comparten escala.</dd>
           <dt>Paletas de colores</dt><dd>Debajo de los colores recientes: “Guardar” convierte los últimos colores en una paleta con nombre; “Importar” abre un archivo .hex (un color por línea, como los de Lospec); “Exportar” la guarda como .hex. El selector alterna entre los recientes y tus paletas.</dd>
+          <dt>Limpiar astillas</dt><dd>En la paleta (<kbd>Ctrl</kbd>+<kbd>K</kbd>): quita las piezas diminutas que dejan los cortes muy seguidos (menos de un cuarto de cuarto de cuarto de celda cúbica). Actúa sobre la selección o, sin ella, sobre todo; se deshace con <kbd>Ctrl</kbd>+<kbd>Z</kbd>.</dd>
+          <dt>GLB por capas</dt><dd>En Archivo, “Una unión por capa” exporta cada capa como sus propias mallas, con el nombre de la capa. Mover piezas a otra capa ahora se puede deshacer.</dd>
           <dt>Cortar solo la capa activa</dt><dd>En Cortar, la casilla “Solo la capa activa” limita el corte a las piezas de esa capa, aunque otras estén cruzadas por el plano.</dd>
           <dt>“Solo visibles”</dt><dd>En Cortar, Rellenar, Figura y Vértice: con la casilla marcada los puntos tapados por otra cara no se dibujan ni se pueden elegir.</dd>
           <dt>Sección “Grupos”</dt><dd>Lista los grupos del modelo: un clic en el nombre elige el grupo, el botón “ojo” lo oculta o muestra (como una capa). Con un grupo elegido puedes darle nombre; ese nombre se usa en los objetos del GLB con “Una pieza por objeto” (por ejemplo <code>Cola_12</code>), útil para reconocer las partes en Blender. Se guarda en el proyecto.</dd>

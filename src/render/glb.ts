@@ -4,12 +4,12 @@ import { buildExportMeshes, type ExportMode } from '../core/export';
 import type { Piece } from '../core/piece';
 
 /** Genera un GLB. Sin normales, glTF se interpreta como sombreado plano, que es lo que pide una pieza facetada. */
-export async function exportGlb(pieces: Piece[], mode: ExportMode): Promise<ArrayBuffer> {
+export async function exportGlb(pieces: Piece[], mode: ExportMode, layerName?: (layer: number) => string): Promise<ArrayBuffer> {
   const root = new THREE.Group();
   root.name = 'Gridfacet';
   const materials = new Map<number, THREE.MeshStandardMaterial>();
 
-  for (const mesh of buildExportMeshes(pieces, mode)) {
+  for (const mesh of buildExportMeshes(pieces, mode, layerName)) {
     let material = materials.get(mesh.color);
     if (!material) {
       material = new THREE.MeshStandardMaterial({ color: mesh.color, roughness: 0.8, metalness: 0 });
