@@ -232,7 +232,7 @@ export function repeatChange(pieces: Piece[], spec: RepeatSpec): Change {
     // Cada copia de un grupo forma su propio grupo, para no pegarse al original.
     const groups = new Map<number, number>();
     for (const piece of pieces) {
-      const copy = makePiece(piece.faces.map((face) => face.map(map)), piece.color, piece.faceColors);
+      const copy = makePiece(piece.faces.map((face) => face.map(map)), piece.color, piece.faceColors, piece.faceTextures);
       if (piece.layer !== undefined) copy.layer = piece.layer;
       if (piece.group === undefined) {
         added.push(copy);

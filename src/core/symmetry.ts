@@ -1,4 +1,5 @@
 import { makePiece, type Piece, type Vec3 } from './piece';
+import { remapTexture } from './texture';
 
 /** Ejes con simetría activa y posición del plano de espejo en cada uno. */
 export interface Symmetry {
@@ -45,7 +46,9 @@ export function reflectPiece(piece: Piece, reflection: Reflection): Piece {
     const mapped = face.map(reflection.point);
     return reflection.flips ? mapped.reverse() : mapped;
   });
-  return makePiece(faces, piece.color, piece.faceColors);
+  // Un reflejo con giro invierte el orden de los vértices: las texturas se remuestrean al marco nuevo.
+  const textures = piece.faceTextures?.map((texture, i) => (texture ? remapTexture(texture, piece.faces[i], faces[i], reflection.point) : null));
+  return makePiece(faces, piece.color, piece.faceColors, textures);
 }
 
 /** Clave geométrica de una pieza: sus vértices ordenados, para reconocer piezas iguales. */
