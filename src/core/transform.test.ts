@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { CATALOG, buildPiece } from './catalog';
 import { volume } from './piece';
-import { boundsOf, centerChange, mirrorChange, mirrorPiece, moveChange, rotateChange, rotateFreeChange, rotateQuarterChange, rotationCenter, scaleChange, translatePiece } from './transform';
+import { boundsOf, centerChange, mirrorChange, mirrorCopyChange,mirrorPiece, moveChange, rotateChange, rotateFreeChange, rotateQuarterChange, rotationCenter, scaleChange, translatePiece } from './transform';
 
 const cube = (x = 0, z = 0) => buildPiece(CATALOG[0], x, 0, z, 0, 0xabcdef);
 const bounds = (piece: ReturnType<typeof cube>, axis: 0 | 1 | 2) => {
@@ -84,6 +84,24 @@ describe('espejo', () => {
     expect(Math.max(...xs)).toBeCloseTo(2);
     expect(added[0].color).toBe(0xff0000);
     expect(Math.min(...added[0].faces.flat().map((v) => v[0]))).toBeCloseTo(1);
+  });
+
+  it('mirrorCopyChange añade el reflejo sobre el plano dado y conserva los originales', () => {
+    const a = buildPiece(CATALOG[0], 2, 0, 0, 0, 0xff0000);
+    const change = mirrorCopyChange([a], 'x', 0, () => 7);
+    expect(change.removed).toEqual([]);
+    expect(change.added).toHaveLength(1);
+    const xs = change.added[0].faces.flat().map((v) => v[0]);
+    expect(Math.max(...xs)).toBeCloseTo(-2);
+    expect(Math.min(...xs)).toBeCloseTo(-3);
+    expect(change.added[0].id).not.toBe(a.id);
+  });
+
+  it('mirrorCopyChange da un grupo nuevo a las copias de un grupo', () => {
+    const a = { ...buildPiece(CATALOG[0], 1, 0, 0, 0, 0xff0000), group: 3 };
+    const b = { ...buildPiece(CATALOG[0], 2, 0, 0, 0, 0xff0000), group: 3 };
+    const { added } = mirrorCopyChange([a, b], 'x', 0, () => 9);
+    expect(added.map((p) => p.group)).toEqual([9, 9]);
   });
 });
 

@@ -23,6 +23,15 @@
       #hud { max-height: calc(100vh - 16px); overflow-y: auto; }
       #helpModal { position: fixed; inset: 0; z-index: 20; display: flex; align-items: center; justify-content: center; padding: 16px; box-sizing: border-box; background: rgba(0, 0, 0, 0.6); }
       #helpModal[hidden] { display: none; }
+      #palette { position: fixed; inset: 0; z-index: 25; display: flex; align-items: flex-start; justify-content: center; padding: 12vh 16px 16px; box-sizing: border-box; background: rgba(0, 0, 0, 0.45); }
+      #palette[hidden] { display: none; }
+      #paletteBox { background: #20242d; border: 1px solid #3d4452; border-radius: 10px; width: min(520px, 100%); max-height: 70vh; display: flex; flex-direction: column; font-size: 13px; }
+      #paletteInput { margin: 8px; background: #2a2f3a; color: inherit; border: 1px solid #3d4452; border-radius: 6px; padding: 8px; font-size: 14px; }
+      #paletteList { overflow-y: auto; padding: 0 8px 8px; }
+      .pcmd { display: flex; justify-content: space-between; gap: 12px; padding: 6px 8px; border-radius: 6px; cursor: pointer; }
+      .pcmd.active { background: #34527a; }
+      .pcmd.off { opacity: 0.4; cursor: default; }
+      .pcmd kbd { opacity: 0.7; font-size: 12px; }
       #helpBox { background: #20242d; border: 1px solid #3d4452; border-radius: 10px; width: min(640px, 100%); max-height: 100%; display: flex; flex-direction: column; font-size: 13px; line-height: 1.5; }
       #helpBox header { display: flex; justify-content: space-between; align-items: center; padding: 10px 14px; border-bottom: 1px solid #343944; font-weight: 600; }
       #helpBox header button { background: #2a2f3a; color: inherit; border: 1px solid #3d4452; border-radius: 6px; padding: 4px 10px; cursor: pointer; }
@@ -115,6 +124,12 @@
   <body>
     <div id="app"></div>
     <div id="marquee"></div>
+    <div id="palette" hidden role="dialog" aria-modal="true" aria-label="Paleta de comandos">
+      <div id="paletteBox">
+        <input type="search" id="paletteInput" placeholder="Buscar un comando (por ejemplo: espejo, rotar, guardar)" autocomplete="off" />
+        <div id="paletteList" role="listbox"></div>
+      </div>
+    </div>
     <div id="hint"></div>
     <button id="helpFloat" title="Ayuda y atajos (?)">?</button>
     <div id="hud">
@@ -425,6 +440,8 @@
           <dt><kbd>I</kbd> Aislar</dt><dd>Oculta todo menos la selección; otra pulsación de <kbd>I</kbd> (sin selección) muestra todo.</dd>
           <dt>Sección “Capas”</dt><dd>Cada pieza está en una capa. <b>+ Capa</b> crea una (queda activa: lo que coloques va a ella); doble clic en el nombre la renombra. <b>Ojo</b> oculta la capa y <b>Candado</b> la bloquea: se ve y choca con lo que colocas, pero no se puede elegir ni modificar (ni cortar, crecer, hundir…). “Selección → activa” pasa lo elegido a la capa activa. Se guardan en el proyecto.</dd>
           <dt>Giro y volteo</dt><dd><kbd>R</kbd> gira la selección 90° sobre el eje vertical (<kbd>Alt</kbd>+<kbd>R</kbd> al revés); <kbd>Alt</kbd>+flechas la tumba 90° hacia la flecha (dos veces: de cabeza). En “Selección” → Girar, cualquier ángulo sobre X, Y o Z.</dd>
+          <dt>Paleta de comandos</dt><dd><kbd>Ctrl</kbd>+<kbd>K</kbd> abre un buscador de acciones: escribe “espejo”, “rotar” o “guardar”, elige con las flechas y <kbd>Intro</kbd>. Incluye “Espejo-copia” en X o Z, que añade el reflejo de la selección respecto al plano de simetría (el origen por defecto).</dd>
+          <dt>Copia automática</dt><dd>La escena se copia sola en el navegador; si recargas o cierras la página sin guardar, al volver se recupera. Guarda en un archivo para conservarla de verdad.</dd>
           <dt>“Solo visibles”</dt><dd>En Cortar, Rellenar, Figura y Vértice: con la casilla marcada los puntos tapados por otra cara no se dibujan ni se pueden elegir.</dd>
           <dt>Sección “Grupos”</dt><dd>Lista los grupos del modelo: un clic en el nombre elige el grupo, el botón “ojo” lo oculta o muestra (como una capa). Con un grupo elegido puedes darle nombre; ese nombre se usa en los objetos del GLB con “Una pieza por objeto” (por ejemplo <code>Cola_12</code>), útil para reconocer las partes en Blender. Se guarda en el proyecto.</dd>
         </dl>
