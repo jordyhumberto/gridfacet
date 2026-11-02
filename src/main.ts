@@ -3061,6 +3061,7 @@ const GUIDE: Record<Mode, [string, string][]> = {
     ['Clic', 'marcar un punto de la región (se pega a vértices, a la rejilla y a los vértices virtuales de las aristas prolongadas, los puntos morados)'],
     ['Ctrl+clic', 'sobre una cara: cortar con el plano de esa cara'],
     ['Clic en el primer punto / Enter', 'cerrar la región · con la región cerrada, Enter corta'],
+    ['Ctrl+Enter', 'cerrar y cortar de una vez (sin revisar el lado)'],
     ['F', 'cambiar el lado que se borra (el rojo)'],
     ['Ctrl+Z / Ctrl+Y', 'quitar / reponer el último punto'],
     ['Esc', 'cancelar el corte'],
@@ -3380,6 +3381,11 @@ window.addEventListener('keydown', (e) => {
   if (e.target instanceof HTMLSelectElement || e.target instanceof HTMLTextAreaElement) return;
   if (e.target instanceof HTMLInputElement && (e.target.type === 'number' || e.target.type === 'text' || e.target.type === 'search')) return;
   const key = e.key.toLowerCase();
+  if ((e.ctrlKey || e.metaKey) && key === 'enter' && mode === 'cut') {
+    e.preventDefault();
+    cutTool.applyNow();
+    return;
+  }
   if ((e.ctrlKey || e.metaKey) && key === 'k') {
     e.preventDefault();
     setPalette(true);

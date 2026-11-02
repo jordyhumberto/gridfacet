@@ -287,6 +287,12 @@ export class CutTool {
     return out;
   }
 
+  /** Ctrl+Enter: cierra la región (si aún está abierta) y corta de una vez, sin pasar por la vista previa del lado. */
+  applyNow(): void {
+    if (!this.closed) this.close();
+    if (this.closed) this.apply();
+  }
+
   private close(): void {
     if (this.points.length < 3) {
       this.setStatus('Hacen falta al menos 3 puntos para cerrar la región');
