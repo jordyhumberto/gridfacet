@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { GLTFExporter } from 'three/addons/exporters/GLTFExporter.js';
 import { buildExportMeshes, type ExportMode } from '../core/export';
 import type { Piece } from '../core/piece';
+import { textureMeshes } from './textures';
 
 /** Genera un GLB. Sin normales, glTF se interpreta como sombreado plano, que es lo que pide una pieza facetada. */
 export async function exportGlb(pieces: Piece[], mode: ExportMode, layerName?: (layer: number) => string): Promise<ArrayBuffer> {
@@ -23,6 +24,9 @@ export async function exportGlb(pieces: Piece[], mode: ExportMode, layerName?: (
     object.name = mesh.name;
     root.add(object);
   }
+
+  // Los píxeles pintados van como mallas aparte, pegadas a su cara, con la textura en vecino más cercano y recorte por transparencia.
+  for (const mesh of textureMeshes(pieces)) root.add(mesh);
 
   const result = await new GLTFExporter().parseAsync(root, { binary: true });
   return result as ArrayBuffer;

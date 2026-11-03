@@ -17,7 +17,8 @@ import { parseProjectFull, serializeProject } from './core/project';
 import { canPickOpen, canPickSave, pickOpen, pickSave, writeHandle, type FileHandle } from './fileAccess';
 import { downloadBlob, exportGlb } from './render/glb';
 import { framesToPngs, framesToSheet, renderSprites } from './render/sprites';
-import { TextureLayer } from './render/textures';
+import { TextureLayer, atlasToPng } from './render/textures';
+import { buildObj } from './core/obj';
 import { floodFill, stampLine, texelAt, textureOfFace, visibleColor, withFaceTexture } from './core/pixels';
 import { CLEAR, type FaceTexture } from './core/texture';
 import { spriteFileName, type SpriteCamera } from './core/sprites';
@@ -2758,6 +2759,25 @@ document.getElementById('export')!.addEventListener('click', async () => {
     statusEl.textContent = `Exportado ${saved} (${pieces.length} piezas)`;
   } catch (error) {
     statusEl.textContent = `No se pudo exportar: ${errorText(error)}`;
+  }
+});
+
+/** OBJ con texturas: baja el .obj, el .mtl y, si hay píxeles pintados, el PNG del atlas (tres descargas que deben quedar juntas). */
+document.getElementById('exportObj')!.addEventListener('click', async () => {
+  const pieces = model.all();
+  if (pieces.length === 0) {
+    statusEl.textContent = 'No hay piezas que exportar';
+    return;
+  }
+  const base = (fileName === 'Sin título' ? 'gridfacet' : fileName.replace(/.json$/i, '')).replace(/[\/:*?"<>|s]+/g, '_');
+  try {
+    const { obj, mtl, atlas } = buildObj(pieces, base);
+    downloadBlob(obj, `${base}.obj`, 'text/plain');
+    downloadBlob(mtl, `${base}.mtl`, 'text/plain');
+    if (atlas) downloadBlob(await atlasToPng(atlas), `${base}-texture.png`, 'image/png');
+    statusEl.textContent = `Exportado ${base}.obj, .mtl${atlas ? ' y el PNG de texturas' : ''}: guárdalos en la misma carpeta`;
+  } catch (error) {
+    statusEl.textContent = `No se pudo exportar el OBJ: ${errorText(error)}`;
   }
 });
 
