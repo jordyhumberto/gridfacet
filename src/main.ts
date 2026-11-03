@@ -3243,7 +3243,7 @@ const GUIDE: Record<Mode, [string, string][]> = {
     ['Ctrl+clic', 'pintar toda la pieza'],
     ['Alt+clic', 'tomar el color de la cara (cuentagotas)'],
     ['Casilla “Píxeles”', 'pinta píxeles sueltos en vez de la cara entera: arrastra con lápiz, borrador o relleno (Alt toma el color del píxel); un trazo es un solo paso de deshacer'],
-    ['Texturas', 'se conservan al mover, girar, espejar y guardar; cortar, hundir o crecer sobre la cara las pierde'],
+    ['Texturas', 'se conservan al mover, girar, espejar, cortar, hundir y guardar; las caras nuevas que crea un corte nacen sin pintar'],
     ['Colores', 'selector junto a “Piezas” y los últimos 10 usados'],
     ['Esc', 'volver a Colocar'],
     ...VIEW_GUIDE.slice(0, 2),
