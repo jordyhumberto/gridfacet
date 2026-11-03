@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { buildExportMeshes } from '../core/export';
+import { textureMeshes } from './textures';
 import type { Piece } from '../core/piece';
 import { CAMERA_ELEVATION, addOutline, flipRows, sheetLayout, viewYaws, type SpriteCamera } from '../core/sprites';
 
@@ -38,6 +39,8 @@ function buildSpriteScene(pieces: Piece[], shading: SpriteOptions['shading']): {
     geometry.computeVertexNormals();
     root.add(new THREE.Mesh(geometry, material));
   }
+  // Los píxeles pintados van encima de sus caras.
+  for (const mesh of textureMeshes(pieces, shading === 'flat')) root.add(mesh);
   scene.add(root);
   scene.add(new THREE.HemisphereLight(0xffffff, 0x454a56, 1.4));
   const sun = new THREE.DirectionalLight(0xffffff, 1.6);
