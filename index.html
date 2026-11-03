@@ -336,6 +336,22 @@
               <label title="La cara plana del corte se apoya en la superficie que apuntas; sin esto la cúpula siempre mira hacia arriba"><input type="checkbox" id="shapeAuto" checked /> Cara plana contra la superficie</label>
             </div>
           </div>
+          <div class="row" id="pixelActions" hidden>
+            <label title="Pintar píxeles sueltos de la cara en vez de toda la cara"><input type="checkbox" id="pixelMode" /> Píxeles</label>
+            <select id="pixelTool" title="Herramienta de píxeles">
+              <option value="pencil">Lápiz</option>
+              <option value="eraser">Borrador</option>
+              <option value="fill">Relleno</option>
+            </select>
+            <select id="pixelSize" title="Lado del pincel, en píxeles">
+              <option value="1">1 px</option>
+              <option value="2">2 px</option>
+              <option value="3">3 px</option>
+              <option value="4">4 px</option>
+              <option value="8">8 px</option>
+            </select>
+            <small>Arrastra para pintar · Alt: tomar el color · Ctrl+Z deshace el trazo</small>
+          </div>
           <div class="row" id="bevelActions" hidden>
             <label title="Distancia de la arista a cada lado del chaflán, en celdas">Tamaño <input type="number" id="bevelSize" min="0.02" step="0.05" value="0.25" /></label>
             <small>Clic en una arista la corta en chaflán</small>
@@ -485,6 +501,7 @@
           <dt>Alinear, repartir, suelo y medida</dt><dd>En la paleta (<kbd>Ctrl</kbd>+<kbd>K</kbd>): “Alinear en X/Y/Z” deja las partes a ras por un borde o por el centro; “Distribuir” reparte tres o más con huecos iguales (las de los extremos no se mueven); “Mover al suelo” apoya la selección en y = 0; “Redimensionar…” fija la dimensión mayor conservando proporciones. Un grupo cuenta como una sola parte.</dd>
           <dt>Copia automática</dt><dd>La escena se copia sola en el navegador; si recargas o cierras la página sin guardar, al volver se recupera. Guarda en un archivo para conservarla de verdad.</dd>
           <dt>Exportar sprites</dt><dd>En Archivo: elige cámara (isométrica, lateral o cenital), 1, 4, 8 o 16 vistas alrededor del modelo, tamaño de 16 a 256 px, sombreado plano o con luz, y contorno. Se dibuja sin suavizado y con fondo transparente. Con “Hoja” sale un solo PNG con las vistas por filas; sin ella, un PNG por vista. Todas las vistas comparten escala.</dd>
+          <dt>Pintar píxeles</dt><dd>En Pintar, la casilla “Píxeles” cambia el pincel: en vez de teñir la cara entera se pinta casilla a casilla (16 por celda), arrastrando, con lápiz (1, 2, 3, 4 u 8 px), borrador (deja ver el color de la cara) o relleno. <kbd>Alt</kbd>+clic toma el color del píxel. Un trazo se deshace de una vez, y el trazo se queda en la cara donde empezó. Las texturas se guardan con el proyecto y se conservan al mover, girar, espejar y repetir; cortar, hundir o crecer sobre la cara las pierde, y por ahora ni la exportación de sprites ni la del GLB las usan.</dd>
           <dt>Paletas de colores</dt><dd>Debajo de los colores recientes: “Guardar” convierte los últimos colores en una paleta con nombre; “Importar” abre un archivo .hex (un color por línea, como los de Lospec); “Exportar” la guarda como .hex. El selector alterna entre los recientes y tus paletas.</dd>
           <dt>Limpiar astillas</dt><dd>En la paleta (<kbd>Ctrl</kbd>+<kbd>K</kbd>): quita las piezas diminutas que dejan los cortes muy seguidos (menos de un cuarto de cuarto de cuarto de celda cúbica). Actúa sobre la selección o, sin ella, sobre todo; se deshace con <kbd>Ctrl</kbd>+<kbd>Z</kbd>.</dd>
           <dt>GLB por capas</dt><dd>En Archivo, “Una unión por capa” exporta cada capa como sus propias mallas, con el nombre de la capa. Mover piezas a otra capa ahora se puede deshacer.</dd>

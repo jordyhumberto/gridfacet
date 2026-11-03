@@ -17,6 +17,9 @@ import { parseProjectFull, serializeProject } from './core/project';
 import { canPickOpen, canPickSave, pickOpen, pickSave, writeHandle, type FileHandle } from './fileAccess';
 import { downloadBlob, exportGlb } from './render/glb';
 import { framesToPngs, framesToSheet, renderSprites } from './render/sprites';
+import { TextureLayer } from './render/textures';
+import { floodFill, stampLine, texelAt, textureOfFace, visibleColor, withFaceTexture } from './core/pixels';
+import { CLEAR, type FaceTexture } from './core/texture';
 import { spriteFileName, type SpriteCamera } from './core/sprites';
 import { PieceBatches } from './render/batches';
 import { createPieceObject, disposeObject, isWireframeView, setHighlight, setSmoothShading, setWireframeView } from './render/meshes';
@@ -174,6 +177,7 @@ syncFileName();
 model.onChange = ({ added, removed, marksAdded, marksRemoved }) => {
   for (const piece of removed) {
     batches.remove(piece.id);
+    textureLayer.remove(piece.id);
     const object = objects.get(piece.id);
     if (!object) continue;
     scene3d.remove(object);
@@ -182,6 +186,7 @@ model.onChange = ({ added, removed, marksAdded, marksRemoved }) => {
   }
   for (const id of removed.map((piece) => piece.id)) hidden.delete(id);
   for (const piece of added) showPiece(piece);
+  for (const piece of added) if (!hidden.has(piece.id)) textureLayer.add(piece);
   const toHide = added.filter((piece) => layers.isHidden(piece) && !hidden.has(piece.id)).map((piece) => piece.id);
   if (toHide.length > 0) hidePieces(toHide);
   setEraseHover(undefined);
@@ -563,7 +568,7 @@ function updateHover(event: PointerEvent): void {
   if (mode === 'paint') {
     const found = hit && !backdrops.includes(hit.object) ? findFace(hit) : undefined;
     setFaceHover(found);
-    statusEl.textContent = found ? 'Clic: pintar la cara · Ctrl: toda la pieza · Alt: tomar su color' : '';
+    statusEl.textContent = found ? (pixelPainting() ? 'Arrastra: pintar píxeles · Alt: tomar el color del píxel' : 'Clic: pintar la cara · Ctrl: toda la pieza · Alt: tomar su color') : '';
     return;
   }
   if (mode === 'face') {
@@ -855,7 +860,10 @@ function showPiece(piece: Piece): void {
 function hidePieces(ids: number[]): void {
   for (const id of ids) hidden.add(id);
   selection.remove(ids);
-  for (const id of ids) batches.remove(id);
+  for (const id of ids) {
+    batches.remove(id);
+    textureLayer.remove(id);
+  }
   refreshHidden();
 }
 function showHidden(ids: number[] = [...hidden]): void {
@@ -863,6 +871,7 @@ function showHidden(ids: number[] = [...hidden]): void {
     hidden.delete(id);
     const piece = model.get(id);
     if (piece && !selection.has(id)) batches.add(piece);
+    if (piece) textureLayer.add(piece);
   }
   refreshHidden();
 }
@@ -1773,6 +1782,102 @@ const faceCentre = (face: Vec3[]): Vec3 => [
   face.reduce((s, p) => s + p[2], 0) / face.length,
 ];
 
+// Pintura de píxeles: dentro de Pintar, con la casilla "Píxeles" se pinta casilla a casilla en lugar de cara entera.
+const textureLayer = new TextureLayer();
+scene3d.add(textureLayer.group);
+const pixelModeEl = document.getElementById('pixelMode') as HTMLInputElement;
+const pixelToolEl = document.getElementById('pixelTool') as HTMLSelectElement;
+const pixelSizeEl = document.getElementById('pixelSize') as HTMLSelectElement;
+const pixelActionsEl = document.getElementById('pixelActions')!;
+const pixelPainting = (): boolean => mode === 'paint' && pixelModeEl.checked;
+const syncPixelActions = (): void => {
+  pixelActionsEl.hidden = mode !== 'paint';
+};
+pixelModeEl.addEventListener('change', () => {
+  (document.activeElement as HTMLElement | null)?.blur();
+  setFaceHover(undefined);
+});
+
+/** Trazo en curso: se pinta en una copia de la textura y solo al soltar pasa al modelo, como un único cambio. */
+let pixelStroke: { piece: Piece; faceIndex: number; texture: FaceTexture; changed: boolean; last: { x: number; y: number } | null } | null = null;
+
+function applyPixelTool(stroke: NonNullable<typeof pixelStroke>, point: Vec3): void {
+  const face = stroke.piece.faces[stroke.faceIndex];
+  const cell = texelAt(face, stroke.texture, point);
+  if (!cell) return;
+  const tool = pixelToolEl.value;
+  const size = Number(pixelSizeEl.value);
+  // Entre dos movimientos se pinta la recta de casillas, para que un arrastre rápido no deje huecos.
+  const from = stroke.last ?? cell;
+  stroke.last = cell;
+  const changed =
+    tool === 'fill'
+      ? floodFill(stroke.texture, cell.x, cell.y, color)
+      : stampLine(stroke.texture, from.x, from.y, cell.x, cell.y, size, tool === 'eraser' ? CLEAR : color);
+  if (changed === 0) return;
+  stroke.changed = true;
+  textureLayer.preview(stroke.piece, stroke.faceIndex, stroke.texture);
+}
+
+function startPixelStroke(event: PointerEvent): void {
+  if (!pixelPainting() || event.button !== 0) return;
+  const hit = castRay(event, false);
+  const found = hit && !backdrops.includes(hit.object) ? findFace(hit) : undefined;
+  if (!found) return;
+  const faceIndex = found.piece.faces.indexOf(found.face);
+  const texture = textureOfFace(found.piece, faceIndex);
+  if (event.altKey) {
+    const cell = texelAt(found.face, texture, [found.point.x, found.point.y, found.point.z]);
+    if (cell) setColor(visibleColor(texture, cell.x, cell.y, faceColorOf(found.piece, faceIndex)));
+    return;
+  }
+  controls.enabled = false;
+  try {
+    renderer.domElement.setPointerCapture(event.pointerId);
+  } catch {
+    // Sin captura el trazo sigue mientras el puntero esté sobre el lienzo.
+  }
+  pixelStroke = { piece: found.piece, faceIndex, texture, changed: false, last: null };
+  applyPixelTool(pixelStroke, [found.point.x, found.point.y, found.point.z]);
+}
+
+function movePixelStroke(event: PointerEvent): void {
+  if (!pixelStroke) return;
+  const hit = castRay(event, false);
+  const found = hit ? findFace(hit) : undefined;
+  // El trazo se queda en la cara donde empezó.
+  if (!found || found.piece.id !== pixelStroke.piece.id || found.face !== pixelStroke.piece.faces[pixelStroke.faceIndex]) return;
+  applyPixelTool(pixelStroke, [found.point.x, found.point.y, found.point.z]);
+}
+
+function finishPixelStroke(commit: boolean): boolean {
+  const stroke = pixelStroke;
+  if (!stroke) return false;
+  pixelStroke = null;
+  controls.enabled = true;
+  if (commit && stroke.changed) {
+    model.apply({ added: [withFaceTexture(stroke.piece, stroke.faceIndex, stroke.texture)], removed: [stroke.piece] });
+    useColor(color);
+  } else {
+    // Sin cambios o cancelado: vuelve a dibujarse la pieza tal como está en el modelo.
+    textureLayer.add(stroke.piece);
+  }
+  return true;
+}
+
+renderer.domElement.addEventListener('pointerdown', startPixelStroke, { capture: true });
+renderer.domElement.addEventListener('pointermove', movePixelStroke);
+renderer.domElement.addEventListener(
+  'pointerup',
+  (e) => {
+    if (finishPixelStroke(true)) {
+      e.stopImmediatePropagation();
+      down = null;
+    }
+  },
+  { capture: true },
+);
+
 /** Clic en modo pintar: pinta la cara; con Ctrl, toda la pieza; con Alt, toma su color como color actual. */
 function paintAt(event: PointerEvent): void {
   const hit = castRay(event, false);
@@ -2050,6 +2155,7 @@ function updateDrag(event: PointerEvent): void {
   }
   drag.offset.set(...clampToGrid(drag.offset.x, drag.offset.y, drag.offset.z));
   for (const object of selectedObjects()) object.position.copy(drag.offset);
+  textureLayer.setOffset(selection.list(), drag.offset);
   const { x, y, z } = drag.offset;
   statusEl.textContent = `Mover: X ${x}, Y ${+y.toFixed(3)}, Z ${z} (Esc cancela)`;
 }
@@ -2060,6 +2166,7 @@ function finishDrag(commit: boolean, event?: PointerEvent): void {
   drag = null;
   controls.enabled = true;
   for (const object of selectedObjects()) object.position.set(0, 0, 0);
+  textureLayer.setOffset(selection.list(), new THREE.Vector3());
   if (!commit) {
     statusEl.textContent = selection.size > 0 ? selectionLabel() : '';
     return;
@@ -2101,6 +2208,7 @@ renderer.domElement.addEventListener(
   { capture: true },
 );
 renderer.domElement.addEventListener('pointercancel', () => {
+  finishPixelStroke(false);
   finishMarquee(false);
   finishDrag(false);
   finishGrow(false);
@@ -2151,7 +2259,8 @@ renderer.domElement.addEventListener('pointerup', (e) => {
     return;
   }
   if (mode === 'paint') {
-    paintAt(e);
+    // En píxeles el trazo ya se hizo al pulsar.
+    if (!pixelPainting()) paintAt(e);
     return;
   }
   if (mode === 'shape') {
@@ -2380,6 +2489,7 @@ function setMode(next: Mode): void {
   syncVertexActions();
   syncShapeActions();
   syncBevelActions();
+  syncPixelActions();
   syncFaceActions();
   growActionsEl.hidden = mode !== 'grow' && mode !== 'sink' && mode !== 'outline';
   syncPlaceRows();
@@ -3112,6 +3222,8 @@ const GUIDE: Record<Mode, [string, string][]> = {
     ['Clic', 'pintar la cara apuntada'],
     ['Ctrl+clic', 'pintar toda la pieza'],
     ['Alt+clic', 'tomar el color de la cara (cuentagotas)'],
+    ['Casilla “Píxeles”', 'pinta píxeles sueltos en vez de la cara entera: arrastra con lápiz, borrador o relleno (Alt toma el color del píxel); un trazo es un solo paso de deshacer'],
+    ['Texturas', 'se conservan al mover, girar, espejar y guardar; cortar, hundir o crecer sobre la cara las pierde'],
     ['Colores', 'selector junto a “Piezas” y los últimos 10 usados'],
     ['Esc', 'volver a Colocar'],
     ...VIEW_GUIDE.slice(0, 2),
