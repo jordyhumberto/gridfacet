@@ -1799,25 +1799,46 @@ pixelModeEl.addEventListener('change', () => {
   setFaceHover(undefined);
 });
 
-/** Trazo en curso: se pinta en una copia de la textura y solo al soltar pasa al modelo, como un único cambio. */
-let pixelStroke: { piece: Piece; faceIndex: number; texture: FaceTexture; changed: boolean; last: { x: number; y: number } | null } | null = null;
+/** Una cara que recibe el trazo: la pulsada o su reflejo con simetría (`reflect` lleva el punto pintado hasta ella). */
+interface StrokeTarget {
+  piece: Piece;
+  faceIndex: number;
+  texture: FaceTexture;
+  reflect: ((p: Vec3) => Vec3) | null;
+  last: { x: number; y: number } | null;
+}
+/** Trazo en curso: se pinta en copias de las texturas y solo al soltar pasan al modelo, como un único cambio. */
+let pixelStroke: { piece: Piece; faceIndex: number; targets: StrokeTarget[]; changed: boolean } | null = null;
+
+/** Dibuja las texturas provisionales del trazo (una pieza puede recibir en varias caras a la vez). */
+function previewStroke(stroke: NonNullable<typeof pixelStroke>): void {
+  const ids = new Set(stroke.targets.map((t) => t.piece.id));
+  for (const id of ids) {
+    const mine = stroke.targets.filter((t) => t.piece.id === id);
+    const piece = mine[0].piece;
+    const textures = piece.faces.map((_, i) => mine.find((t) => t.faceIndex === i)?.texture ?? piece.faceTextures?.[i] ?? null);
+    textureLayer.add({ ...piece, faceTextures: textures });
+  }
+}
 
 function applyPixelTool(stroke: NonNullable<typeof pixelStroke>, point: Vec3): void {
-  const face = stroke.piece.faces[stroke.faceIndex];
-  const cell = texelAt(face, stroke.texture, point);
-  if (!cell) return;
   const tool = pixelToolEl.value;
   const size = Number(pixelSizeEl.value);
-  // Entre dos movimientos se pinta la recta de casillas, para que un arrastre rápido no deje huecos.
-  const from = stroke.last ?? cell;
-  stroke.last = cell;
-  const changed =
-    tool === 'fill'
-      ? floodFill(stroke.texture, cell.x, cell.y, color)
-      : stampLine(stroke.texture, from.x, from.y, cell.x, cell.y, size, tool === 'eraser' ? CLEAR : color);
+  let changed = 0;
+  for (const target of stroke.targets) {
+    const cell = texelAt(target.piece.faces[target.faceIndex], target.texture, target.reflect ? target.reflect(point) : point);
+    if (!cell) continue;
+    // Entre dos movimientos se pinta la recta de casillas, para que un arrastre rápido no deje huecos.
+    const from = target.last ?? cell;
+    target.last = cell;
+    changed +=
+      tool === 'fill'
+        ? floodFill(target.texture, cell.x, cell.y, color)
+        : stampLine(target.texture, from.x, from.y, cell.x, cell.y, size, tool === 'eraser' ? CLEAR : color);
+  }
   if (changed === 0) return;
   stroke.changed = true;
-  textureLayer.preview(stroke.piece, stroke.faceIndex, stroke.texture);
+  previewStroke(stroke);
 }
 
 function startPixelStroke(event: PointerEvent): void {
@@ -1838,7 +1859,16 @@ function startPixelStroke(event: PointerEvent): void {
   } catch {
     // Sin captura el trazo sigue mientras el puntero esté sobre el lienzo.
   }
-  pixelStroke = { piece: found.piece, faceIndex, texture, changed: false, last: null };
+  const targets: StrokeTarget[] = [{ piece: found.piece, faceIndex, texture, reflect: null, last: null }];
+  // Con simetría el trazo se repite en los reflejos de la cara, cada uno sobre su propia copia de la textura.
+  const centre = faceCentre(found.face);
+  for (const reflection of reflections(symmetry)) {
+    for (const image of facesAt(model.all(), reflection.point(centre), reflection.dir(found.normal))) {
+      if (targets.some((t) => t.piece.id === image.piece.id && t.faceIndex === image.index)) continue;
+      targets.push({ piece: image.piece, faceIndex: image.index, texture: textureOfFace(image.piece, image.index), reflect: reflection.point, last: null });
+    }
+  }
+  pixelStroke = { piece: found.piece, faceIndex, targets, changed: false };
   applyPixelTool(pixelStroke, [found.point.x, found.point.y, found.point.z]);
 }
 
@@ -1857,11 +1887,16 @@ function finishPixelStroke(commit: boolean): boolean {
   pixelStroke = null;
   controls.enabled = true;
   if (commit && stroke.changed) {
-    model.apply({ added: [withFaceTexture(stroke.piece, stroke.faceIndex, stroke.texture)], removed: [stroke.piece] });
+    // Una pieza puede recibir en varias caras: se encadenan sobre la versión ya modificada.
+    const latest = new Map<number, Piece>();
+    for (const target of stroke.targets) {
+      latest.set(target.piece.id, withFaceTexture(latest.get(target.piece.id) ?? target.piece, target.faceIndex, target.texture));
+    }
+    model.apply({ added: [...latest.values()], removed: stroke.targets.filter((t, i, all) => all.findIndex((o) => o.piece.id === t.piece.id) === i).map((t) => t.piece) });
     useColor(color);
   } else {
     // Sin cambios o cancelado: vuelve a dibujarse la pieza tal como está en el modelo.
-    textureLayer.add(stroke.piece);
+    for (const target of stroke.targets) textureLayer.add(target.piece);
   }
   return true;
 }
