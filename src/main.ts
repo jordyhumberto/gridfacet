@@ -3037,6 +3037,23 @@ const commands: Command[] = [
   { name: 'Guardar', shortcut: 'Ctrl+S', run: () => void saveProject(false) },
   { name: 'Guardar como…', shortcut: 'Ctrl+Alt+S', run: () => void saveProject(true) },
   { name: 'Abrir…', shortcut: 'Ctrl+O', run: () => void requestOpen() },
+  { name: 'Exportar GLB', keywords: 'modelo 3d gltf descargar', run: () => document.getElementById('export')!.click() },
+  { name: 'Exportar OBJ', keywords: 'modelo 3d wavefront mtl atlas descargar', run: () => document.getElementById('exportObj')!.click() },
+  { name: 'Exportar sprites', keywords: 'png vistas hoja spritesheet isometrico descargar', run: () => document.getElementById('exportSprites')!.click() },
+  { name: 'Paleta: guardar colores recientes', keywords: 'colores', run: () => document.getElementById('paletteSave')!.click() },
+  { name: 'Paleta: importar .hex', keywords: 'colores lospec abrir', run: () => document.getElementById('paletteImport')!.click() },
+  { name: 'Paleta: exportar .hex', keywords: 'colores lospec descargar', run: () => document.getElementById('paletteExport')!.click() },
+  ...([['pencil', 'Lápiz'], ['eraser', 'Borrador'], ['fill', 'Relleno']] as const).map(([tool, label]): Command => ({
+    name: `Píxeles: ${label}`,
+    keywords: 'pintar textura cara',
+    run: () => {
+      setMode('paint');
+      pixelModeEl.checked = true;
+      pixelToolEl.value = tool;
+      pixelModeEl.dispatchEvent(new Event('change'));
+    },
+  })),
+  { name: 'Píxeles: volver a pintar caras enteras', keywords: 'pintar color cara', run: () => { pixelModeEl.checked = false; pixelModeEl.dispatchEvent(new Event('change')); } },
   { name: 'Mostrar ayuda', shortcut: '?', keywords: 'atajos', run: () => setHelp(true) },
 ];
 const paletteEl = document.getElementById('palette')!;
