@@ -1,4 +1,4 @@
-import { normalizeTextures, type FaceTexture } from './texture';
+import { normalizeTextures, remapTexture, type FaceTexture } from './texture';
 
 export type Vec3 = [number, number, number];
 
@@ -129,6 +129,8 @@ export function clipPiece(piece: Piece, plane: Plane): Piece | null {
   const side = (p: Vec3) => dot(n, p) - d;
   const faces: Vec3[][] = [];
   const colors: number[] = [];
+  /** De qué cara de la pieza original viene cada cara del resultado (-1: la tapa nueva), para llevarle su textura. */
+  const sources: number[] = [];
   const cut: Vec3[] = [];
 
   piece.faces.forEach((face, faceIndex) => {
@@ -139,6 +141,7 @@ export function clipPiece(piece: Piece, plane: Plane): Piece | null {
       if (dot(faceNormal(face), n) > 0) return;
       faces.push(face);
       colors.push(paint);
+      sources.push(faceIndex);
       return;
     }
 
@@ -165,6 +168,7 @@ export function clipPiece(piece: Piece, plane: Plane): Piece | null {
     if (clean.length >= 3) {
       faces.push(clean);
       colors.push(paint);
+      sources.push(faceIndex);
     }
   });
 
@@ -172,10 +176,25 @@ export function clipPiece(piece: Piece, plane: Plane): Piece | null {
   if (cap) {
     faces.push(cap);
     colors.push(piece.color);
+    sources.push(-1);
   }
 
-  const result = keepGroup(makePiece(faces, piece.color, colors), piece);
+  // Una cara recortada sigue en su plano: su textura se remuestrea al marco nuevo; la que no cambió la conserva tal cual.
+  const textures = piece.faceTextures
+    ? faces.map((face, i) => {
+        const texture = sources[i] >= 0 ? piece.faceTextures![sources[i]] : null;
+        if (!texture) return null;
+        const original = piece.faces[sources[i]];
+        return sameRing(face, original) ? texture : remapTexture(texture, original, face, (q) => q);
+      })
+    : undefined;
+  const result = keepGroup(makePiece(faces, piece.color, colors, textures), piece);
   return volume(result) > 1e-9 ? result : null;
+}
+
+/** Misma cara, vértice a vértice (el recorte puede devolverla como una copia). */
+function sameRing(a: Vec3[], b: Vec3[]): boolean {
+  return a.length === b.length && a.every((p, i) => len(sub(p, b[i])) <= WELD);
 }
 
 function dedupeRing(points: Vec3[]): Vec3[] {
