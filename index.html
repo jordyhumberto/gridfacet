@@ -32,6 +32,11 @@
       .pcmd.active { background: #34527a; }
       .pcmd.off { opacity: 0.4; cursor: default; }
       .pcmd kbd { opacity: 0.7; font-size: 12px; }
+      #faceEditor { position: fixed; inset: 0; z-index: 24; display: flex; align-items: center; justify-content: center; padding: 16px; box-sizing: border-box; background: rgba(0, 0, 0, 0.55); }
+      #faceEditor[hidden] { display: none; }
+      #faceEditorBox { background: #20242d; border: 1px solid #3d4452; border-radius: 10px; padding: 10px 12px; display: flex; flex-direction: column; gap: 8px; max-width: 100%; max-height: 100%; overflow: auto; font-size: 13px; }
+      #faceEditorBox header { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+      #faceCanvas { image-rendering: pixelated; cursor: crosshair; touch-action: none; background: #111; }
       #helpBox { background: #20242d; border: 1px solid #3d4452; border-radius: 10px; width: min(640px, 100%); max-height: 100%; display: flex; flex-direction: column; font-size: 13px; line-height: 1.5; }
       #helpBox header { display: flex; justify-content: space-between; align-items: center; padding: 10px 14px; border-bottom: 1px solid #343944; font-weight: 600; }
       #helpBox header button { background: #2a2f3a; color: inherit; border: 1px solid #3d4452; border-radius: 6px; padding: 4px 10px; cursor: pointer; }
@@ -125,6 +130,12 @@
   <body>
     <div id="app"></div>
     <div id="marquee"></div>
+    <div id="faceEditor" hidden role="dialog" aria-label="Editor de cara en plano">
+      <div id="faceEditorBox">
+        <header><strong>Cara en plano</strong><small>Usa el color, la herramienta y el pincel del panel · Alt: tomar el color · Esc: cerrar</small><button id="faceEditorClose">Cerrar</button></header>
+        <canvas id="faceCanvas"></canvas>
+      </div>
+    </div>
     <div id="palette" hidden role="dialog" aria-modal="true" aria-label="Paleta de comandos">
       <div id="paletteBox">
         <input type="search" id="paletteInput" placeholder="Buscar un comando (por ejemplo: espejo, rotar, guardar)" autocomplete="off" />
@@ -351,6 +362,7 @@
               <option value="4">4 px</option>
               <option value="8">8 px</option>
             </select>
+            <button id="pixelFlat" title="Abre la última cara que tocaste en plano, ampliada (también con doble clic sobre una cara)">Plano</button>
             <small>Arrastra para pintar · Alt: tomar el color · Ctrl+Z deshace el trazo</small>
           </div>
           <div class="row" id="bevelActions" hidden>

@@ -38,6 +38,7 @@ import { buildShape, MAX_RINGS, MAX_SIDES, MIN_RINGS, MIN_SIDES, SECTIONS, SHAPE
 import { facesAt, paintChange, type FaceRef } from './core/paint';
 import { faceColorOf, faceNormal, newGroupId, withGroup, withLayer } from './core/piece';
 import { VertexTool } from './tools/vertexTool';
+import { FaceEditor } from './tools/faceEditor';
 import { excavateChange, extrudeFaceChange, findSlivers, mergeChange, repeatChange, sinkCutters, sinkFacesChange, splitFaceChange, triangleCount } from './core/modeling';
 
 const DEFAULT_GRID_SIZE = 24;
@@ -569,6 +570,7 @@ function updateHover(event: PointerEvent): void {
   if (mode === 'paint') {
     const found = hit && !backdrops.includes(hit.object) ? findFace(hit) : undefined;
     setFaceHover(found);
+    if (found && pixelPainting()) lastPixelFace = { piece: found.piece, faceIndex: found.piece.faces.indexOf(found.face) };
     statusEl.textContent = found ? (pixelPainting() ? 'Arrastra: pintar píxeles · Alt: tomar el color del píxel' : 'Clic: pintar la cara · Ctrl: toda la pieza · Alt: tomar su color') : '';
     return;
   }
@@ -1791,6 +1793,8 @@ const pixelToolEl = document.getElementById('pixelTool') as HTMLSelectElement;
 const pixelSizeEl = document.getElementById('pixelSize') as HTMLSelectElement;
 const pixelActionsEl = document.getElementById('pixelActions')!;
 const pixelPainting = (): boolean => mode === 'paint' && pixelModeEl.checked;
+/** Última cara tocada en modo píxeles: la que abre el botón "Plano". */
+let lastPixelFace: { piece: Piece; faceIndex: number } | null = null;
 const syncPixelActions = (): void => {
   pixelActionsEl.hidden = mode !== 'paint';
 };
@@ -1880,6 +1884,42 @@ function movePixelStroke(event: PointerEvent): void {
   if (!found || found.piece.id !== pixelStroke.piece.id || found.face !== pixelStroke.piece.faces[pixelStroke.faceIndex]) return;
   applyPixelTool(pixelStroke, [found.point.x, found.point.y, found.point.z]);
 }
+
+/** Editor plano: la misma pintura de píxeles sobre la textura ampliada de una cara. */
+const faceEditor = new FaceEditor(document.getElementById('faceEditor')!, document.getElementById('faceCanvas') as HTMLCanvasElement, {
+  tool: () => pixelToolEl.value,
+  size: () => Number(pixelSizeEl.value),
+  color: () => color,
+  pickColor: (c) => setColor(c),
+  stillThere: (piece) => model.all().some((p) => p.id === piece.id),
+  preview: (piece, faceIndex, texture) => textureLayer.preview(piece, faceIndex, texture),
+  commit: (piece, faceIndex, texture) => {
+    const next = withFaceTexture(piece, faceIndex, texture);
+    model.apply({ added: [next], removed: [piece] });
+    useColor(color);
+    return next;
+  },
+});
+
+function openFaceEditor(): void {
+  const target = lastPixelFace && model.all().find((p) => p.id === lastPixelFace!.piece.id);
+  if (!target || !lastPixelFace) {
+    statusEl.textContent = 'Pasa el cursor por una cara en modo píxeles y vuelve a pulsar Plano';
+    return;
+  }
+  lastPixelFace = { piece: target, faceIndex: lastPixelFace.faceIndex };
+  faceEditor.open(target, lastPixelFace.faceIndex);
+}
+document.getElementById('pixelFlat')!.addEventListener('click', openFaceEditor);
+document.getElementById('faceEditorClose')!.addEventListener('click', () => faceEditor.close());
+renderer.domElement.addEventListener('dblclick', (e) => {
+  if (!pixelPainting()) return;
+  const hit = castRay(e as PointerEvent, false);
+  const found = hit && !backdrops.includes(hit.object) ? findFace(hit) : undefined;
+  if (!found) return;
+  lastPixelFace = { piece: found.piece, faceIndex: found.piece.faces.indexOf(found.face) };
+  openFaceEditor();
+});
 
 function finishPixelStroke(commit: boolean): boolean {
   const stroke = pixelStroke;
@@ -3088,6 +3128,7 @@ const commands: Command[] = [
       pixelModeEl.dispatchEvent(new Event('change'));
     },
   })),
+  { name: 'Píxeles: abrir la cara en plano', keywords: 'editor 2d ampliar textura', enabled: () => lastPixelFace !== null, run: openFaceEditor },
   { name: 'Píxeles: volver a pintar caras enteras', keywords: 'pintar color cara', run: () => { pixelModeEl.checked = false; pixelModeEl.dispatchEvent(new Event('change')); } },
   { name: 'Mostrar ayuda', shortcut: '?', keywords: 'atajos', run: () => setHelp(true) },
 ];
@@ -3295,6 +3336,7 @@ const GUIDE: Record<Mode, [string, string][]> = {
     ['Ctrl+clic', 'pintar toda la pieza'],
     ['Alt+clic', 'tomar el color de la cara (cuentagotas)'],
     ['Casilla “Píxeles”', 'pinta píxeles sueltos en vez de la cara entera: arrastra con lápiz, borrador o relleno (Alt toma el color del píxel); un trazo es un solo paso de deshacer'],
+    ['Doble clic / Plano', 'con “Píxeles” abre la cara en plano, ampliada, para pintarla de frente con las mismas herramientas (Esc cierra)'],
     ['Texturas', 'se conservan al mover, girar, espejar, cortar, hundir y guardar; las caras nuevas que crea un corte nacen sin pintar'],
     ['Colores', 'selector junto a “Piezas” y los últimos 10 usados'],
     ['Esc', 'volver a Colocar'],
@@ -3551,6 +3593,11 @@ function updatePan(dt: number): void {
 }
 
 window.addEventListener('keydown', (e) => {
+  if (faceEditor.isOpen) {
+    if (e.key === 'Escape') faceEditor.close();
+    // Deshacer y rehacer siguen disponibles; lo demás espera a que se cierre el editor.
+    if (!(e.ctrlKey || e.metaKey)) return;
+  }
   if (!helpModal.hidden) {
     // Con el foco en el buscador, "?" es una letra más.
     if (e.key === 'Escape' || (e.key === '?' && e.target !== helpSearchEl)) setHelp(false);
