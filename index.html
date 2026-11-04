@@ -78,7 +78,7 @@
       #faceActions select { background: #2a2f3a; color: inherit; border: 1px solid #3d4452; border-radius: 6px; padding: 2px 4px; font-size: 12px; }
       #repeatRow input[type=number] { width: 40px; }
       #growActions input[type=number] { width: 56px; background: #2a2f3a; color: inherit; border: 1px solid #3d4452; border-radius: 6px; padding: 2px 4px; font-size: 12px; }
-      #growActions button.active, #outlineActions button.active, #placeSize button.active, #slabThick button.active { background: #3b6fd4; border-color: #3b6fd4; color: #fff; }
+      #growActions button.active, #outlineActions button.active, #meshActions button.active, #placeSize button.active, #slabThick button.active { background: #3b6fd4; border-color: #3b6fd4; color: #fff; }
       #placeSize input[type=number], #slabThick input[type=number] { width: 56px; background: #2a2f3a; color: inherit; border: 1px solid #3d4452; border-radius: 6px; padding: 2px 4px; font-size: 12px; }
       #placeSize, #slabThick, #slopeRow { margin-top: 6px; }
       #slopeRow select { background: #2a2f3a; color: inherit; border: 1px solid #3d4452; border-radius: 6px; padding: 2px 4px; font-size: 12px; }
@@ -291,6 +291,11 @@
             <small>Arrastra para pintar · Alt: tomar el color · Ctrl+Z deshace el trazo</small>
           </div>
           <div class="row" id="meshActions" hidden>
+            <span title="Limita el movimiento de los vértices a un solo eje. Se mantiene hasta que lo cambies (mientras arrastras también sirven las teclas X, Y, Z)">Mover en:</span>
+            <button data-meshaxis="free" title="Sin límite">Libre</button>
+            <button data-meshaxis="0" title="Solo en el eje X">X</button>
+            <button data-meshaxis="1" title="Solo en el eje Y">Y</button>
+            <button data-meshaxis="2" title="Solo en el eje Z">Z</button>
             <button data-mesh="all" title="Elige todos los vértices que se ven">Todos</button>
             <button data-mesh="merge" title="Junta los vértices elegidos de cada pieza en uno solo, en su centro">Fusionar</button>
             <button data-mesh="delete" title="Quita los vértices elegidos (Supr)">Borrar</button>

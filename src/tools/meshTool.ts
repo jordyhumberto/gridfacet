@@ -86,6 +86,7 @@ export class MeshTool {
     moved: boolean;
     delta: Vec3;
   } | null = null;
+  /** Eje al que se limita el movimiento (0 X, 1 Y, 2 Z); se mantiene entre arrastres hasta que se cambia. */
   private axisLock: number | null = null;
 
   /**
@@ -139,6 +140,17 @@ export class MeshTool {
     return total;
   }
 
+  get axis(): number | null {
+    return this.axisLock;
+  }
+
+  /** Limita el movimiento a un eje (o lo suelta con `null`); lo usan los botones del panel y las teclas X/Y/Z. */
+  setAxis(axis: number | null): void {
+    this.axisLock = axis;
+    this.host.status(axis === null ? 'Movimiento libre' : `Movimiento solo en ${'XYZ'[axis]}`);
+    this.host.onSelectionChange();
+  }
+
   activate(): void {
     this.history = [];
     this.active = true;
@@ -148,6 +160,7 @@ export class MeshTool {
 
   deactivate(): void {
     this.cancel();
+    this.axisLock = null;
     this.active = false;
     this.overlay.visible = false;
     this.selection.clear();
@@ -460,7 +473,6 @@ export class MeshTool {
     const drag = this.drag;
     if (!drag) return;
     this.drag = null;
-    this.axisLock = null;
     this.host.setOrbit(true);
     if (!drag.moved) return;
     if (!commit) {
@@ -559,8 +571,7 @@ export class MeshTool {
     }
     if (this.drag && (key === 'x' || key === 'y' || key === 'z')) {
       const axis = 'xyz'.indexOf(key);
-      this.axisLock = this.axisLock === axis ? null : axis;
-      this.host.status(this.axisLock === null ? 'Arrastrando libre' : `Arrastrando solo en ${key.toUpperCase()}`);
+      this.setAxis(this.axisLock === axis ? null : axis);
       return true;
     }
     if (this.drag && key === 'escape') {
@@ -608,7 +619,7 @@ export class MeshTool {
       return;
     }
     this.pendingBefore = cloneSelection(this.selection);
-    this.modal = { kind, targets, pivot, half, axis: null, start: null, last: null, value: kind === 'scale' ? 1 : 0, moved: false };
+    this.modal = { kind, targets, pivot, half, axis: this.axisLock, start: null, last: null, value: kind === 'scale' ? 1 : 0, moved: false };
     this.host.setOrbit(false);
     const name = { rotate: 'Girar', scale: 'Escalar', taper: 'Afinar', twist: 'Torcer', bend: 'Curvar' }[kind];
     const hint = kind === 'taper' || kind === 'twist' || kind === 'bend' ? 'mueve el ratón a los lados · X/Y/Z cambia el eje (por defecto Y)' : 'mueve el ratón · X/Y/Z fija el eje';
