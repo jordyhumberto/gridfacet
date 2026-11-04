@@ -1,3 +1,4 @@
+import { parseAnimation, type Animation } from './animation';
 import { isConvex } from './convex';
 import type { Layer } from './layers';
 import { makePiece, volume, type Piece, type Vec3 } from './piece';
@@ -24,9 +25,11 @@ interface ProjectFile {
   marks?: Vec3[];
   /** Celdas por lado de la sala (opcional: los proyectos antiguos no lo guardan). */
   gridSize?: number;
+  /** Animación de los grupos (opcional: los proyectos antiguos no la tienen). */
+  animation?: Animation;
 }
 
-export function serializeProject(pieces: Piece[], marks: Vec3[] = [], gridSize?: number, layers?: LayerState): string {
+export function serializeProject(pieces: Piece[], marks: Vec3[] = [], gridSize?: number, layers?: LayerState, animation?: Animation): string {
   const project: ProjectFile = {
     format: FORMAT,
     version: VERSION,
@@ -43,6 +46,7 @@ export function serializeProject(pieces: Piece[], marks: Vec3[] = [], gridSize?:
     ...(layers && (layers.layers.length > 1 || layers.layers.some((l) => l.hidden || l.locked) || layers.layers[0]?.name !== 'Capa 1') ? { layers } : {}),
     ...(marks.length > 0 ? { marks } : {}),
     ...(gridSize !== undefined ? { gridSize } : {}),
+    ...(animation && animation.tracks.length > 0 ? { animation } : {}),
   };
   return JSON.stringify(project);
 }
@@ -56,7 +60,7 @@ export function parseProject(text: string): Piece[] {
 }
 
 /** Como `parseProject`, pero devuelve también los puntos de referencia. */
-export function parseProjectFull(text: string): { pieces: Piece[]; marks: Vec3[]; gridSize?: number; layers?: Partial<LayerState> } {
+export function parseProjectFull(text: string): { pieces: Piece[]; marks: Vec3[]; gridSize?: number; layers?: Partial<LayerState>; animation?: Animation } {
   let data: unknown;
   try {
     data = JSON.parse(text);
@@ -97,5 +101,6 @@ export function parseProjectFull(text: string): { pieces: Piece[]; marks: Vec3[]
   const marks = Array.isArray(file.marks) ? file.marks.filter(isVec3) : [];
   const gridSize = Number.isInteger(file.gridSize) && file.gridSize! >= 2 && file.gridSize! <= 1024 ? file.gridSize : undefined;
   const layers = file.layers && Array.isArray(file.layers.layers) ? file.layers : undefined;
-  return { pieces, marks, ...(gridSize !== undefined ? { gridSize } : {}), ...(layers ? { layers } : {}) };
+  const animation = file.animation ? parseAnimation(file.animation) : undefined;
+  return { pieces, marks, ...(gridSize !== undefined ? { gridSize } : {}), ...(layers ? { layers } : {}), ...(animation ? { animation } : {}) };
 }
