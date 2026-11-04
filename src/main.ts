@@ -1974,6 +1974,10 @@ meshActionsEl.querySelectorAll<HTMLButtonElement>('button[data-mesh]').forEach((
     else if (action === 'merge') meshTool.mergeSelected();
     else if (action === 'delete') meshTool.deleteSelected();
     else if (action === 'snap') meshTool.snapToGrid();
+    else if (action === 'face') meshTool.createFace();
+    else if (action === 'delface') meshTool.deleteFacesSelected();
+    else if (action === 'flip') meshTool.flipSelected();
+    else if (action === 'extrude') meshTool.extrudeSelected();
   }),
 );
 
@@ -3398,7 +3402,9 @@ const GUIDE: Record<Mode, [string, string][]> = {
     ['Ctrl+arrastrar en vacío', 'recuadro: elige todos los vértices dentro, también los de detrás'],
     ['Flechas', 'empujar los vértices elegidos un paso en la dirección de pantalla (Ctrl: paso fino)'],
     ['Supr', 'quitar los vértices elegidos'],
+    ['Alt+clic en una arista', 'ponerle un vértice nuevo (en cuartos; Ctrl: donde hagas clic)'],
     ['Panel', 'Todos · Fusionar (junta los elegidos en uno) · Borrar · A la rejilla'],
+    ['Panel (caras)', 'Crear cara con tres o más vértices · Borrar / Invertir / Extruir las caras cuyos vértices están todos elegidos'],
     ['Clic en una pieza', 'elegirla: solo se muestran sus vértices; en vacío suelta todo'],
     ['Simetría', 'con X / Y / Z activos el movimiento se refleja en las piezas espejo'],
     ['Malla libre', 'una pieza con un vértice hundido deja de ser convexa: se puede mover, extruir y pintar, pero no cortar, restar ni unir'],

@@ -290,8 +290,12 @@
             <button data-mesh="merge" title="Junta los vértices elegidos de cada pieza en uno solo, en su centro">Fusionar</button>
             <button data-mesh="delete" title="Quita los vértices elegidos (Supr)">Borrar</button>
             <button data-mesh="snap" title="Lleva los vértices elegidos a la rejilla de ¼ de celda">A la rejilla</button>
+            <button data-mesh="face" title="Crea una cara con los vértices elegidos (tres o más, de la misma pieza)">Crear cara</button>
+            <button data-mesh="delface" title="Quita las caras cuyos vértices están todos elegidos: la pieza queda abierta">Borrar cara</button>
+            <button data-mesh="flip" title="Da la vuelta a las caras cuyos vértices están todos elegidos">Invertir cara</button>
+            <button data-mesh="extrude" title="Extruye las caras cuyos vértices están todos elegidos y deja elegidos los vértices de arriba para moverlos">Extruir cara</button>
             <small id="meshInfo"></small>
-            <small>Arrastra un vértice · X/Y/Z fija el eje · flechas empujan (Ctrl: fino) · Ctrl+arrastrar en vacío: recuadro · Ctrl al arrastrar: sin imán</small>
+            <small>Alt+clic en una arista: vértice nuevo · Arrastra un vértice · X/Y/Z fija el eje · flechas empujan (Ctrl: fino) · Ctrl+arrastrar en vacío: recuadro · Ctrl al arrastrar: sin imán</small>
           </div>
           <div class="row" id="bevelActions" hidden>
             <label title="Distancia de la arista a cada lado del chaflán, en celdas">Tamaño <input type="number" id="bevelSize" min="0.02" step="0.05" value="0.25" /></label>

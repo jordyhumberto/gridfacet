@@ -1,11 +1,15 @@
 import * as THREE from 'three';
 import type { Piece, Vec3 } from '../core/piece';
 import { reflections, type Symmetry } from '../core/symmetry';
-import { deleteVertices, mergeVertices, moveVertices, placeVertices, uniqueVertices, vertexKey } from '../core/vertices';
+import { addFace, deleteFaces, deleteVertices, extrudeFaces, facesWithin, flipFaces, mergeVertices, moveVertices, placeVertices, splitEdge, uniqueVertices, vertexKey } from '../core/vertices';
 import type { ModelScene } from '../scene';
 
 /** Paso de la rejilla de imán, en celdas. */
 export const SNAP_STEP = 0.25;
+/** Cuánto sube una cara al extruirla (después se afina arrastrando o con las flechas). */
+const EXTRUDE_DISTANCE = 0.5;
+/** Distancia en pantalla (px) a la que el cursor "agarra" una arista para ponerle un vértice. */
+const EDGE_RADIUS = 8;
 /** Con Ctrl se empuja con pasos más finos. */
 const FINE_STEP = 1 / 16;
 /** Distancia en pantalla (px) a la que el cursor "agarra" un vértice. */
@@ -48,6 +52,8 @@ interface Target {
 }
 
 const sameId = (made: Piece, old: Piece): Piece => ({ ...made, id: old.id });
+/** Los vértices no se mueven: la selección se queda donde está. */
+const keepPosition = (p: Vec3): Vec3 => p;
 
 export class MeshTool {
   private selection: VertexSelection = new Map();
@@ -223,6 +229,11 @@ export class MeshTool {
 
   private down(e: PointerEvent): void {
     if (!this.active || e.button !== 0) return;
+    if (e.altKey && !this.vertexAt(e.clientX, e.clientY)) {
+      // Alt+clic sobre una arista le pone un vértice nuevo (en cuartos de su largo; Ctrl lo coloca donde se hizo clic).
+      if (this.splitEdgeAt(e)) e.stopImmediatePropagation();
+      return;
+    }
     const hit = this.vertexAt(e.clientX, e.clientY);
     if (hit) {
       e.stopImmediatePropagation();
@@ -528,22 +539,120 @@ export class MeshTool {
     });
   }
 
+  /** Crea una cara con los vértices elegidos de cada pieza. */
+  createFace(): void {
+    if (this.count < 3) {
+      this.host.status('Elige al menos tres vértices de la misma pieza para crear una cara');
+      return;
+    }
+    this.change((piece, keys) => {
+      const result = addFace(piece, keys);
+      return result ? sameId(result, piece) : null;
+    }, keepPosition);
+  }
+
+  /** Quita las caras cuyos vértices están todos elegidos. */
+  deleteFacesSelected(): void {
+    let any = false;
+    this.change((piece, keys) => {
+      const faces = facesWithin(piece, keys);
+      if (faces.length === 0) return null;
+      any = true;
+      const result = deleteFaces(piece, new Set(faces));
+      return result ? sameId(result, piece) : null;
+    }, keepPosition);
+    if (!any) this.host.status('Elige todos los vértices de una cara para borrarla');
+  }
+
+  /** Da la vuelta a las caras cuyos vértices están todos elegidos. */
+  flipSelected(): void {
+    let any = false;
+    this.change((piece, keys) => {
+      const faces = facesWithin(piece, keys);
+      if (faces.length === 0) return null;
+      any = true;
+      const result = flipFaces(piece, new Set(faces));
+      return result ? sameId(result, piece) : null;
+    }, keepPosition);
+    if (!any) this.host.status('Elige todos los vértices de una cara para invertirla');
+  }
+
+  /** Extruye las caras cuyos vértices están todos elegidos; los vértices de arriba quedan elegidos para seguir moviéndolos. */
+  extrudeSelected(distance = EXTRUDE_DISTANCE): void {
+    let any = false;
+    this.change((piece, keys) => {
+      const faces = facesWithin(piece, keys);
+      if (faces.length === 0) return null;
+      const result = extrudeFaces(piece, new Set(faces), distance);
+      if (!result) return null;
+      any = true;
+      return { piece: sameId(result.piece, piece), select: result.keys };
+    });
+    if (!any) this.host.status('Elige todos los vértices de una cara para extruirla');
+  }
+
+  /** Alt+clic: pone un vértice en la arista más cercana al cursor. */
+  private splitEdgeAt(e: PointerEvent): boolean {
+    let best: { piece: Piece; a: Vec3; b: Vec3; t: number } | null = null;
+    let bestDistance = EDGE_RADIUS;
+    const seen = new Set<string>();
+    for (const { piece } of this.shown) {
+      for (const face of piece.faces) {
+        face.forEach((a, i) => {
+          const b = face[(i + 1) % face.length];
+          const key = [vertexKey(a), vertexKey(b)].sort().join('>') + piece.id;
+          if (seen.has(key)) return;
+          seen.add(key);
+          const sa = this.screenOf(a);
+          const sb = this.screenOf(b);
+          if (sa.behind || sb.behind) return;
+          const dx = sb.x - sa.x;
+          const dy = sb.y - sa.y;
+          const length2 = dx * dx + dy * dy;
+          if (length2 < 1) return;
+          const t = Math.max(0, Math.min(1, ((e.clientX - sa.x) * dx + (e.clientY - sa.y) * dy) / length2));
+          const d = Math.hypot(sa.x + dx * t - e.clientX, sa.y + dy * t - e.clientY);
+          if (d < bestDistance) {
+            bestDistance = d;
+            best = { piece, a, b, t };
+          }
+        });
+      }
+    }
+    if (!best) return false;
+    const { piece, a, b } = best as { piece: Piece; a: Vec3; b: Vec3; t: number };
+    let t = (best as { t: number }).t;
+    if (!(e.ctrlKey || e.metaKey)) t = Math.min(0.75, Math.max(0.25, Math.round(t * 4) / 4));
+    else t = Math.min(0.95, Math.max(0.05, t));
+    const result = splitEdge(piece, a, b, t);
+    if (!result) return false;
+    const next = sameId(result.piece, piece);
+    this.host.model.apply({ added: [next], removed: [piece] });
+    this.selection = new Map([[piece.id, new Set([vertexKey(result.vertex)])]]);
+    this.refresh();
+    return true;
+  }
+
   /**
    * Aplica una operación sobre cada pieza con vértices elegidos (y sus imágenes en espejo) como un único paso de deshacer.
    * Con `after` la selección sigue a los vértices a su posición nueva; sin él se vacía (fusionar, borrar).
    */
-  private change(operation: (piece: Piece, keys: Set<string>, dir: (v: Vec3) => Vec3) => Piece | null, after?: (position: Vec3, dir: (v: Vec3) => Vec3) => Vec3): void {
+  private change(operation: (piece: Piece, keys: Set<string>, dir: (v: Vec3) => Vec3) => Piece | { piece: Piece; select: Set<string> } | null, after?: (position: Vec3, dir: (v: Vec3) => Vec3) => Vec3): void {
     const targets = this.buildTargets();
     if (targets.length === 0) return;
     const removed: Piece[] = [];
     const added: Piece[] = [];
     const next: VertexSelection = new Map();
     for (const target of targets) {
-      const result = operation(target.original, target.keys, target.dir);
+      const outcome = operation(target.original, target.keys, target.dir);
       removed.push(target.original);
-      if (!result) continue;
+      if (!outcome) continue;
+      const result = 'select' in outcome ? outcome.piece : outcome;
       added.push(result);
-      if (after && this.selection.has(target.original.id)) {
+      if ('select' in outcome) {
+        // La operación dice qué vértices quedan elegidos (por ejemplo los de la cara recién extruida).
+        if (this.selection.has(target.original.id)) next.set(target.original.id, outcome.select);
+      } else if (after && this.selection.has(target.original.id)) {
         next.set(target.original.id, new Set(uniqueVertices(target.original).filter((p) => target.keys.has(vertexKey(p))).map((p) => vertexKey(after(p, target.dir)))));
       }
     }
