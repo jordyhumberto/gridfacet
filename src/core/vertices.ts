@@ -293,3 +293,22 @@ export function twistPoint(p: Vec3, pivot: Vec3, axis: number, half: number, amo
   const centre = [0, 1, 2].map((k) => (k === axis ? p[k] : pivot[k])) as Vec3;
   return rotateAbout(p, centre, unit, amount * Math.PI * along(p, pivot, axis, half));
 }
+
+/**
+ * Curva una forma a lo largo de `axis`: el eje se dobla en un arco hacia el eje siguiente (X→Y, Y→Z, Z→X). `amount` es el ángulo
+ * que se dobla cada extremo, en múltiplos de 90°; la sección en el centro no se mueve y las distancias al eje se conservan.
+ */
+export function bendPoint(p: Vec3, pivot: Vec3, axis: number, half: number, amount: number): Vec3 {
+  const kappa = (amount * Math.PI) / 2 / half;
+  if (Math.abs(kappa) < 1e-9) return p;
+  const side = (axis + 1) % 3;
+  const s = p[axis] - pivot[axis];
+  const b = p[side] - pivot[side];
+  const radius = 1 / kappa;
+  const phi = s * kappa;
+  const rho = radius - b;
+  const out: Vec3 = [p[0], p[1], p[2]];
+  out[axis] = pivot[axis] + rho * Math.sin(phi);
+  out[side] = pivot[side] + radius - rho * Math.cos(phi);
+  return out;
+}

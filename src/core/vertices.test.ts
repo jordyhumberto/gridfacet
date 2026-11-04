@@ -4,7 +4,7 @@ import { isConvex } from './convex';
 import { floodFill, textureOfFace, withFaceTexture } from './pixels';
 import { FACE_DOUBLE, FACE_UNLIT, faceNormal, volume, type Vec3 } from './piece';
 import { sampleTexture, pointOf, uvOf } from './texture';
-import { addFace, deleteFaces, deleteVertices, extrudeFaces, facesWithin, flipFaces, mergeVertices, moveVertices, placeVertices, rotateAbout, scaleAbout, setFaceFlags, splitEdge, taperPoint, twistPoint, uniqueVertices, vertexKey } from './vertices';
+import { addFace, deleteFaces, deleteVertices, extrudeFaces, facesWithin, flipFaces, mergeVertices, moveVertices, placeVertices, rotateAbout, scaleAbout, setFaceFlags, splitEdge, taperPoint, twistPoint, bendPoint, uniqueVertices, vertexKey } from './vertices';
 
 const cube = () => buildPiece(CATALOG[0], 0, 0, 0, 0, 0x336699);
 const topCorner = (piece = cube()): Vec3 => {
@@ -245,5 +245,29 @@ describe('afinar y torcer', () => {
     expect(bottom[2]).toBeCloseTo(1, 9);
     expect(twistPoint([1, 0, 0], pivot, 1, 1, 0.5)[0]).toBeCloseTo(1, 9);
     expect(twistPoint([0, 1, 0], pivot, 1, 1, 0.5)).toEqual([0, 1, 0]);
+  });
+});
+
+describe('curvar', () => {
+  const pivot: Vec3 = [0, 0, 0];
+  it('un valor cero no mueve nada y el centro se queda quieto', () => {
+    expect(bendPoint([1, 1, 0], pivot, 1, 1, 0)).toEqual([1, 1, 0]);
+    const c = bendPoint([0, 0, 0], pivot, 1, 1, 1);
+    expect(c.every((v) => Math.abs(v) < 1e-9)).toBe(true);
+  });
+
+  it('el extremo del eje se dobla un cuarto de vuelta hacia el eje siguiente con amount 1', () => {
+    // Y se dobla hacia Z: radio = half / (π/2); el extremo (y=1) queda en y = R, z = R.
+    const r = 1 / (Math.PI / 2);
+    const end = bendPoint([0, 1, 0], pivot, 1, 1, 1);
+    expect(end[1]).toBeCloseTo(r, 9);
+    expect(end[2]).toBeCloseTo(r, 9);
+  });
+
+  it('conserva la distancia de cada punto al eje curvado', () => {
+    const r = 1 / (Math.PI / 2);
+    const p = bendPoint([0, 1, 0.2], pivot, 1, 1, 1);
+    // El centro de curvatura está en z = R; el punto estaba a R − 0.2 de él.
+    expect(Math.hypot(p[1], p[2] - r)).toBeCloseTo(r - 0.2, 9);
   });
 });
