@@ -2467,6 +2467,28 @@ function viewFrom(axis: string): void {
 document.querySelectorAll<HTMLButtonElement>('#views button').forEach((button) =>
   button.addEventListener('click', () => viewFrom(button.dataset.view!)),
 );
+
+// Vista ortográfica: sin perspectiva, como las vistas de frente, lado y arriba de un programa de modelado. Se hace con la misma cámara
+// y un ángulo de visión mínimo, alejándola lo justo para que el modelo conserve su tamaño en pantalla; así no cambia nada más.
+const PERSPECTIVE_FOV = 50;
+const ORTHO_FOV = 1;
+const orthoEl = document.getElementById('orthoToggle') as HTMLInputElement;
+const halfTan = (fov: number): number => Math.tan((fov * Math.PI) / 360);
+function setOrthographic(on: boolean): void {
+  const to = on ? ORTHO_FOV : PERSPECTIVE_FOV;
+  if (camera.fov !== to) {
+    const distance = camera.position.distanceTo(controls.target) * (halfTan(camera.fov) / halfTan(to));
+    const direction = camera.position.clone().sub(controls.target).normalize();
+    camera.fov = to;
+    camera.position.copy(controls.target).addScaledVector(direction, distance);
+    camera.far = on ? 20000 : 2000;
+    camera.updateProjectionMatrix();
+    controls.update();
+  }
+  orthoEl.checked = on;
+}
+orthoEl.addEventListener('change', () => setOrthographic(orthoEl.checked));
+if (import.meta.env.DEV) (window as unknown as Record<string, unknown>).__ortho = setOrthographic;
 document.getElementById('gridToggle')!.addEventListener('change', (e) => {
   const visible = (e.target as HTMLInputElement).checked;
   gridVisible = visible;
@@ -3417,6 +3439,7 @@ const GUIDE: Record<Mode, [string, string][]> = {
     ['Ctrl+arrastrar en vacío', 'recuadro: elige todos los vértices dentro, también los de detrás'],
     ['Flechas', 'empujar los vértices elegidos un paso en la dirección de pantalla (Ctrl: paso fino)'],
     ['Supr', 'quitar los vértices elegidos'],
+    ['Teclado numérico', '1 frente · 3 derecha · 7 arriba (con Ctrl, la opuesta) · 5 alterna vista ortográfica o con perspectiva'],
     ['R / T', 'girar / escalar los vértices elegidos alrededor de su centro: mueve el ratón, X/Y/Z fija el eje, clic confirma, Esc cancela (Ctrl: sin imán)'],
     ['Shift+clic en una cara', 'elegir todos sus vértices (se suman a los elegidos)'],
     ['Doble cara · Sin sombra', 'casillas del panel: afectan a las caras cuyos vértices están todos elegidos'],
@@ -3726,6 +3749,23 @@ window.addEventListener('keydown', (e) => {
   if (e.target instanceof HTMLSelectElement || e.target instanceof HTMLTextAreaElement) return;
   if (e.target instanceof HTMLInputElement && (e.target.type === 'number' || e.target.type === 'text' || e.target.type === 'search')) return;
   const key = e.key.toLowerCase();
+  // Teclado numérico, como en Blender: 1 frente, 3 derecha, 7 arriba (con Ctrl, la opuesta) y 5 alterna ortográfica/perspectiva.
+  if (e.code.startsWith('Numpad') && !e.altKey && !e.shiftKey) {
+    const numpad = e.code.slice(6);
+    const flip = e.ctrlKey || e.metaKey;
+    const views: Record<string, [string, string]> = { '1': ['+z', '-z'], '3': ['+x', '-x'], '7': ['+y', '-y'] };
+    if (numpad in views) {
+      e.preventDefault();
+      viewFrom(views[numpad][flip ? 1 : 0]);
+      setOrthographic(true);
+      return;
+    }
+    if (numpad === '5') {
+      e.preventDefault();
+      setOrthographic(camera.fov !== ORTHO_FOV);
+      return;
+    }
+  }
   if (mode === 'mesh' && meshTool.handleKey(e)) {
     e.preventDefault();
     return;

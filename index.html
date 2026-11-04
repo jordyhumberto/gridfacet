@@ -418,11 +418,12 @@
         <section>
           <h4><span class="title">Vista</span></h4>
           <div class="row" id="views">
-            <button data-view="+x">+X</button><button data-view="-x">−X</button>
-            <button data-view="+y">+Y</button><button data-view="-y">−Y</button>
-            <button data-view="+z">+Z</button><button data-view="-z">−Z</button>
+            <button data-view="+x" title="Mirar desde la derecha (teclado numérico 3)">+X</button><button data-view="-x" title="Mirar desde la izquierda (Ctrl+3)">−X</button>
+            <button data-view="+y" title="Mirar desde arriba (teclado numérico 7)">+Y</button><button data-view="-y" title="Mirar desde abajo (Ctrl+7)">−Y</button>
+            <button data-view="+z" title="Mirar de frente (teclado numérico 1)">+Z</button><button data-view="-z" title="Mirar desde atrás (Ctrl+1)">−Z</button>
           </div>
           <div class="row">
+            <label title="Sin perspectiva: las líneas paralelas se ven paralelas, ideal para modelar de frente, de lado y desde arriba (teclado numérico 5). Las vistas del teclado numérico la activan"><input type="checkbox" id="orthoToggle" /> Ortográfica</label>
             <label><input type="checkbox" id="gridToggle" checked /> Malla</label>
             <button id="showHidden" hidden title="Alt+O">Mostrar ocultas</button>
             <label title="Solo aristas y vértices, sin caras (W)"><input type="checkbox" id="wireToggle" /> Solo líneas</label>
