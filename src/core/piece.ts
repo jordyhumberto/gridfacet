@@ -11,7 +11,7 @@ export interface Piece {
   faceColors?: number[];
   /** Píxeles pintados en cada cara (mismo orden que `faces`, `null` donde no hay). Sobre el color de la cara. */
   faceTextures?: (FaceTexture | null)[];
-  /** Propiedades de cada cara (bits de `FACE_DOUBLE` y `FACE_UNLIT`); mismo orden que `faces`. Sin valor, todas normales. */
+  /** Propiedades de cada cara (bits de `FACE_DOUBLE`, `FACE_UNLIT` y `FACE_BEHIND`); mismo orden que `faces`. Sin valor, todas normales. */
   faceFlags?: number[];
   /** Número de grupo: las piezas con el mismo se eligen y mueven juntas. */
   group?: number;
@@ -25,6 +25,14 @@ export interface Piece {
 export const FACE_DOUBLE = 1;
 /** La cara no recibe luz ni sombra: se ve con su color tal cual. */
 export const FACE_UNLIT = 2;
+/** La cara se dibuja siempre por debajo de todo lo demás (huellas, sombras pintadas, fondos). Solo afecta al editor. */
+export const FACE_BEHIND = 4;
+/** Las propiedades que viajan a los archivos exportados (GLB, sprites): «al fondo» es solo del editor. */
+export const FACE_EXPORTED = FACE_DOUBLE | FACE_UNLIT;
+/** Propiedades de una cara que importan al exportar. */
+export const exportFlags = (piece: { faceFlags?: number[] }, index: number): number => (piece.faceFlags?.[index] ?? 0) & FACE_EXPORTED;
+/** Si alguna cara tiene propiedades que importan al exportar. */
+export const hasExportFlags = (piece: { faceFlags?: number[] }): boolean => !!piece.faceFlags?.some((f) => f & FACE_EXPORTED);
 
 let nextGroup = 1;
 export const newGroupId = (): number => nextGroup++;

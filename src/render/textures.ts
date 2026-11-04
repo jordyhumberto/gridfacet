@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import type { Piece } from '../core/piece';
 import { triangulateFace } from '../core/convex';
-import { FACE_DOUBLE, FACE_UNLIT, faceNormal } from '../core/piece';
+import { FACE_BEHIND, FACE_DOUBLE, FACE_UNLIT, exportFlags, faceNormal } from '../core/piece';
 import { CLEAR, uvOf, type FaceTexture } from '../core/texture';
 
 /** Lo que se separa cada textura de su cara para no confundirse con ella al dibujar. */
@@ -61,7 +61,13 @@ export function faceMesh(face: [number, number, number][], texture: FaceTexture,
     side: flags & FACE_DOUBLE ? THREE.DoubleSide : THREE.FrontSide,
   };
   const material = flat || flags & FACE_UNLIT ? new THREE.MeshBasicMaterial(shared) : new THREE.MeshStandardMaterial({ ...shared, roughness: 0.7, metalness: 0 });
-  return new THREE.Mesh(geometry, material);
+  const mesh = new THREE.Mesh(geometry, material);
+  // Una cara al fondo y su textura se dibujan antes que todo y sin tapar nada.
+  if (flags & FACE_BEHIND) {
+    mesh.renderOrder = -0.5;
+    material.depthWrite = false;
+  }
+  return mesh;
 }
 
 /**
@@ -118,7 +124,7 @@ export function textureMeshes(pieces: Piece[], flat = false): THREE.Mesh[] {
     piece.faces.forEach((face, i) => {
       const texture = piece.faceTextures?.[i];
       if (!texture) return;
-      const mesh = faceMesh(face, texture, flat, piece.faceFlags?.[i] ?? 0);
+      const mesh = faceMesh(face, texture, flat, exportFlags(piece, i));
       mesh.name = `Pieza_${piece.id}_cara${i}_textura`;
       meshes.push(mesh);
     });
