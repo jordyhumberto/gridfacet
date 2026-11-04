@@ -4,7 +4,7 @@ import { isConvex } from './convex';
 import { floodFill, textureOfFace, withFaceTexture } from './pixels';
 import { FACE_DOUBLE, FACE_UNLIT, faceNormal, volume, type Vec3 } from './piece';
 import { sampleTexture, pointOf, uvOf } from './texture';
-import { addFace, deleteFaces, deleteVertices, extrudeFaces, facesWithin, flipFaces, mergeVertices, moveVertices, placeVertices, rotateAbout, scaleAbout, setFaceFlags, splitEdge, addVertexOnFace, taperPoint, twistPoint, bendPoint, uniqueVertices, vertexKey } from './vertices';
+import { flagFins, addFace, deleteFaces, deleteVertices, extrudeFaces, facesWithin, flipFaces, mergeVertices, moveVertices, placeVertices, rotateAbout, scaleAbout, setFaceFlags, splitEdge, addVertexOnFace, taperPoint, twistPoint, bendPoint, uniqueVertices, vertexKey } from './vertices';
 
 const cube = () => buildPiece(CATALOG[0], 0, 0, 0, 0, 0x336699);
 const topCorner = (piece = cube()): Vec3 => {
@@ -290,5 +290,33 @@ describe('curvar', () => {
     const p = bendPoint([0, 1, 0.2], pivot, 1, 1, 1);
     // El centro de curvatura está en z = R; el punto estaba a R − 0.2 de él.
     expect(Math.hypot(p[1], p[2] - r)).toBeCloseTo(r - 0.2, 9);
+  });
+});
+
+describe('flagFins', () => {
+  const topEdge = () => {
+    const base = cube();
+    const edge = base.faces.flatMap((f) => f.map((p, k) => [p, f[(k + 1) % f.length]] as const)).find(([a, b]) => a[1] === 1 && b[1] === 1 && a[0] === b[0])!;
+    return splitEdge(base, edge[0], edge[1], 0.5)!;
+  };
+
+  it('un punto de una arista sacado fuera de los planos de sus dos caras deja las dos en doble cara', () => {
+    const split = topEdge();
+    const moved = placeVertices(split.piece, new Set([vertexKey(split.vertex)]), (p) => [p[0] + 1, p[1] + 1, p[2]], false)!;
+    const { piece, count } = flagFins(moved, split.piece);
+    expect(count).toBe(1);
+    expect(piece.faceFlags?.filter((f) => f & FACE_DOUBLE)).toHaveLength(2);
+  });
+
+  it('un vértice de esquina (toca tres caras) no cuenta', () => {
+    const base = cube();
+    const corner = topCorner(base);
+    const moved = placeVertices(base, new Set([vertexKey(corner)]), (p) => [p[0] + 1, p[1] + 1, p[2] + 1], false)!;
+    expect(flagFins(moved, base).count).toBe(0);
+  });
+
+  it('un punto que no se mueve no cuenta', () => {
+    const split = topEdge();
+    expect(flagFins(split.piece, split.piece).count).toBe(0);
   });
 });

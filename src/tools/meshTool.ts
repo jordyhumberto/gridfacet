@@ -3,7 +3,7 @@ import type { Piece, Vec3 } from '../core/piece';
 import { pieceKey, reflectPiece, reflections, type Reflection, type Symmetry } from '../core/symmetry';
 import { triangulateFace } from '../core/convex';
 import { collapses } from '../core/selfIntersect';
-import { addFace, deleteFaces, deleteVertices, extrudeFaces, facesWithin, flipFaces, mergeVertices, placeVertices, rotateAbout, scaleAbout, setFaceFlags, splitEdge, addVertexOnFace, taperPoint, twistPoint, bendPoint, uniqueVertices, vertexKey } from '../core/vertices';
+import { flagFins, addFace, deleteFaces, deleteVertices, extrudeFaces, facesWithin, flipFaces, mergeVertices, placeVertices, rotateAbout, scaleAbout, setFaceFlags, splitEdge, addVertexOnFace, taperPoint, twistPoint, bendPoint, uniqueVertices, vertexKey } from '../core/vertices';
 import type { ModelScene } from '../scene';
 
 /** Paso de la rejilla de imán, en celdas. */
@@ -84,6 +84,8 @@ const partOf = (target: Target, p: Vec3): Part => target.parts.find((part) => pa
 const chosenKeys = (target: Target): Set<string> => target.parts.find((part) => !part.mirror)?.keys ?? new Set();
 
 const sameId = (made: Piece, old: Piece): Piece => ({ ...made, id: old.id });
+
+const FIN_MESSAGE = 'Ese punto solo toca dos caras: queda como una aleta plana (sin volumen) y se ve por los dos lados. Añade el punto en una cara para tener volumen';
 const cloneSelection = (selection: VertexSelection): VertexSelection => new Map([...selection].map(([id, keys]) => [id, new Set(keys)]));
 /** Los vértices no se mueven: la selección se queda donde está. */
 const keepPosition = (p: Vec3): Vec3 => p;
@@ -594,12 +596,18 @@ export class MeshTool {
     }
     const removed: Piece[] = [];
     const added: Piece[] = [];
+    let finned = false;
     for (const target of drag.targets) {
       const current = this.host.model.get(target.original.id);
       const moved = placeVertices(target.original, target.keys, shifted(target), true);
       if (current) removed.push(current);
-      if (moved) added.push(moved);
+      if (moved) {
+        const fins = flagFins(moved, target.original);
+        if (fins.count > 0) finned = true;
+        added.push(sameId(fins.piece, moved));
+      }
     }
+    if (finned) this.host.status(FIN_MESSAGE);
     this.host.model.preview({ added, removed });
   }
 
@@ -884,12 +892,18 @@ export class MeshTool {
     }
     const removed: Piece[] = [];
     const added: Piece[] = [];
+    let finned = false;
     for (const target of targets) {
       const current = this.host.model.get(target.original.id);
       const result = placeVertices(target.original, target.keys, placed(target), true);
       if (current) removed.push(current);
-      if (result) added.push(result);
+      if (result) {
+        const fins = flagFins(result, target.original);
+        if (fins.count > 0) finned = true;
+        added.push(sameId(fins.piece, result));
+      }
     }
+    if (finned) this.host.status(FIN_MESSAGE);
     this.host.model.preview({ added, removed });
   }
 
