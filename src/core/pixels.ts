@@ -319,3 +319,52 @@ export function pasteRegion(texture: FaceTexture, clip: FaceTexture, x: number, 
   }
   return { texture: { w: texture.w, h: texture.h, pixels }, rect: { x0: x, y0: y, x1: x + clip.w - 1, y1: y + clip.h - 1 } };
 }
+
+/** Cambios que se aplican de una vez a una región (o a toda la cara). */
+export type PixelEdit = 'flipH' | 'flipV' | 'rotate' | 'outline' | 'lighten' | 'darken';
+
+const channel = (c: number, shift: number): number => (c >> shift) & 255;
+const toward = (c: number, target: number, amount: number): number => Math.round(c + (target - c) * amount);
+
+/** Un color más claro o más oscuro un paso (se mezcla un 20 % con blanco o con negro). */
+export function shadeColor(color: number, lighter: boolean): number {
+  const target = lighter ? 255 : 0;
+  return (toward(channel(color, 16), target, 0.2) << 16) | (toward(channel(color, 8), target, 0.2) << 8) | toward(channel(color, 0), target, 0.2);
+}
+
+/**
+ * Aplica un cambio a la región (o a toda la textura) y devuelve la textura nueva, o null si no cambia nada o no se puede
+ * (girar pide una región cuadrada). `color` es el del contorno.
+ */
+export function editRegion(texture: FaceTexture, region: Rect | null, edit: PixelEdit, color: number): FaceTexture | null {
+  const r = region ?? { x0: 0, y0: 0, x1: texture.w - 1, y1: texture.h - 1 };
+  const x0 = Math.max(0, r.x0);
+  const y0 = Math.max(0, r.y0);
+  const x1 = Math.min(texture.w - 1, r.x1);
+  const y1 = Math.min(texture.h - 1, r.y1);
+  const w = x1 - x0 + 1;
+  const h = y1 - y0 + 1;
+  if (w <= 0 || h <= 0) return null;
+  const at = (x: number, y: number): number => y * texture.w + x;
+  const pixels = [...texture.pixels];
+  if (edit === 'flipH') {
+    for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) pixels[at(x, y)] = texture.pixels[at(x1 - (x - x0), y)];
+  } else if (edit === 'flipV') {
+    for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) pixels[at(x, y)] = texture.pixels[at(x, y1 - (y - y0))];
+  } else if (edit === 'rotate') {
+    if (w !== h) return null;
+    // Un cuarto de vuelta en el sentido de las agujas del reloj.
+    for (let j = 0; j < h; j++) for (let i = 0; i < w; i++) pixels[at(x0 + (h - 1 - j), y0 + i)] = texture.pixels[at(x0 + i, y0 + j)];
+  } else if (edit === 'outline') {
+    for (let y = y0; y <= y1; y++) {
+      for (let x = x0; x <= x1; x++) {
+        if (texture.pixels[at(x, y)] !== CLEAR) continue;
+        const next = [[x + 1, y], [x - 1, y], [x, y + 1], [x, y - 1]].some(([i, j]) => i >= x0 && i <= x1 && j >= y0 && j <= y1 && texture.pixels[at(i, j)] !== CLEAR);
+        if (next) pixels[at(x, y)] = color;
+      }
+    }
+  } else {
+    for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) if (texture.pixels[at(x, y)] !== CLEAR) pixels[at(x, y)] = shadeColor(texture.pixels[at(x, y)], edit === 'lighten');
+  }
+  return pixels.every((p, i) => p === texture.pixels[i]) ? null : { w: texture.w, h: texture.h, pixels };
+}

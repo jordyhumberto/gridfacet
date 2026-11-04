@@ -1,6 +1,6 @@
 import { CLEAR, uvOf, type FaceTexture } from '../core/texture';
 import { faceColorOf, type Piece } from '../core/piece';
-import { type BrushOptions, copyRegion, paintCell, pasteRegion, pixelClipboard, rectBetween, textureOfFace, visibleColor, type Rect, type StrokeState } from '../core/pixels';
+import { type BrushOptions, type PixelEdit, copyRegion, editRegion, paintCell, pasteRegion, pixelClipboard, rectBetween, textureOfFace, visibleColor, type Rect, type StrokeState } from '../core/pixels';
 
 /** Lo que el editor necesita de la aplicación: las herramientas elegidas y cómo llevar el resultado al modelo. */
 export interface FaceEditorHost {
@@ -198,6 +198,17 @@ export class FaceEditor {
     stroke.changed = true;
     this.draw(stroke.texture);
     this.host.preview(this.piece, this.faceIndex, stroke.texture);
+  }
+
+  /** Aplica un cambio de una vez (voltear, girar, contorno, tono) a la selección o a toda la cara. Devuelve false si no cambia nada. */
+  edit(edit: PixelEdit): boolean {
+    if (!this.piece || !this.host.stillThere(this.piece)) return false;
+    const next = editRegion(this.texture, this.selection, edit, this.host.color());
+    if (!next) return false;
+    this.piece = this.host.commit(this.piece, this.faceIndex, next);
+    this.texture = next;
+    this.draw(this.texture);
+    return true;
   }
 
   /** Copia la región elegida (o toda la cara) al portapapeles de píxeles. */

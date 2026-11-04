@@ -21,8 +21,8 @@ import { downloadBlob, exportGlb } from './render/glb';
 import { framesToPngs, framesToSheet, renderSprites } from './render/sprites';
 import { TextureLayer, atlasToPng } from './render/textures';
 import { buildObj } from './core/obj';
-import type { BrushOptions, Rect } from './core/pixels';
-import { copyRegion, paintCell, pasteRegion, pixelClipboard, rectBetween, texelAt, textureOfFace, visibleColor, withFaceTexture } from './core/pixels';
+import type { BrushOptions, PixelEdit, Rect } from './core/pixels';
+import { copyRegion, editRegion, paintCell, pasteRegion, pixelClipboard, rectBetween, texelAt, textureOfFace, visibleColor, withFaceTexture } from './core/pixels';
 import { pointOf, type FaceTexture } from './core/texture';
 import { spriteFileName, type SpriteCamera } from './core/sprites';
 import { PieceBatches } from './render/batches';
@@ -1910,6 +1910,38 @@ model.onChange = (change) => {
   syncPixelSelection();
 };
 
+/** Voltear, girar, contorno y tono: sobre la selección (o toda la cara) del editor plano si está abierto y, si no, de la vista 3D. */
+function applyPixelEdit(edit: PixelEdit): void {
+  let done: boolean;
+  if (faceEditor.isOpen) {
+    done = faceEditor.edit(edit);
+  } else {
+    const sel = pixelSelection && model.get(pixelSelection.pieceId) ? pixelSelection : null;
+    const piece = sel ? model.get(sel.pieceId)! : lastPixelFace && model.get(lastPixelFace.piece.id);
+    const faceIndex = sel ? sel.faceIndex : lastPixelFace?.faceIndex;
+    if (!piece || faceIndex === undefined) {
+      statusEl.textContent = 'Pasa el cursor por una cara en modo píxeles para elegirla';
+      return;
+    }
+    const next = editRegion(textureOfFace(piece, faceIndex), sel?.rect ?? null, edit, color);
+    done = next !== null;
+    if (next) {
+      const updated = withFaceTexture(piece, faceIndex, next);
+      model.apply({ added: [updated], removed: [piece] });
+      lastPixelFace = { piece: updated, faceIndex };
+      if (sel) pixelSelection = { pieceId: updated.id, faceIndex, rect: sel.rect };
+      syncPixelSelection();
+    }
+  }
+  if (!done) statusEl.textContent = edit === 'rotate' ? 'Girar necesita una región cuadrada (o una cara cuadrada)' : 'No hay nada que cambiar';
+}
+document.querySelectorAll<HTMLButtonElement>('button[data-pixeledit]').forEach((button) =>
+  button.addEventListener('click', () => {
+    button.blur();
+    applyPixelEdit(button.dataset.pixeledit as PixelEdit);
+  }),
+);
+
 /** Ctrl+C en modo píxeles: copia la región elegida o, sin ella, toda la última cara tocada. */
 function copyPixels(): void {
   const sel = pixelSelection && model.get(pixelSelection.pieceId) ? pixelSelection : null;
@@ -2160,6 +2192,9 @@ function finishPixelStroke(commit: boolean): boolean {
     const primary = stroke.targets[0];
     const moved = pixelSelection && pixelSelection.pieceId === primary.piece.id && pixelSelection.faceIndex === primary.faceIndex && primary.shift ? primary.shift : null;
     model.apply({ added: [...latest.values()], removed: stroke.targets.filter((t, i, all) => all.findIndex((o) => o.piece.id === t.piece.id) === i).map((t) => t.piece) });
+    // La última cara tocada sigue siendo la misma en la pieza nueva.
+    const renewed = lastPixelFace && latest.get(lastPixelFace.piece.id);
+    if (lastPixelFace && renewed) lastPixelFace = { piece: renewed, faceIndex: lastPixelFace.faceIndex };
     // La selección sigue al contenido movido y a la pieza nueva que lo lleva.
     if (pixelSelection && pixelSelection.pieceId === primary.piece.id) {
       const next = latest.get(primary.piece.id)!;
