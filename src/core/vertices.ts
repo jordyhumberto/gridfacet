@@ -379,7 +379,9 @@ export function finFaces(piece: Piece, before: Piece): { faces: Set<number>; cou
   let count = 0;
   for (const [key, faces] of touching) {
     if (faces.length !== 2) continue;
-    const off = faces.every((i) => {
+    // Basta con salir del plano de una de las dos: si se queda en el de la otra (un jalón solo en X por la tapa, por ejemplo), la cara lateral
+    // dibuja el mismo triángulo que la tapa y la punta es una lámina plana igualmente.
+    const off = faces.some((i) => {
       const face = piece.faces[i];
       const rest = face.filter((p) => vertexKey(p) !== key);
       if (rest.length < 3) return false;

@@ -309,6 +309,20 @@ describe('flagFins', () => {
     expect(piece.faceFlags?.filter((f) => f & FACE_DOUBLE)).toHaveLength(2);
   });
 
+  it('un punto jalado solo en el plano de una de sus caras (por la tapa) también es una aleta', () => {
+    const split = topEdge();
+    const xs = cube().faces.flat().map((p) => p[0]);
+    const out = Math.sign(split.vertex[0] - (Math.min(...xs) + Math.max(...xs)) / 2);
+    const keys = new Set([vertexKey(split.vertex)]);
+    const to = (p: Vec3): Vec3 => (vertexKey(p) === vertexKey(split.vertex) ? [p[0] + out * 0.5, p[1], p[2]] : p);
+    const moved = placeVertices(split.piece, keys, to, false)!;
+    const { faces, count } = finFaces(moved, split.piece);
+    expect(count).toBe(1);
+    const tent = placeVertices(splitFacesAtCenter(split.piece, faces)!, keys, to, false)!;
+    expect(finFaces(tent, split.piece).count).toBe(0);
+    expect(collapses(tent)).toBe(false);
+  });
+
   it('un vértice de esquina (toca tres caras) no cuenta', () => {
     const base = cube();
     const corner = topCorner(base);
