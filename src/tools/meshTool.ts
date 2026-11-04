@@ -2,11 +2,15 @@ import * as THREE from 'three';
 import type { Piece, Vec3 } from '../core/piece';
 import { pieceKey, reflectPiece, reflections, type Reflection, type Symmetry } from '../core/symmetry';
 import { triangulateFace } from '../core/convex';
+import { collapses } from '../core/selfIntersect';
 import { addFace, deleteFaces, deleteVertices, extrudeFaces, facesWithin, flipFaces, mergeVertices, placeVertices, rotateAbout, scaleAbout, setFaceFlags, splitEdge, addVertexOnFace, taperPoint, twistPoint, bendPoint, uniqueVertices, vertexKey } from '../core/vertices';
 import type { ModelScene } from '../scene';
 
 /** Paso de la rejilla de imán, en celdas. */
 export const SNAP_STEP = 0.25;
+/** Distancia máxima entre dos comprobaciones al recorrer un movimiento (menor que el grosor mínimo del cuerpo), y tope de comprobaciones. */
+const PATH_STEP = 0.03;
+const PATH_MAX = 200;
 /** Cuánto sube una cara al extruirla (después se afina arrastrando o con las flechas). */
 const EXTRUDE_DISTANCE = 0.5;
 /** Distancia en pantalla (px) a la que el cursor "agarra" una arista para ponerle un vértice. */
@@ -98,6 +102,8 @@ export class MeshTool {
   private marqueeEl: HTMLDivElement | null = null;
   private marquee: { x: number; y: number; add: boolean } | null = null;
 
+  /** Si cada pieza ya se atravesaba antes de empezar a mover (entonces no se frena por eso). */
+  private collapsedBefore = new WeakMap<Piece, boolean>();
   private drag: {
     targets: Target[];
     anchor: Vec3;
@@ -509,8 +515,57 @@ export class MeshTool {
       if (side !== 0 && (drag.anchor[i] + delta[i] - sym.center[i]) * side < 0) delta[i] = sym.center[i] - drag.anchor[i];
     });
     if (delta.every((v, i) => Math.abs(v - drag.delta[i]) < 1e-9)) return;
+    // El cuerpo no se aplasta ni se atraviesa: si el desplazamiento lo hiciera, el vértice se queda en el último punto donde no pasaba.
+    const from = drag.delta;
+    // Un salto enorme del puntero se recorre por tramos: así no se salta ningún contacto por el camino.
+    const reach = PATH_MAX * PATH_STEP;
+    const jump = Math.hypot(delta[0] - from[0], delta[1] - from[1], delta[2] - from[2]);
+    const target: Vec3 = jump > reach ? (from.map((v, i) => v + ((delta[i] - v) * reach) / jump) as Vec3) : delta;
+    const at = (t: number): Vec3 => from.map((v, i) => v + (target[i] - v) * t) as Vec3;
+    // Se recorre el camino en pasos: un salto grande podría pasar al otro lado sin que el estado final delate que atravesó algo.
+    const steps = Math.min(PATH_MAX, Math.max(1, Math.ceil(Math.hypot(target[0] - from[0], target[1] - from[1], target[2] - from[2]) / PATH_STEP)));
+    let first = 0;
+    for (let i = 1; i <= steps && first === 0; i++) if (this.collides(drag.targets, at(i / steps))) first = i;
+    if (first > 0) {
+      let lo = (first - 1) / steps;
+      let hi = first / steps;
+      for (let i = 0; i < 8; i++) {
+        const mid = (lo + hi) / 2;
+        if (this.collides(drag.targets, at(mid))) hi = mid;
+        else lo = mid;
+      }
+      this.host.status('El cuerpo no puede aplastarse más contra sí mismo');
+      delta = at(lo);
+      if (delta.every((v, i) => Math.abs(v - drag.delta[i]) < 1e-9)) return;
+    }
+    if (first === 0) delta = target;
     drag.delta = delta;
     this.preview(delta);
+  }
+
+  /** Las piezas con los vértices desplazados (null si una desaparece). */
+  private placed(targets: Target[], delta: Vec3): (Piece | null)[] {
+    return targets.map((target) =>
+      placeVertices(target.original, target.keys, (p) => {
+        const d = partOf(target, p).dir(delta);
+        return [p[0] + d[0], p[1] + d[1], p[2] + d[2]];
+      }, true),
+    );
+  }
+
+  /** ¿Alguna pieza se aplastaría o se atravesaría a sí misma con este desplazamiento, siendo que antes no? */
+  private collides(targets: Target[], delta: Vec3): boolean {
+    const moved = this.placed(targets, delta);
+    return moved.some((piece, i) => {
+      if (!piece) return false;
+      const original = targets[i].original;
+      let before = this.collapsedBefore.get(original);
+      if (before === undefined) {
+        before = collapses(original);
+        this.collapsedBefore.set(original, before);
+      }
+      return !before && collapses(piece);
+    });
   }
 
   /** Coloca las piezas en su estado inicial más el desplazamiento, sin pasar por el historial. */
