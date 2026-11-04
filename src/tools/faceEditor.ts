@@ -1,6 +1,6 @@
 import { CLEAR, uvOf, type FaceTexture } from '../core/texture';
 import { faceColorOf, type Piece } from '../core/piece';
-import { floodFill, stampLine, textureOfFace, visibleColor } from '../core/pixels';
+import { paintCell, textureOfFace, visibleColor, type StrokeState } from '../core/pixels';
 
 /** Lo que el editor necesita de la aplicación: las herramientas elegidas y cómo llevar el resultado al modelo. */
 export interface FaceEditorHost {
@@ -24,7 +24,7 @@ export class FaceEditor {
   private faceIndex = 0;
   private texture: FaceTexture = { w: 1, h: 1, pixels: [CLEAR] };
   private scale = 8;
-  private stroke: { texture: FaceTexture; changed: boolean; last: { x: number; y: number } | null } | null = null;
+  private stroke: { texture: FaceTexture; changed: boolean; state: StrokeState } | null = null;
   private readonly context: CanvasRenderingContext2D;
 
   constructor(
@@ -137,7 +137,7 @@ export class FaceEditor {
     } catch {
       // Sin captura el trazo sigue mientras el puntero esté sobre el lienzo.
     }
-    this.stroke = { texture: { w: this.texture.w, h: this.texture.h, pixels: [...this.texture.pixels] }, changed: false, last: null };
+    this.stroke = { texture: { w: this.texture.w, h: this.texture.h, pixels: [...this.texture.pixels] }, changed: false, state: { start: null, last: null, base: null } };
     this.paint(cell);
   }
 
@@ -148,10 +148,7 @@ export class FaceEditor {
   private paint({ x, y }: { x: number; y: number }): void {
     const stroke = this.stroke;
     if (!stroke || !this.piece) return;
-    const tool = this.host.tool();
-    const from = stroke.last ?? { x, y };
-    stroke.last = { x, y };
-    const changed = tool === 'fill' ? floodFill(stroke.texture, x, y, this.host.color()) : stampLine(stroke.texture, from.x, from.y, x, y, this.host.size(), tool === 'eraser' ? CLEAR : this.host.color());
+    const changed = paintCell(stroke.texture, stroke.state, this.host.tool(), { x, y }, this.host.size(), this.host.color());
     if (changed === 0) return;
     stroke.changed = true;
     this.draw(stroke.texture);
