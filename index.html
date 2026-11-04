@@ -527,6 +527,15 @@
             <small id="sizeLabel"></small>
           </div>
         </section>
+        <section id="references">
+          <h4><span class="title">Imágenes de referencia</span></h4>
+          <div class="row">
+            <button id="refAdd" title="Pone una imagen al fondo para modelar tomándola de referencia (no es una pieza: no se exporta ni se puede elegir)">+ Imagen</button>
+            <input type="file" id="refFile" accept="image/*" hidden />
+          </div>
+          <div id="refList"></div>
+          <small>De frente, de lado o desde arriba. Se guardan dentro del proyecto. Con la vista ortográfica (teclado numérico 1, 3 y 7) se calcan fácil.</small>
+        </section>
         <section>
           <h4><span class="title">Exportar</span></h4>
           <div class="row">
@@ -680,6 +689,7 @@
         </dl>
         <h3>Cámara y vista</h3>
         <dl>
+          <dt>Imágenes de referencia</dt><dd>En el panel, “+ Imagen” pone una imagen al fondo para modelar tomándola de referencia: de frente, de lado o desde arriba. Ajusta ancho, posición, fondo (hacia delante o atrás) y opacidad, y ocúltala con su casilla. No es una pieza: no se elige, no se exporta y los clics la atraviesan. Se guarda dentro del proyecto (reducida a 1024 px). Con la vista ortográfica (teclado numérico 1, 3 y 7) se calca fácil.</dd>
           <dt>Suave</dt><dd>Sombreado suave: las caras vecinas que forman menos de 45° comparten normales y las formas curvas (esferas, cilindros, conos) se ven redondas. Las aristas vivas, como las esquinas de un cubo, no se tocan. Solo cambia cómo se ve; la geometría y el GLB exportado no cambian.</dd>
           <dt>Solo líneas (<kbd>W</kbd>)</dt><dd>Oculta las caras y deja solo las aristas (con el color de cada pieza) y los vértices como puntos, para ver la estructura. Se puede seguir apuntando y editando como siempre.</dd>
         </dl>

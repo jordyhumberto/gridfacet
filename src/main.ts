@@ -14,6 +14,8 @@ import { alignChange, distributeChange, groundChange, partsOf, resizeLongestChan
 import { searchCommands, type Command } from './core/commands';
 import { parseHexColors, parsePalettes, toHexText, upsertPalette, type Palette } from './core/palettes';
 import { parseProjectFull, serializeProject } from './core/project';
+import { defaultReference, nextReferenceId, withPlane, type RefImage, type RefPlane } from './core/references';
+import { ReferenceLayer, loadReferenceFile } from './render/references';
 import { groupCentre, emptyAnimation, pruneTracks, removeKey, resize as resizeAnimation, sampleTrack, setKey, trackOf, MAX_FPS, MAX_FRAMES, type Animation, type Pose } from './core/animation';
 import { AnimationPlayer } from './render/animationPlayer';
 import { canPickOpen, canPickSave, pickOpen, pickSave, writeHandle, type FileHandle } from './fileAccess';
@@ -166,7 +168,12 @@ function scheduleAutosave(): void {
   window.clearTimeout(autosaveTimer);
   autosaveTimer = window.setTimeout(() => {
     try {
-      localStorage.setItem(AUTOSAVE_KEY, serializeProject(model.all(), model.points(), gridSize, layers.toJSON(), pruneTracks(animation, model.all())));
+      try {
+        localStorage.setItem(AUTOSAVE_KEY, serializeProject(model.all(), model.points(), gridSize, layers.toJSON(), pruneTracks(animation, model.all()), references));
+      } catch {
+        // Con imágenes la copia puede no caber: se guarda sin ellas antes que perder el modelo.
+        localStorage.setItem(AUTOSAVE_KEY, serializeProject(model.all(), model.points(), gridSize, layers.toJSON(), pruneTracks(animation, model.all())));
+      }
     } catch {
       // Sin espacio o sin acceso al almacenamiento: no se copia, pero el trabajo sigue.
     }
@@ -3124,7 +3131,7 @@ const errorText = (error: unknown): string => (error instanceof Error ? error.me
 /** Guardar escribe sobre el archivo actual; "Guardar como" (o un proyecto nuevo) abre el diálogo para elegir carpeta y nombre. */
 async function saveProject(asNew = false): Promise<void> {
   const pieces = model.all();
-  const data = serializeProject(pieces, model.points(), gridSize, layers.toJSON(), pruneTracks(animation, pieces));
+  const data = serializeProject(pieces, model.points(), gridSize, layers.toJSON(), pruneTracks(animation, pieces), references);
   const suggested = fileName === 'Sin título' ? 'gridfacet-proyecto.json' : fileName.replace(/(\.json)?$/i, '.json');
   let name = suggested;
   try {
@@ -3164,7 +3171,7 @@ async function saveProject(asNew = false): Promise<void> {
 /** Abrir reemplaza la escena como un cambio más, así que se puede deshacer. */
 async function openProject(file: File, handle: FileHandle | null = null): Promise<void> {
   try {
-    const { pieces: loaded, marks, gridSize: savedSize, layers: savedLayers, animation: savedAnimation } = parseProjectFull(await file.text());
+    const { pieces: loaded, marks, gridSize: savedSize, layers: savedLayers, animation: savedAnimation, references: savedReferences } = parseProjectFull(await file.text());
     if (savedSize !== undefined) setGridSize(savedSize);
     if (mode === 'cut') cutTool.cancel();
     // Las piezas abiertas traen su capa: las nuevas no deben tomar la activa de antes.
@@ -3178,6 +3185,7 @@ async function openProject(file: File, handle: FileHandle | null = null): Promis
     animationRedo = [];
     layers.load(savedLayers, loaded);
     applyLayerState();
+    setReferences(savedReferences);
     fileHandle = handle;
     fileName = file.name;
     dirty = false;
@@ -4628,13 +4636,121 @@ selection.onChange = () => {
 };
 refreshAnimationPanel();
 
+// Imágenes de referencia: se ven al fondo de la escena, se guardan con el proyecto y no cuentan como piezas.
+let references: RefImage[] = [];
+const referenceLayer = new ReferenceLayer();
+scene3d.add(referenceLayer.group);
+const refListEl = document.getElementById('refList')!;
+const refFileEl = document.getElementById('refFile') as HTMLInputElement;
+
+/** Cambia las imágenes (al abrir un proyecto o tras editar una) y redibuja lista y escena. */
+function setReferences(next: RefImage[], changed = false): void {
+  references = next;
+  referenceLayer.set(references);
+  renderReferenceList();
+  if (changed) {
+    dirty = true;
+    syncFileName();
+    scheduleAutosave();
+  }
+}
+
+function updateReference(id: number, change: Partial<RefImage> | ((r: RefImage) => RefImage)): void {
+  setReferences(references.map((r) => (r.id === id ? (typeof change === 'function' ? change(r) : { ...r, ...change }) : r)), true);
+}
+
+const PLANE_LABELS: Record<RefPlane, string> = { front: 'De frente', side: 'De lado', top: 'Desde arriba' };
+
+function renderReferenceList(): void {
+  refListEl.replaceChildren();
+  for (const image of references) {
+    const row = document.createElement('div');
+    row.className = 'refItem';
+    const head = document.createElement('div');
+    head.className = 'row';
+    const visible = document.createElement('input');
+    visible.type = 'checkbox';
+    visible.checked = image.visible;
+    visible.title = 'Mostrar u ocultar la imagen';
+    visible.addEventListener('change', () => updateReference(image.id, { visible: visible.checked }));
+    const name = document.createElement('strong');
+    name.textContent = image.name;
+    name.title = image.name;
+    const plane = document.createElement('select');
+    plane.title = 'Hacia dónde mira la imagen';
+    for (const key of Object.keys(PLANE_LABELS) as RefPlane[]) plane.add(new Option(PLANE_LABELS[key], key, false, key === image.plane));
+    plane.addEventListener('change', () => updateReference(image.id, (r) => withPlane(r, plane.value as RefPlane, gridSize)));
+    const remove = document.createElement('button');
+    remove.textContent = '✕';
+    remove.title = 'Quitar la imagen del proyecto';
+    remove.addEventListener('click', () => setReferences(references.filter((r) => r.id !== image.id), true));
+    head.append(visible, name, plane, remove);
+    const numbers = document.createElement('div');
+    numbers.className = 'row';
+    const field = (label: string, title: string, key: 'u' | 'v' | 'depth' | 'width', step: number, min?: number): HTMLLabelElement => {
+      const wrap = document.createElement('label');
+      wrap.title = title;
+      wrap.append(`${label} `);
+      const input = document.createElement('input');
+      input.type = 'number';
+      input.step = String(step);
+      if (min !== undefined) input.min = String(min);
+      input.value = String(+image[key].toFixed(2));
+      input.style.width = '4.2em';
+      input.addEventListener('change', () => {
+        const value = Number(input.value);
+        if (Number.isFinite(value) && (min === undefined || value >= min)) updateReference(image.id, { [key]: value });
+        else input.value = String(+image[key].toFixed(2));
+      });
+      wrap.append(input);
+      return wrap;
+    };
+    numbers.append(
+      field('Ancho', 'Ancho de la imagen en celdas', 'width', 1, 0.5),
+      field('↔', 'Posición horizontal del centro de la imagen', 'u', 0.5),
+      field('↕', 'Posición vertical del centro de la imagen', 'v', 0.5),
+      field('Fondo', 'Distancia hacia delante (+) o hacia atrás (−) del plano de la imagen', 'depth', 0.5),
+    );
+    const opacity = document.createElement('div');
+    opacity.className = 'row';
+    const slider = document.createElement('input');
+    slider.type = 'range';
+    slider.min = '5';
+    slider.max = '100';
+    slider.value = String(Math.round(image.opacity * 100));
+    slider.title = 'Opacidad de la imagen';
+    slider.addEventListener('input', () => {
+      references = references.map((r) => (r.id === image.id ? { ...r, opacity: Number(slider.value) / 100 } : r));
+      referenceLayer.set(references);
+    });
+    slider.addEventListener('change', () => updateReference(image.id, { opacity: Number(slider.value) / 100 }));
+    opacity.append('Opacidad ', slider);
+    row.append(head, numbers, opacity);
+    refListEl.append(row);
+  }
+}
+
+document.getElementById('refAdd')!.addEventListener('click', () => refFileEl.click());
+refFileEl.addEventListener('change', async () => {
+  const file = refFileEl.files?.[0];
+  refFileEl.value = '';
+  if (!file) return;
+  try {
+    const { data, aspect, name } = await loadReferenceFile(file);
+    setReferences([...references, defaultReference(nextReferenceId(references), name, data, aspect, gridSize)], true);
+    statusEl.textContent = `Imagen de referencia puesta al fondo: ${name}`;
+  } catch {
+    statusEl.textContent = 'No se pudo abrir la imagen';
+  }
+});
+
 /** Al abrir la página con la escena vacía, recupera la última copia automática si la hay. */
 function restoreAutosave(): void {
   if (model.all().length > 0) return;
   try {
     const text = localStorage.getItem(AUTOSAVE_KEY);
     if (!text) return;
-    const { pieces: loaded, marks, gridSize: savedSize, layers: savedLayers, animation: savedAnimation } = parseProjectFull(text);
+    const { pieces: loaded, marks, gridSize: savedSize, layers: savedLayers, animation: savedAnimation, references: savedReferences } = parseProjectFull(text);
     if (loaded.length === 0) return;
     if (savedSize !== undefined) setGridSize(savedSize);
     model.activeLayer = 1;
@@ -4642,6 +4758,7 @@ function restoreAutosave(): void {
     setAnimation(savedAnimation ?? emptyAnimation());
     layers.load(savedLayers, loaded);
     applyLayerState();
+    setReferences(savedReferences);
     statusEl.textContent = `Recuperado tu último trabajo (${loaded.length} piezas). Guárdalo en un archivo para no perderlo`;
   } catch {
     // Una copia dañada o ilegible se ignora: se empieza con la escena vacía.
