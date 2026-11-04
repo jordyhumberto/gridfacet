@@ -4,6 +4,7 @@ import { intersectionPoints } from '../core/intersections';
 import { layerOf } from '../core/layers';
 import { candidatePoints } from '../core/vertexCandidates';
 import { crossesPlane, cutPieces, flipPlane, planeOfPolygon, projectToPlane, regionTouchesPiece, triangulateRegion } from '../core/cut';
+import { isConvex } from '../core/convex';
 import { clipPiece, planeFromPoints, type Piece, type Plane, type Vec3 } from '../core/piece';
 import { reflections, type Symmetry } from '../core/symmetry';
 import { createPieceObject, disposeObject } from '../render/meshes';
@@ -306,7 +307,8 @@ export class CutTool {
 
   /** Con selección, el corte solo actúa sobre ella; sin selección, sobre todas las piezas. */
   private targets(): Piece[] {
-    const editable = this.model.editable();
+    // Cortar solo vale para poliedros convexos: las mallas libres se saltan.
+    const editable = this.model.editable().filter(isConvex);
     const all = this.activeLayerOnly ? editable.filter((piece) => layerOf(piece) === this.model.activeLayer) : editable;
     return this.selection.size > 0 ? all.filter((piece) => this.selection.has(piece.id)) : all;
   }

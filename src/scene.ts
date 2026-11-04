@@ -51,6 +51,21 @@ export class ModelScene {
     this.redoStack = [];
   }
 
+  /**
+   * Cambia piezas sin tocar el historial: para vistas previas mientras se arrastra algo (las piezas conservan el id).
+   * Al terminar se registra con `commitPreview`, pasando las piezas de antes y las de después.
+   */
+  preview(change: Change): void {
+    this.write(change);
+  }
+
+  /** Anota en el historial un cambio ya aplicado con `preview`, como un único paso de deshacer. */
+  commitPreview(change: Change): void {
+    if (change.added.length === 0 && change.removed.length === 0) return;
+    this.undoStack.push(change);
+    this.redoStack = [];
+  }
+
   undo(): void {
     const change = this.undoStack.pop();
     if (!change) return;

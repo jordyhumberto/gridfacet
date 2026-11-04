@@ -1,3 +1,4 @@
+import { triangulateFace } from './convex';
 import { buildExportMeshes } from './export';
 import { faceNormal, type Piece, type Vec3 } from './piece';
 import { CLEAR, uvOf, type FaceTexture } from './texture';
@@ -100,7 +101,7 @@ export function buildObj(pieces: Piece[], baseName: string): ObjExport {
         lines.push(`v ${num(p[0] + lift[0])} ${num(p[1] + lift[1])} ${num(p[2] + lift[2])}`, `vt ${num(u)} ${num(v)}`);
         corner.push(`${vertexCount + corner.length + 1}/${textureCoords + corner.length + 1}`);
       }
-      for (let i = 1; i < face.length - 1; i++) lines.push(`f ${corner[0]} ${corner[i]} ${corner[i + 1]}`);
+      for (const [a, b, c] of triangulateFace(face)) lines.push(`f ${corner[a]} ${corner[b]} ${corner[c]}`);
       vertexCount += face.length;
       textureCoords += face.length;
     });

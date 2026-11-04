@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import type { Piece } from '../core/piece';
+import { triangulateFace } from '../core/convex';
 import { faceNormal } from '../core/piece';
 import { CLEAR, uvOf, type FaceTexture } from '../core/texture';
 
@@ -37,8 +38,8 @@ export function faceMesh(face: [number, number, number][], texture: FaceTexture,
   const positions: number[] = [];
   const uvs: number[] = [];
   const normals: number[] = [];
-  for (let i = 1; i < face.length - 1; i++) {
-    for (const v of [0, i, i + 1]) {
+  for (const triangle of triangulateFace(face)) {
+    for (const v of triangle) {
       const p = face[v];
       const [s, t] = uvOf(face, p);
       positions.push(p[0] + lift[0], p[1] + lift[1], p[2] + lift[2]);

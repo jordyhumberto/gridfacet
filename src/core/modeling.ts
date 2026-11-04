@@ -1,4 +1,5 @@
 import type { Change } from './cut';
+import { isConvex } from './convex';
 import { convexHull } from './hull';
 import type { FaceOf } from './region';
 import { remapTexture } from './texture';
@@ -58,7 +59,8 @@ const boxesOverlap = (a: Piece, b: Piece): boolean => {
  * Devuelve null si no se solapan: la pieza queda igual.
  */
 export function subtractConvex(piece: Piece, cutter: Piece): Piece[] | null {
-  if (!boxesOverlap(piece, cutter)) return null;
+  // Restar solo vale entre poliedros convexos: una malla libre ni se corta ni corta.
+  if (!isConvex(piece) || !isConvex(cutter) || !boxesOverlap(piece, cutter)) return null;
   const parts: Piece[] = [];
   let remaining: Piece | null = piece;
   for (const face of cutter.faces) {
@@ -128,6 +130,7 @@ export function extrudeFaceChange(piece: Piece, faceIndex: number, distance: num
   const depth = -distance;
   const overshoot = 0.02;
   const over = overshoot / depth;
+  if (!isConvex(piece)) return { added: [], removed: [] };
   const faces = convexHull([...ring(1 + (1 - taper) * over, overshoot), ...ring(taper, distance)]);
   if (!faces) return { added: [], removed: [] };
   const parts = subtractConvex(piece, makePiece(faces, piece.color));
@@ -163,7 +166,7 @@ export function sinkFacesChange(faces: FaceOf[], pieces: Piece[], distance: numb
 /** Parte la pieza en dos con un plano paralelo a una de sus caras, a la fracción `fraction` (0–1) de su fondo contando desde ella. */
 export function splitFaceChange(piece: Piece, faceIndex: number, fraction: number): Change {
   const face = piece.faces[faceIndex];
-  if (!face || !(fraction > 0 && fraction < 1)) return { added: [], removed: [] };
+  if (!face || !(fraction > 0 && fraction < 1) || !isConvex(piece)) return { added: [], removed: [] };
   const n = unit(faceNormal(face));
   const top = dot(n, face[0]);
   const bottom = Math.min(...uniquePoints([piece]).map((p) => dot(n, p)));
@@ -178,6 +181,7 @@ export function splitFaceChange(piece: Piece, faceIndex: number, fraction: numbe
 /** Une piezas en una sola si su unión es convexa; si no, explica por qué no. */
 export function mergeChange(pieces: Piece[]): { change: Change } | { error: string } {
   if (pieces.length < 2) return { error: 'Elige al menos dos piezas para fusionarlas' };
+  if (!pieces.every(isConvex)) return { error: 'Una malla libre no se puede fusionar: solo las piezas convexas' };
   const points = uniquePoints(pieces);
   if (points.length > MAX_HULL_POINTS) return { error: `Demasiados vértices para fusionar (${points.length} de ${MAX_HULL_POINTS})` };
   const faces = convexHull(points);
