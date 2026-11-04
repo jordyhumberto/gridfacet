@@ -2945,7 +2945,7 @@ document.getElementById('export')!.addEventListener('click', async () => {
     // El selector de archivos se pide primero: necesita el gesto del usuario, que se pierde si antes se tarda en generar el modelo.
     const handle = canPickSave() ? await pickSave(suggested, 'Modelo GLB', 'model/gltf-binary', '.glb') : null;
     if (canPickSave() && !handle) return;
-    const data = await exportGlb(pieces, exportMode, (id) => layers.get(id)?.name ?? `Capa_${id}`);
+    const data = await exportGlb(pieces, exportMode, (id) => layers.get(id)?.name ?? `Capa_${id}`, pruneTracks(animation, pieces));
     let saved = suggested;
     if (handle) {
       await writeHandle(handle, data);
@@ -3015,7 +3015,7 @@ if (import.meta.env.DEV) {
   // Utilidad de verificación: exporta y vuelve a cargar el GLB para inspeccionarlo.
   (window as unknown as { __glbCheck: unknown }).__glbCheck = async (exportMode: ExportMode) => {
     const { GLTFLoader } = await import('three/addons/loaders/GLTFLoader.js');
-    const buffer = await exportGlb(model.all(), exportMode);
+    const buffer = await exportGlb(model.all(), exportMode, undefined, animation);
     const gltf = await new GLTFLoader().parseAsync(buffer, '');
     const meshes: { name: string; triangles: number; color: string }[] = [];
     gltf.scene.traverse((o) => {
@@ -3027,7 +3027,8 @@ if (import.meta.env.DEV) {
         color: (o.material as THREE.MeshStandardMaterial).color.getHexString(),
       });
     });
-    return { bytes: buffer.byteLength, meshes };
+    const clips = gltf.animations.map((clip) => ({ name: clip.name, duration: clip.duration, tracks: clip.tracks.map((t) => `${t.name}:${t.times.length}`) }));
+    return { bytes: buffer.byteLength, meshes, clips };
   };
 }
 
