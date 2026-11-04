@@ -501,6 +501,13 @@ export class MeshTool {
         return Math.round((drag.anchor[i] + v) / SNAP_STEP) * SNAP_STEP - drag.anchor[i];
       }) as Vec3;
     }
+    // Con simetría, el vértice agarrado no cruza el plano: si lo hiciera, él y su imagen en espejo se cruzarían y la figura se plegaría sobre sí misma.
+    const sym = this.host.symmetry();
+    (['x', 'y', 'z'] as const).forEach((axis, i) => {
+      if (!sym[axis]) return;
+      const side = Math.sign(drag.anchor[i] - sym.center[i]);
+      if (side !== 0 && (drag.anchor[i] + delta[i] - sym.center[i]) * side < 0) delta[i] = sym.center[i] - drag.anchor[i];
+    });
     if (delta.every((v, i) => Math.abs(v - drag.delta[i]) < 1e-9)) return;
     drag.delta = delta;
     this.preview(delta);
@@ -976,9 +983,16 @@ export class MeshTool {
     for (const { reflection, other } of images) {
       const current = edits.get(other.id) ?? other;
       const mirroredCorners = new Set(face.piece.faces[face.index].map((p) => vertexKey(reflection.point(p))));
+      const mirroredPoint = reflection.point([face.point.x, face.point.y, face.point.z]);
       const index = current.faces.findIndex((f) => f.length === mirroredCorners.size && f.every((p) => mirroredCorners.has(vertexKey(p))));
-      if (index < 0) continue;
-      const image = addVertexOnFace(current, index, reflection.point([face.point.x, face.point.y, face.point.z]));
+      let image = index < 0 ? null : addVertexOnFace(current, index, mirroredPoint);
+      if (index < 0) {
+        // La cara es su propia imagen (la pieza cruza el plano) y el vértice ya la partió en triángulos: el espejo cae en uno de ellos.
+        for (let i = 0; i < current.faces.length && !image; i++) {
+          const found = addVertexOnFace(current, i, mirroredPoint);
+          if (found && Math.hypot(found.vertex[0] - mirroredPoint[0], found.vertex[1] - mirroredPoint[1], found.vertex[2] - mirroredPoint[2]) < 1e-6) image = found;
+        }
+      }
       if (image) edits.set(other.id, sameId(image.piece, other));
     }
     this.commitVertex(edits, face.piece.id, result.vertex);
