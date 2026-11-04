@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { CATALOG, buildPiece } from './catalog';
-import { clipPiece, makePiece, type Piece } from './piece';
+import { clipPiece, faceNormal, makePiece, type Piece } from './piece';
+import { extrudeFaceChange } from './modeling';
 import { blankTexture, pointOf, sampleTexture, textureSizeFor, uvOf } from './texture';
 
 const cube = () => buildPiece(CATALOG[0], 0, 0, 0, 0, 0x336699);
@@ -63,5 +64,34 @@ describe('cortar conserva las texturas', () => {
   it('sin texturas el resultado tampoco las tiene', () => {
     const mid = (Math.min(...xs(cube())) + Math.max(...xs(cube()))) / 2;
     expect(clipPiece(cube(), { n: [1, 0, 0], d: mid })!.faceTextures).toBeUndefined();
+  });
+});
+
+describe('crecer lleva la textura a la cara de arriba', () => {
+  const topOf = (piece: Piece) => piece.faces.findIndex((f) => faceNormal(f)[1] > 0.5);
+
+  it('la cara nueva repite los píxeles de la cara de origen en su sitio', () => {
+    const piece = texturedCube();
+    const index = topOf(piece);
+    const { added } = extrudeFaceChange(piece, index, 0.5);
+    const body = added[0];
+    const top = topOf(body);
+    const source = piece.faceTextures![index]!;
+    const target = body.faceTextures![top]!;
+    expect(target).toBeTruthy();
+    for (let y = 0; y < source.h; y++) {
+      for (let x = 0; x < source.w; x++) {
+        const q = pointOf(piece.faces[index], (x + 0.5) / source.w, (y + 0.5) / source.h);
+        const [s, t] = uvOf(body.faces[top], [q[0], q[1] + 0.5, q[2]]);
+        expect(sampleTexture(target, s, t)).toBe(source.pixels[y * source.w + x]);
+      }
+    }
+    // Las demás caras del cuerpo nuevo nacen sin pintar.
+    expect(body.faceTextures!.filter(Boolean)).toHaveLength(1);
+  });
+
+  it('sin textura en la cara de origen el cuerpo nuevo no lleva ninguna', () => {
+    const piece = cube();
+    expect(extrudeFaceChange(piece, topOf(piece), 0.5).added[0].faceTextures).toBeUndefined();
   });
 });
