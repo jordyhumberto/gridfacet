@@ -41,7 +41,54 @@ export function splitConvex(pieces: Piece[]): { convex: Piece[]; free: Piece[] }
   return { convex, free };
 }
 
-/** Triángulos de una cara como índices de sus vértices; en abanico si es convexa y por recorte de orejas si no. */
+const triangleArea = (a: Vec3, b: Vec3, c: Vec3): number => {
+  const u = [b[0] - a[0], b[1] - a[1], b[2] - a[2]];
+  const v = [c[0] - a[0], c[1] - a[1], c[2] - a[2]];
+  return 0.5 * Math.hypot(u[1] * v[2] - u[2] * v[1], u[2] * v[0] - u[0] * v[2], u[0] * v[1] - u[1] * v[0]);
+};
+
+/** ¿Algún vértice se sale del plano de la cara? (una cara alabeada, con puntas o pliegues). */
+function isWarped(face: Vec3[], normal: Vec3): boolean {
+  const length = Math.hypot(...normal);
+  if (length < 1e-12) return false;
+  const centre = [0, 1, 2].map((k) => face.reduce((sum, p) => sum + p[k], 0) / face.length);
+  return face.some((p) => Math.abs(((p[0] - centre[0]) * normal[0] + (p[1] - centre[1]) * normal[1] + (p[2] - centre[2]) * normal[2]) / length) > 1e-5);
+}
+
+/**
+ * Triangulación de área total mínima de una cara (programación dinámica sobre su anillo). No depende de por qué vértice se empiece a contar,
+ * así una cara alabeada sale igual de un lado que de su imagen en espejo: cada punta queda con su triángulo en vez de colgar de un abanico.
+ */
+function minimumAreaTriangles(face: Vec3[]): [number, number, number][] {
+  const n = face.length;
+  const cost: number[][] = Array.from({ length: n }, () => new Array<number>(n).fill(0));
+  const split: number[][] = Array.from({ length: n }, () => new Array<number>(n).fill(-1));
+  for (let span = 2; span < n; span++) {
+    for (let i = 0; i + span < n; i++) {
+      const j = i + span;
+      cost[i][j] = Infinity;
+      for (let k = i + 1; k < j; k++) {
+        const total = cost[i][k] + cost[k][j] + triangleArea(face[i], face[k], face[j]);
+        if (total < cost[i][j] - 1e-9) {
+          cost[i][j] = total;
+          split[i][j] = k;
+        }
+      }
+    }
+  }
+  const out: [number, number, number][] = [];
+  const walk = (i: number, j: number): void => {
+    if (j - i < 2) return;
+    const k = split[i][j];
+    out.push([i, k, j]);
+    walk(i, k);
+    walk(k, j);
+  };
+  walk(0, n - 1);
+  return out;
+}
+
+/** Triángulos de una cara como índices de sus vértices; en abanico si es convexa y plana, de área mínima si es convexa pero alabeada y por recorte de orejas si no. */
 export function triangulateFace(face: Vec3[]): [number, number, number][] {
   const count = face.length;
   if (count < 3) return [];
@@ -58,7 +105,7 @@ export function triangulateFace(face: Vec3[]): [number, number, number][] {
 
   const ring = face.map((_, i) => i);
   const isConvexRing = ring.every((i) => turn(ring[(i + count - 1) % count], i, ring[(i + 1) % count]) >= -1e-12);
-  if (isConvexRing) return Array.from({ length: count - 2 }, (_, i) => [0, i + 1, i + 2] as [number, number, number]);
+  if (isConvexRing) return count <= 16 && isWarped(face, n) ? minimumAreaTriangles(face) : Array.from({ length: count - 2 }, (_, i) => [0, i + 1, i + 2] as [number, number, number]);
 
   const inside = (p: number, a: number, b: number, c: number): boolean =>
     turn(a, b, p) >= -1e-12 && turn(b, c, p) >= -1e-12 && turn(c, a, p) >= -1e-12;
