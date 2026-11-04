@@ -17,7 +17,7 @@ Dentro de la app, el botón **Ayuda y atajos (?)** explica cada herramienta.
 
 ## Qué se puede hacer
 
-- **Colocar** cubo, placa, rampa, ladrillo, lámina, cilindro, arco y esquinas, con **tamaño** a elegir (1, ¾, ½, ⅓, ¼ o exacto).
+- **Colocar** cubo, placa, rampa, ladrillo, lámina, cilindro, arco y esquinas, con **tamaño** a elegir (1, ¾, ½, ⅓, ¼ o exacto). La pieza sigue al cursor en pasos de ¼, con imán a las aristas y a la rejilla, tanto en el suelo y las paredes de la sala como sobre otras piezas, sin saltar de celda en celda.
 - **Cortar** con planos o regiones, **rellenar** volúmenes entre puntos, **chaflán**, **formas** (esfera, cilindro, cono, cápsula).
 - **Cara**: extruir, cavar (cráteres con paredes inclinadas y reborde) y dividir. **Excavar** resta una pieza de otras; **Fusionar** une piezas si el resultado es convexo.
 - **Crecer** una cara o toda la cara conectada, con la cantidad que quieras (¼, ⅓, ½, 1…).
