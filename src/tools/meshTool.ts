@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import type { Piece, Vec3 } from '../core/piece';
 import { reflections, type Symmetry } from '../core/symmetry';
 import { triangulateFace } from '../core/convex';
-import { addFace, deleteFaces, deleteVertices, extrudeFaces, facesWithin, flipFaces, mergeVertices, moveVertices, placeVertices, rotateAbout, scaleAbout, setFaceFlags, splitEdge, taperPoint, twistPoint, bendPoint, uniqueVertices, vertexKey } from '../core/vertices';
+import { addFace, deleteFaces, deleteVertices, extrudeFaces, facesWithin, flipFaces, mergeVertices, moveVertices, placeVertices, rotateAbout, scaleAbout, setFaceFlags, splitEdge, addVertexOnFace, taperPoint, twistPoint, bendPoint, uniqueVertices, vertexKey } from '../core/vertices';
 import type { ModelScene } from '../scene';
 
 /** Paso de la rejilla de imán, en celdas. */
@@ -102,6 +102,10 @@ export class MeshTool {
    */
   private history: { depth: number; before: VertexSelection; after: VertexSelection }[] = [];
   private pendingBefore: VertexSelection | null = null;
+  /** Con el modo «Añadir vértice», un clic sobre una arista o una cara le pone un vértice nuevo (sin Alt). */
+  private adding = false;
+  /** Dónde se pulsó en modo añadir: si el ratón no se movió al soltar, es un clic y se añade; si se movió, era girar la cámara. */
+  private pendingAdd: { x: number; y: number; ctrl: boolean } | null = null;
 
   /** Giro o escala en curso: se maneja moviendo el ratón (sin pulsar) y se confirma con un clic o Intro. */
   private modal: {
@@ -151,6 +155,17 @@ export class MeshTool {
     return total;
   }
 
+  get addMode(): boolean {
+    return this.adding;
+  }
+
+  setAddMode(on: boolean): void {
+    this.adding = on;
+    this.pendingAdd = null;
+    this.host.status(on ? 'Añadir vértice: clic en una arista (en cuartos; Ctrl donde pulses) o en una cara' : 'Añadir vértice desactivado');
+    this.host.onSelectionChange();
+  }
+
   get axis(): number | null {
     return this.axisLock;
   }
@@ -173,6 +188,8 @@ export class MeshTool {
   deactivate(): void {
     this.cancel();
     this.axisLock = null;
+    this.adding = false;
+    this.pendingAdd = null;
     this.active = false;
     this.overlay.visible = false;
     this.selection.clear();
@@ -338,6 +355,10 @@ export class MeshTool {
       return;
     }
     const hit = this.vertexAt(e.clientX, e.clientY);
+    if (this.adding && !hit && !e.shiftKey) {
+      // Se anota el clic: al soltar sin haber movido el ratón se añade el vértice; si se arrastró, la cámara gira como siempre.
+      this.pendingAdd = { x: e.clientX, y: e.clientY, ctrl: e.ctrlKey || e.metaKey };
+    }
     if (!hit && e.shiftKey && !(e.ctrlKey || e.metaKey)) {
       // Shift+clic sobre una cara elige todos sus vértices (se suman a los que ya había).
       const face = this.faceAt(e.clientX, e.clientY);
@@ -360,7 +381,7 @@ export class MeshTool {
       this.beginDrag(e, hit.position);
       return;
     }
-    if (e.ctrlKey || e.metaKey) {
+    if ((e.ctrlKey || e.metaKey) && !this.adding) {
       // Ctrl y arrastrar en vacío dibuja un recuadro que elige todos los vértices que caen dentro, también los de detrás.
       e.stopImmediatePropagation();
       this.marquee = { x: e.clientX, y: e.clientY, add: e.shiftKey };
@@ -491,6 +512,12 @@ export class MeshTool {
 
   private up(e: PointerEvent): void {
     if (!this.active) return;
+    if (this.pendingAdd) {
+      const { x, y, ctrl } = this.pendingAdd;
+      this.pendingAdd = null;
+      if (Math.hypot(e.clientX - x, e.clientY - y) < DRAG_THRESHOLD && this.addVertexAt(x, y, ctrl)) e.stopImmediatePropagation();
+      return;
+    }
     if (this.marquee) {
       e.stopImmediatePropagation();
       this.finishMarquee(e);
@@ -895,7 +922,7 @@ export class MeshTool {
   }
 
   /** La cara más cercana bajo el cursor (se cuentan también las vistas por detrás). */
-  private faceAt(x: number, y: number): { piece: Piece; index: number } | null {
+  private faceAt(x: number, y: number): { piece: Piece; index: number; point: THREE.Vector3; distance: number } | null {
     const rect = this.rect();
     const ndc = new THREE.Vector2(((x - rect.left) / rect.width) * 2 - 1, -((y - rect.top) / rect.height) * 2 + 1);
     const raycaster = new THREE.Raycaster();
@@ -904,7 +931,7 @@ export class MeshTool {
     const a = new THREE.Vector3();
     const b = new THREE.Vector3();
     const c = new THREE.Vector3();
-    let best: { piece: Piece; index: number } | null = null;
+    let best: { piece: Piece; index: number; point: THREE.Vector3; distance: number } | null = null;
     let bestDistance = Infinity;
     const seen = new Set<number>();
     for (const { piece } of this.shown) {
@@ -919,7 +946,7 @@ export class MeshTool {
           const d = point.distanceTo(raycaster.ray.origin);
           if (d < bestDistance) {
             bestDistance = d;
-            best = { piece, index };
+            best = { piece, index, point: point.clone(), distance: d };
           }
         }
       });
@@ -928,9 +955,35 @@ export class MeshTool {
   }
 
   /** Alt+clic: pone un vértice en la arista más cercana al cursor. */
-  private splitEdgeAt(e: PointerEvent): boolean {
+  /** Añade un vértice donde se hizo clic: en la arista más cercana si hay una a mano y, si no, dentro de la cara apuntada. */
+  private addVertexAt(x: number, y: number, precise: boolean): boolean {
+    if (this.splitEdgeAt({ clientX: x, clientY: y, ctrlKey: precise, metaKey: false })) return true;
+    const face = this.faceAt(x, y);
+    if (!face) {
+      this.host.status('Apunta a una arista o a una cara de una pieza');
+      return false;
+    }
+    const result = addVertexOnFace(face.piece, face.index, [face.point.x, face.point.y, face.point.z]);
+    if (!result) {
+      this.host.status('Ahí no cabe un vértice: apunta al interior de la cara, lejos de sus aristas');
+      return false;
+    }
+    const next = sameId(result.piece, face.piece);
+    const before = cloneSelection(this.selection);
+    this.host.model.apply({ added: [next], removed: [face.piece] });
+    this.selection = new Map([[face.piece.id, new Set([vertexKey(result.vertex)])]]);
+    this.record(before);
+    this.refresh();
+    this.host.status('Vértice añadido en la cara: muévelo para deformar');
+    return true;
+  }
+
+  private splitEdgeAt(e: Pick<PointerEvent, 'clientX' | 'clientY' | 'ctrlKey' | 'metaKey'>): boolean {
     let best: { piece: Piece; a: Vec3; b: Vec3; t: number } | null = null;
     let bestDistance = EDGE_RADIUS;
+    // Una arista tapada por una cara que está delante del cursor no cuenta: se apunta a lo que se ve.
+    const front = this.faceAt(e.clientX, e.clientY)?.distance ?? Infinity;
+    const eye = this.host.camera.position;
     const seen = new Set<string>();
     for (const { piece } of this.shown) {
       for (const face of piece.faces) {
@@ -948,6 +1001,8 @@ export class MeshTool {
           if (length2 < 1) return;
           const t = Math.max(0, Math.min(1, ((e.clientX - sa.x) * dx + (e.clientY - sa.y) * dy) / length2));
           const d = Math.hypot(sa.x + dx * t - e.clientX, sa.y + dy * t - e.clientY);
+          const along = new THREE.Vector3(a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t);
+          if (eye.distanceTo(along) > front + 0.05) return;
           if (d < bestDistance) {
             bestDistance = d;
             best = { piece, a, b, t };

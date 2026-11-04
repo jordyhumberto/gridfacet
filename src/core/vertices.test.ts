@@ -4,7 +4,7 @@ import { isConvex } from './convex';
 import { floodFill, textureOfFace, withFaceTexture } from './pixels';
 import { FACE_DOUBLE, FACE_UNLIT, faceNormal, volume, type Vec3 } from './piece';
 import { sampleTexture, pointOf, uvOf } from './texture';
-import { addFace, deleteFaces, deleteVertices, extrudeFaces, facesWithin, flipFaces, mergeVertices, moveVertices, placeVertices, rotateAbout, scaleAbout, setFaceFlags, splitEdge, taperPoint, twistPoint, bendPoint, uniqueVertices, vertexKey } from './vertices';
+import { addFace, deleteFaces, deleteVertices, extrudeFaces, facesWithin, flipFaces, mergeVertices, moveVertices, placeVertices, rotateAbout, scaleAbout, setFaceFlags, splitEdge, addVertexOnFace, taperPoint, twistPoint, bendPoint, uniqueVertices, vertexKey } from './vertices';
 
 const cube = () => buildPiece(CATALOG[0], 0, 0, 0, 0, 0x336699);
 const topCorner = (piece = cube()): Vec3 => {
@@ -146,6 +146,27 @@ describe('caras', () => {
     expect(uniqueVertices(split)).toHaveLength(9);
     expect(split.faces.filter((f) => f.some((p) => vertexKey(p) === vertexKey(vertex)))).toHaveLength(2);
     expect(splitEdge(piece, a, b, 0)).toBeNull();
+  });
+
+  it('un vértice dentro de una cara la parte en triángulos que salen de él', () => {
+    const piece = cube();
+    const top = topFace(piece);
+    const face = piece.faces[top];
+    const centre = face.reduce((sum, p) => [sum[0] + p[0] / face.length, sum[1] + p[1] / face.length, sum[2] + p[2] / face.length], [0, 0, 0]) as [number, number, number];
+    const result = addVertexOnFace(piece, top, centre)!;
+    expect(result.piece.faces).toHaveLength(piece.faces.length - 1 + face.length);
+    expect(uniqueVertices(result.piece)).toHaveLength(9);
+    expect(volume(result.piece)).toBeCloseTo(volume(piece), 9);
+    // Todos los triángulos nuevos miran hacia donde miraba la cara.
+    const added = result.piece.faces.filter((f) => f.some((p) => vertexKey(p) === vertexKey(result.vertex)));
+    expect(added).toHaveLength(face.length);
+    for (const f of added) expect(faceNormal(f)[1]).toBeGreaterThan(0);
+    // Al subir el vértice sale una punta y el volumen crece.
+    const raised = moveVertices(result.piece, new Set([vertexKey(result.vertex)]), [0, 0.5, 0])!;
+    expect(volume(raised)).toBeGreaterThan(volume(piece));
+    // Sobre una arista o un vértice no hace nada.
+    expect(addVertexOnFace(piece, top, face[0])).toBeNull();
+    expect(addVertexOnFace(piece, top, [(face[0][0] + face[1][0]) / 2, face[0][1], (face[0][2] + face[1][2]) / 2])).toBeNull();
   });
 
   it('extruir una cara sube sus vértices y cierra las paredes', () => {
