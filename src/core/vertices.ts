@@ -273,3 +273,23 @@ export function rotateAbout(p: Vec3, pivot: Vec3, axis: Vec3, angle: number): Ve
 export function scaleAbout(p: Vec3, pivot: Vec3, factors: Vec3): Vec3 {
   return [0, 1, 2].map((k) => pivot[k] + (p[k] - pivot[k]) * factors[k]) as Vec3;
 }
+
+/** Posición (de −1 a 1) de un punto a lo largo de `axis`, medida desde `pivot` en unidades de la mitad del largo `half`. */
+const along = (p: Vec3, pivot: Vec3, axis: number, half: number): number => (p[axis] - pivot[axis]) / half;
+
+/**
+ * Afina (o ensancha) una forma a lo largo de un eje: la sección en el centro no cambia y en cada extremo se escala `1 + amount`
+ * (positivo ensancha el extremo de arriba y estrecha el de abajo; negativo al revés).
+ */
+export function taperPoint(p: Vec3, pivot: Vec3, axis: number, half: number, amount: number): Vec3 {
+  const factor = Math.max(1 + amount * along(p, pivot, axis, half), 0);
+  return [0, 1, 2].map((k) => (k === axis ? p[k] : pivot[k] + (p[k] - pivot[k]) * factor)) as Vec3;
+}
+
+/** Tuerce una forma a lo largo de un eje: cada sección gira alrededor del eje según su altura (`amount` × 180° en cada extremo, en sentidos opuestos). */
+export function twistPoint(p: Vec3, pivot: Vec3, axis: number, half: number, amount: number): Vec3 {
+  const unit: Vec3 = [0, 1, 2].map((k) => (k === axis ? 1 : 0)) as Vec3;
+  // El giro es alrededor del eje que pasa por el pivote, a la altura del propio punto.
+  const centre = [0, 1, 2].map((k) => (k === axis ? p[k] : pivot[k])) as Vec3;
+  return rotateAbout(p, centre, unit, amount * Math.PI * along(p, pivot, axis, half));
+}

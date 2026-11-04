@@ -4,7 +4,7 @@ import { isConvex } from './convex';
 import { floodFill, textureOfFace, withFaceTexture } from './pixels';
 import { FACE_DOUBLE, FACE_UNLIT, faceNormal, volume, type Vec3 } from './piece';
 import { sampleTexture, pointOf, uvOf } from './texture';
-import { addFace, deleteFaces, deleteVertices, extrudeFaces, facesWithin, flipFaces, mergeVertices, moveVertices, placeVertices, rotateAbout, scaleAbout, setFaceFlags, splitEdge, uniqueVertices, vertexKey } from './vertices';
+import { addFace, deleteFaces, deleteVertices, extrudeFaces, facesWithin, flipFaces, mergeVertices, moveVertices, placeVertices, rotateAbout, scaleAbout, setFaceFlags, splitEdge, taperPoint, twistPoint, uniqueVertices, vertexKey } from './vertices';
 
 const cube = () => buildPiece(CATALOG[0], 0, 0, 0, 0, 0x336699);
 const topCorner = (piece = cube()): Vec3 => {
@@ -221,5 +221,29 @@ describe('girar y escalar vértices', () => {
     const turned = placeVertices(cube, keys, (p) => rotateAbout(p, [0.5, 0.5, 0.5], [0, 1, 0], Math.PI / 2), true)!;
     const xs = uniqueVertices(turned).map((p) => p[0]);
     expect(Math.max(...xs) - Math.min(...xs)).toBeCloseTo(1, 6);
+  });
+});
+
+describe('afinar y torcer', () => {
+  const pivot: Vec3 = [0, 0, 0];
+  it('afinar deja la sección del centro y escala los extremos', () => {
+    expect(taperPoint([1, 0, 1], pivot, 1, 1, 0.5)).toEqual([1, 0, 1]);
+    expect(taperPoint([1, 1, 0], pivot, 1, 1, 0.5)).toEqual([1.5, 1, 0]);
+    expect(taperPoint([1, -1, 0], pivot, 1, 1, 0.5)).toEqual([0.5, -1, 0]);
+  });
+
+  it('afinar con un valor extremo no da escala negativa', () => {
+    expect(taperPoint([1, 1, 0], pivot, 1, 1, -2)[0]).toBe(0);
+  });
+
+  it('torcer gira los extremos en sentidos opuestos y no mueve el centro ni el eje', () => {
+    const top = twistPoint([1, 1, 0], pivot, 1, 1, 0.5);
+    const bottom = twistPoint([1, -1, 0], pivot, 1, 1, 0.5);
+    expect(top[1]).toBe(1);
+    expect(top[0]).toBeCloseTo(0, 9);
+    expect(top[2]).toBeCloseTo(-1, 9);
+    expect(bottom[2]).toBeCloseTo(1, 9);
+    expect(twistPoint([1, 0, 0], pivot, 1, 1, 0.5)[0]).toBeCloseTo(1, 9);
+    expect(twistPoint([0, 1, 0], pivot, 1, 1, 0.5)).toEqual([0, 1, 0]);
   });
 });

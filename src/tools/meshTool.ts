@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import type { Piece, Vec3 } from '../core/piece';
 import { reflections, type Symmetry } from '../core/symmetry';
 import { triangulateFace } from '../core/convex';
-import { addFace, deleteFaces, deleteVertices, extrudeFaces, facesWithin, flipFaces, mergeVertices, moveVertices, placeVertices, rotateAbout, scaleAbout, setFaceFlags, splitEdge, uniqueVertices, vertexKey } from '../core/vertices';
+import { addFace, deleteFaces, deleteVertices, extrudeFaces, facesWithin, flipFaces, mergeVertices, moveVertices, placeVertices, rotateAbout, scaleAbout, setFaceFlags, splitEdge, taperPoint, twistPoint, uniqueVertices, vertexKey } from '../core/vertices';
 import type { ModelScene } from '../scene';
 
 /** Paso de la rejilla de imán, en celdas. */
@@ -20,6 +20,10 @@ const MAX_VISIBLE = 4000;
 /** Con imán, el giro avanza de 15° en 15° y la escala de 0,05 en 0,05. */
 const ROTATE_STEP = Math.PI / 12;
 const SCALE_STEP = 0.05;
+/** Píxeles de movimiento horizontal que valen 1 al afinar o torcer. */
+const DEFORM_PIXELS = 150;
+
+export type TransformKind = 'rotate' | 'scale' | 'taper' | 'twist';
 /** Lo que hay que mover el cursor antes de que un clic pase a ser un arrastre. */
 const DRAG_THRESHOLD = 3;
 
@@ -85,9 +89,11 @@ export class MeshTool {
 
   /** Giro o escala en curso: se maneja moviendo el ratón (sin pulsar) y se confirma con un clic o Intro. */
   private modal: {
-    kind: 'rotate' | 'scale';
+    kind: TransformKind;
     targets: Target[];
     pivot: Vec3;
+    /** Mitad del largo de los vértices elegidos a lo largo de cada eje (para afinar y torcer). */
+    half: Vec3;
     axis: number | null;
     /** Posición del cursor al empezar (se fija con el primer movimiento) y lo que valía entonces. */
     start: { x: number; y: number; angle: number; distance: number } | null;
@@ -547,7 +553,7 @@ export class MeshTool {
   }
 
   /** Empieza a girar (R) o escalar (T) los vértices elegidos alrededor de su centro; se maneja moviendo el ratón. */
-  beginTransform(kind: 'rotate' | 'scale'): void {
+  beginTransform(kind: TransformKind): void {
     if (this.drag || this.modal) return;
     const targets = this.buildTargets();
     if (targets.length === 0) {
@@ -568,9 +574,16 @@ export class MeshTool {
       }
     }
     const pivot = [0, 1, 2].map((k) => (min[k] + max[k]) / 2) as Vec3;
-    this.modal = { kind, targets, pivot, axis: null, start: null, last: null, value: kind === 'rotate' ? 0 : 1, moved: false };
+    const half = [0, 1, 2].map((k) => (max[k] - min[k]) / 2) as Vec3;
+    if ((kind === 'taper' || kind === 'twist') && half.every((h) => h < 1e-6)) {
+      this.host.status('Elige vértices que ocupen algo de espacio para afinar o torcer');
+      return;
+    }
+    this.modal = { kind, targets, pivot, half, axis: null, start: null, last: null, value: kind === 'scale' ? 1 : 0, moved: false };
     this.host.setOrbit(false);
-    this.host.status(`${kind === 'rotate' ? 'Girar' : 'Escalar'}: mueve el ratón · X/Y/Z fija el eje · Ctrl sin imán · clic o Intro confirma · Esc cancela`);
+    const name = { rotate: 'Girar', scale: 'Escalar', taper: 'Afinar', twist: 'Torcer' }[kind];
+    const hint = kind === 'taper' || kind === 'twist' ? 'mueve el ratón a los lados · X/Y/Z cambia el eje (por defecto Y)' : 'mueve el ratón · X/Y/Z fija el eje';
+    this.host.status(`${name}: ${hint} · Ctrl sin imán · clic o Intro confirma · Esc cancela`);
   }
 
   /** Eje de giro: el del mundo elegido, o el más parecido a la dirección de la cámara. */
@@ -595,7 +608,22 @@ export class MeshTool {
       return;
     }
     let map: (p: Vec3) => Vec3;
-    if (modal.kind === 'rotate') {
+    if (modal.kind === 'taper' || modal.kind === 'twist') {
+      // Se maneja con el movimiento horizontal del cursor; el eje por defecto es el vertical.
+      const axis = modal.axis ?? 1;
+      const half = modal.half[axis];
+      if (half < 1e-6) {
+        this.host.status(`No hay largo a lo largo de ${'XYZ'[axis]}: prueba con otro eje (X/Y/Z)`);
+        return;
+      }
+      let amount = (x - modal.start.x) / DEFORM_PIXELS;
+      if (!free) amount = Math.round(amount / SCALE_STEP) * SCALE_STEP;
+      if (modal.kind === 'taper') amount = Math.max(amount, -0.95);
+      modal.value = amount;
+      const point = modal.kind === 'taper' ? taperPoint : twistPoint;
+      map = (p) => point(p, modal.pivot, axis, half, amount);
+      this.host.status(`${modal.kind === 'taper' ? 'Afinar' : 'Torcer'} ${amount >= 0 ? '+' : ''}${amount.toFixed(2)} en ${'XYZ'[axis]}`);
+    } else if (modal.kind === 'rotate') {
       const axis = this.rotationAxis();
       const toward = this.host.camera.getWorldDirection(new THREE.Vector3());
       // Si el eje apunta hacia quien mira, el giro positivo se ve en sentido contrario al de las agujas; el cursor se mide al revés.
@@ -660,7 +688,7 @@ export class MeshTool {
     }
     this.host.model.commitPreview({ added: finals, removed: originals });
     this.refresh();
-    this.host.status(modal.kind === 'rotate' ? 'Giro aplicado' : 'Escala aplicada');
+    this.host.status({ rotate: 'Giro aplicado', scale: 'Escala aplicada', taper: 'Afinado aplicado', twist: 'Torcido aplicado' }[modal.kind]);
   }
 
   /** Eje del mundo que más se parece a una dirección de pantalla. */
