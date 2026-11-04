@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import type { Piece } from '../core/piece';
 import { triangulateFace } from '../core/convex';
-import { faceNormal } from '../core/piece';
+import { FACE_DOUBLE, FACE_UNLIT, faceNormal } from '../core/piece';
 import { CLEAR, uvOf, type FaceTexture } from '../core/texture';
 
 /** Lo que se separa cada textura de su cara para no confundirse con ella al dibujar. */
@@ -31,7 +31,7 @@ function canvasTexture(texture: FaceTexture): THREE.CanvasTexture {
 }
 
 /** Malla de una cara con su textura. `flat` la dibuja sin luz (colores tal cual), para los sprites planos. */
-export function faceMesh(face: [number, number, number][], texture: FaceTexture, flat = false): THREE.Mesh {
+export function faceMesh(face: [number, number, number][], texture: FaceTexture, flat = false, flags = 0): THREE.Mesh {
   const n = faceNormal(face);
   const length = Math.hypot(n[0], n[1], n[2]) || 1;
   const lift = [n[0] / length, n[1] / length, n[2] / length].map((c) => c * LIFT);
@@ -52,8 +52,15 @@ export function faceMesh(face: [number, number, number][], texture: FaceTexture,
   geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
   geometry.setAttribute('normal', new THREE.Float32BufferAttribute(normals, 3));
   geometry.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
-  const shared = { map: canvasTexture(texture), alphaTest: 0.5, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 };
-  const material = flat ? new THREE.MeshBasicMaterial(shared) : new THREE.MeshStandardMaterial({ ...shared, roughness: 0.7, metalness: 0 });
+  const shared = {
+    map: canvasTexture(texture),
+    alphaTest: 0.5,
+    polygonOffset: true,
+    polygonOffsetFactor: -2,
+    polygonOffsetUnits: -2,
+    side: flags & FACE_DOUBLE ? THREE.DoubleSide : THREE.FrontSide,
+  };
+  const material = flat || flags & FACE_UNLIT ? new THREE.MeshBasicMaterial(shared) : new THREE.MeshStandardMaterial({ ...shared, roughness: 0.7, metalness: 0 });
   return new THREE.Mesh(geometry, material);
 }
 
@@ -72,7 +79,7 @@ export class TextureLayer {
     const object = new THREE.Group();
     piece.faces.forEach((face, i) => {
       const texture = piece.faceTextures![i];
-      if (texture) object.add(faceMesh(face, texture));
+      if (texture) object.add(faceMesh(face, texture, false, piece.faceFlags?.[i] ?? 0));
     });
     this.byPiece.set(piece.id, object);
     this.group.add(object);
@@ -111,7 +118,7 @@ export function textureMeshes(pieces: Piece[], flat = false): THREE.Mesh[] {
     piece.faces.forEach((face, i) => {
       const texture = piece.faceTextures?.[i];
       if (!texture) return;
-      const mesh = faceMesh(face, texture, flat);
+      const mesh = faceMesh(face, texture, flat, piece.faceFlags?.[i] ?? 0);
       mesh.name = `Pieza_${piece.id}_cara${i}_textura`;
       meshes.push(mesh);
     });

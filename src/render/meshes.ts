@@ -1,24 +1,30 @@
 import * as THREE from 'three';
 import { triangulateFace } from '../core/convex';
-import { faceColorOf, type Piece } from '../core/piece';
-import { edgeKey, faceVertexNormals, smoothEdges } from './shading';
+import { FACE_DOUBLE, FACE_UNLIT, faceColorOf, type Piece } from '../core/piece';
+import { allowUnlit, edgeKey, faceVertexNormals, smoothEdges } from './shading';
 
 /** Geometría sin indexar con normales planas; cada cara se triangula (en abanico si es convexa). */
 export function pieceGeometry(piece: Piece): THREE.BufferGeometry {
   const positions: number[] = [];
   const normals: number[] = [];
   const colors: number[] = [];
+  const unlit: number[] = [];
   const paint = new THREE.Color();
   const vertexNormals = faceVertexNormals(piece, smoothShading);
   for (const [faceIndex, face] of piece.faces.entries()) {
     paint.set(faceColorOf(piece, faceIndex));
+    const flags = piece.faceFlags?.[faceIndex] ?? 0;
     for (const triangle of triangulateFace(face)) {
-      for (const v of triangle) {
-        const p = face[v];
-        const n = vertexNormals[faceIndex][v];
-        positions.push(p[0], p[1], p[2]);
-        normals.push(n[0], n[1], n[2]);
-        colors.push(paint.r, paint.g, paint.b);
+      // Con doble cara, el mismo triángulo se repite del revés (y con la normal invertida) para verse por detrás.
+      for (const back of flags & FACE_DOUBLE ? [false, true] : [false]) {
+        for (const v of back ? [...triangle].reverse() : triangle) {
+          const p = face[v];
+          const n = vertexNormals[faceIndex][v];
+          positions.push(p[0], p[1], p[2]);
+          normals.push(back ? -n[0] : n[0], back ? -n[1] : n[1], back ? -n[2] : n[2]);
+          colors.push(paint.r, paint.g, paint.b);
+          unlit.push(flags & FACE_UNLIT ? 1 : 0);
+        }
       }
     }
   }
@@ -27,6 +33,7 @@ export function pieceGeometry(piece: Piece): THREE.BufferGeometry {
   geometry.setAttribute('normal', new THREE.Float32BufferAttribute(normals, 3));
   // Solo se usa si la pieza tiene caras pintadas (ver createPieceObject).
   geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+  geometry.setAttribute('unlit', new THREE.Float32BufferAttribute(unlit, 1));
   return geometry;
 }
 
@@ -103,6 +110,7 @@ export function createPieceObject(piece: Piece, ghost = false): THREE.Group {
     polygonOffsetFactor: -1,
     polygonOffsetUnits: -1,
   });
+  allowUnlit(material);
   const mesh = new THREE.Mesh(pieceGeometry(piece), material);
   mesh.userData.pieceId = piece.id;
   // Los fantasmas y avisos (vistas previas) conservan sus caras translúcidas incluso en la vista de líneas.

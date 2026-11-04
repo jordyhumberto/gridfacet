@@ -24,7 +24,7 @@ export function paintChange(targets: FaceRef[], color: number): Change {
     removed.push(piece);
     // Si todas las caras quedan iguales, el color pasa a ser el de la pieza entera.
     const uniform = colors.every((c) => c === colors[0]);
-    added.push(keepGroup(makePiece(piece.faces, uniform ? colors[0] : piece.color, colors, piece.faceTextures), piece));
+    added.push(keepGroup(makePiece(piece.faces, uniform ? colors[0] : piece.color, colors, piece.faceTextures, piece.faceFlags), piece));
   }
   return { added, removed };
 }

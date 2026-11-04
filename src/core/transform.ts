@@ -7,7 +7,7 @@ export const STEP_XZ = 0.25;
 export const STEP_Y = 0.25;
 
 function mapPiece(piece: Piece, map: (p: Vec3) => Vec3): Piece {
-  return keepGroup(makePiece(piece.faces.map((face) => face.map(map)), piece.color, piece.faceColors, piece.faceTextures), piece);
+  return keepGroup(makePiece(piece.faces.map((face) => face.map(map)), piece.color, piece.faceColors, piece.faceTextures, piece.faceFlags), piece);
 }
 
 export function translatePiece(piece: Piece, dx: number, dy: number, dz: number): Piece {
@@ -160,7 +160,7 @@ export function mirrorPiece(piece: Piece, axis: Axis, center: number): Piece {
   const faces = piece.faces.map((face) => face.map(flip).reverse());
   // El espejo invierte el orden de los vértices y con él el marco de cada cara: las texturas se remuestrean al marco nuevo (flip es su propia inversa).
   const textures = piece.faceTextures?.map((texture, i) => (texture ? remapTexture(texture, piece.faces[i], faces[i], flip) : null));
-  return keepGroup(makePiece(faces, piece.color, piece.faceColors, textures), piece);
+  return keepGroup(makePiece(faces, piece.color, piece.faceColors, textures, piece.faceFlags), piece);
 }
 
 /**

@@ -22,17 +22,19 @@ function rebuild(piece: Piece, mapFace: (face: Vec3[], index: number) => Vec3[] 
   const faces: Vec3[][] = [];
   const colors: number[] = [];
   const textures: (FaceTexture | null)[] = [];
+  const flags: number[] = [];
   piece.faces.forEach((face, i) => {
     const next = mapFace(face, i);
     if (!next || next.length < 3) return;
     faces.push(next);
     colors.push(piece.faceColors?.[i] ?? piece.color);
+    flags.push(piece.faceFlags?.[i] ?? 0);
     const texture = piece.faceTextures?.[i];
     const moved = next.length !== face.length || next.some((p, k) => !same(p, face[k]));
     textures.push(texture ? (moved ? remapTexture(texture, face, next, (p) => p) : texture) : null);
   });
   if (faces.length === 0) return null;
-  const result = makePiece(faces, piece.color, colors, piece.faceTextures ? textures : undefined);
+  const result = makePiece(faces, piece.color, colors, piece.faceTextures ? textures : undefined, flags);
   if (piece.group !== undefined) result.group = piece.group;
   if (piece.groupName) result.groupName = piece.groupName;
   if (piece.layer !== undefined) result.layer = piece.layer;
@@ -139,8 +141,8 @@ function ringAround(points: Vec3[]): Vec3[] {
 }
 
 /** Copia de `source` con otras caras, colores y texturas, conservando grupo, nombre de grupo y capa. */
-function withFaces(source: Piece, faces: Vec3[][], colors: number[], textures: (FaceTexture | null)[]): Piece {
-  const result = makePiece(faces, source.color, colors, source.faceTextures ? textures : undefined);
+function withFaces(source: Piece, faces: Vec3[][], colors: number[], textures: (FaceTexture | null)[], flags: number[]): Piece {
+  const result = makePiece(faces, source.color, colors, source.faceTextures ? textures : undefined, flags);
   if (source.group !== undefined) result.group = source.group;
   if (source.groupName) result.groupName = source.groupName;
   if (source.layer !== undefined) result.layer = source.layer;
@@ -167,6 +169,7 @@ export function addFace(piece: Piece, keys: ReadonlySet<string>): Piece | null {
     [...piece.faces, ring],
     [...piece.faces.map((_, i) => piece.faceColors?.[i] ?? piece.color), piece.color],
     [...(piece.faceTextures ?? piece.faces.map(() => null)), null],
+    [...piece.faces.map((_, i) => piece.faceFlags?.[i] ?? 0), 0],
   );
 }
 
@@ -199,9 +202,11 @@ export function extrudeFaces(piece: Piece, indices: ReadonlySet<number>, distanc
   const faces: Vec3[][] = [];
   const colors: number[] = [];
   const textures: (FaceTexture | null)[] = [];
+  const flags: number[] = [];
   const keys = new Set<string>();
   piece.faces.forEach((face, i) => {
     colors.push(piece.faceColors?.[i] ?? piece.color);
+    flags.push(piece.faceFlags?.[i] ?? 0);
     const texture = piece.faceTextures?.[i] ?? null;
     if (!indices.has(i)) {
       faces.push(face);
@@ -230,8 +235,26 @@ export function extrudeFaces(piece: Piece, indices: ReadonlySet<number>, distanc
       if (uses.get(edgeKey(a, b)) !== 1) return;
       faces.push([a, b, lift(b), lift(a)]);
       colors.push(piece.faceColors?.[i] ?? piece.color);
+      // Las paredes heredan las propiedades de la cara que se extruye.
+      flags.push(piece.faceFlags?.[i] ?? 0);
       textures.push(null);
     });
   }
-  return { piece: withFaces(piece, faces, colors, textures), keys };
+  return { piece: withFaces(piece, faces, colors, textures, flags), keys };
+}
+
+/** Pone o quita propiedades (bits de `FACE_DOUBLE` y `FACE_UNLIT`) en las caras indicadas. */
+export function setFaceFlags(piece: Piece, indices: ReadonlySet<number>, flag: number, on: boolean): Piece | null {
+  if (indices.size === 0 || ![...indices].some((i) => piece.faces[i])) return null;
+  const flags = piece.faces.map((_, i) => {
+    const current = piece.faceFlags?.[i] ?? 0;
+    if (!indices.has(i)) return current;
+    return on ? current | flag : current & ~flag;
+  });
+  if (flags.every((f, i) => f === (piece.faceFlags?.[i] ?? 0))) return null;
+  const result = makePiece(piece.faces, piece.color, piece.faceColors, piece.faceTextures, flags);
+  if (piece.group !== undefined) result.group = piece.group;
+  if (piece.groupName) result.groupName = piece.groupName;
+  if (piece.layer !== undefined) result.layer = piece.layer;
+  return result;
 }

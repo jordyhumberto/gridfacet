@@ -1,7 +1,8 @@
 import * as THREE from 'three';
 import type { Piece, Vec3 } from '../core/piece';
 import { reflections, type Symmetry } from '../core/symmetry';
-import { addFace, deleteFaces, deleteVertices, extrudeFaces, facesWithin, flipFaces, mergeVertices, moveVertices, placeVertices, splitEdge, uniqueVertices, vertexKey } from '../core/vertices';
+import { triangulateFace } from '../core/convex';
+import { addFace, deleteFaces, deleteVertices, extrudeFaces, facesWithin, flipFaces, mergeVertices, moveVertices, placeVertices, setFaceFlags, splitEdge, uniqueVertices, vertexKey } from '../core/vertices';
 import type { ModelScene } from '../scene';
 
 /** Paso de la rejilla de imán, en celdas. */
@@ -235,6 +236,19 @@ export class MeshTool {
       return;
     }
     const hit = this.vertexAt(e.clientX, e.clientY);
+    if (!hit && e.shiftKey && !(e.ctrlKey || e.metaKey)) {
+      // Shift+clic sobre una cara elige todos sus vértices (se suman a los que ya había).
+      const face = this.faceAt(e.clientX, e.clientY);
+      if (face) {
+        e.stopImmediatePropagation();
+        const keys = this.selection.get(face.piece.id) ?? new Set<string>();
+        for (const p of face.piece.faces[face.index]) keys.add(vertexKey(p));
+        this.selection.set(face.piece.id, keys);
+        this.paint();
+        this.host.onSelectionChange();
+        return;
+      }
+    }
     if (hit) {
       e.stopImmediatePropagation();
       if (!this.isSelected(hit.piece, hit.key)) this.select(hit.piece, hit.key, e.shiftKey);
@@ -589,6 +603,63 @@ export class MeshTool {
       return { piece: sameId(result.piece, piece), select: result.keys };
     });
     if (!any) this.host.status('Elige todos los vértices de una cara para extruirla');
+  }
+
+  /** Cuántas de las caras elegidas (con todos sus vértices elegidos) tienen la propiedad `flag`. */
+  faceFlagCount(flag: number): { total: number; on: number } {
+    let total = 0;
+    let on = 0;
+    for (const { piece } of this.shown) {
+      const keys = this.selection.get(piece.id);
+      if (!keys) continue;
+      for (const i of facesWithin(piece, keys)) {
+        total++;
+        if ((piece.faceFlags?.[i] ?? 0) & flag) on++;
+      }
+    }
+    return { total, on };
+  }
+
+  /** Pone o quita una propiedad (`FACE_DOUBLE`, `FACE_UNLIT`) a las caras cuyos vértices están todos elegidos. */
+  setFaceFlag(flag: number, on: boolean): void {
+    this.change((piece, keys) => {
+      const faces = facesWithin(piece, keys);
+      const result = faces.length ? setFaceFlags(piece, new Set(faces), flag, on) : null;
+      return result ? sameId(result, piece) : null;
+    }, keepPosition);
+  }
+
+  /** La cara más cercana bajo el cursor (se cuentan también las vistas por detrás). */
+  private faceAt(x: number, y: number): { piece: Piece; index: number } | null {
+    const rect = this.rect();
+    const ndc = new THREE.Vector2(((x - rect.left) / rect.width) * 2 - 1, -((y - rect.top) / rect.height) * 2 + 1);
+    const raycaster = new THREE.Raycaster();
+    raycaster.setFromCamera(ndc, this.host.camera);
+    const point = new THREE.Vector3();
+    const a = new THREE.Vector3();
+    const b = new THREE.Vector3();
+    const c = new THREE.Vector3();
+    let best: { piece: Piece; index: number } | null = null;
+    let bestDistance = Infinity;
+    const seen = new Set<number>();
+    for (const { piece } of this.shown) {
+      if (seen.has(piece.id)) continue;
+      seen.add(piece.id);
+      piece.faces.forEach((face, index) => {
+        for (const [i, j, k] of triangulateFace(face)) {
+          a.set(...face[i]);
+          b.set(...face[j]);
+          c.set(...face[k]);
+          if (!raycaster.ray.intersectTriangle(a, b, c, false, point)) continue;
+          const d = point.distanceTo(raycaster.ray.origin);
+          if (d < bestDistance) {
+            bestDistance = d;
+            best = { piece, index };
+          }
+        }
+      });
+    }
+    return best;
   }
 
   /** Alt+clic: pone un vértice en la arista más cercana al cursor. */

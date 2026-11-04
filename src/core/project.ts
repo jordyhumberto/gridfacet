@@ -1,3 +1,4 @@
+import { isConvex } from './convex';
 import type { Layer } from './layers';
 import { makePiece, volume, type Piece, type Vec3 } from './piece';
 import { packTexture, unpackTexture, type PackedTexture } from './texture';
@@ -16,7 +17,7 @@ const VERSION = 1;
 interface ProjectFile {
   format: typeof FORMAT;
   version: number;
-  pieces: { color: number; faces: Vec3[][]; faceColors?: number[]; faceTextures?: (PackedTexture | null)[]; group?: number; groupName?: string; layer?: number }[];
+  pieces: { color: number; faces: Vec3[][]; faceColors?: number[]; faceTextures?: (PackedTexture | null)[]; faceFlags?: number[]; group?: number; groupName?: string; layer?: number }[];
   /** Capas (opcional: los proyectos antiguos tienen solo la primera). */
   layers?: LayerState;
   /** Puntos de referencia (opcional: los proyectos antiguos no lo tienen). */
@@ -29,11 +30,12 @@ export function serializeProject(pieces: Piece[], marks: Vec3[] = [], gridSize?:
   const project: ProjectFile = {
     format: FORMAT,
     version: VERSION,
-    pieces: pieces.map(({ color, faces, faceColors, faceTextures, group, groupName, layer }) => ({
+    pieces: pieces.map(({ color, faces, faceColors, faceTextures, faceFlags, group, groupName, layer }) => ({
       color,
       faces,
       ...(faceColors ? { faceColors } : {}),
       ...(faceTextures ? { faceTextures: faceTextures.map((t) => (t ? packTexture(t) : null)) } : {}),
+      ...(faceFlags ? { faceFlags } : {}),
       ...(group !== undefined ? { group } : {}),
       ...(group !== undefined && groupName ? { groupName } : {}),
       ...(layer !== undefined && layer !== 1 ? { layer } : {}),
@@ -71,9 +73,9 @@ export function parseProjectFull(text: string): { pieces: Piece[]; marks: Vec3[]
 
   const pieces = file.pieces.map((raw, i) => {
     const label = `Pieza ${i + 1}`;
-    const { color, faces, faceColors, faceTextures, group, groupName, layer } = raw ?? {};
+    const { color, faces, faceColors, faceTextures, faceFlags, group, groupName, layer } = raw ?? {};
     if (!Number.isInteger(color) || color < 0 || color > 0xffffff) throw new Error(`${label}: color no válido`);
-    if (!Array.isArray(faces) || faces.length < 4) throw new Error(`${label}: le faltan caras`);
+    if (!Array.isArray(faces) || faces.length < 1) throw new Error(`${label}: le faltan caras`);
     if (!faces.every((f) => Array.isArray(f) && f.length >= 3 && f.every(isVec3))) {
       throw new Error(`${label}: tiene caras no válidas`);
     }
@@ -81,13 +83,15 @@ export function parseProjectFull(text: string): { pieces: Piece[]; marks: Vec3[]
     const painted = Array.isArray(faceColors) && faceColors.length === faces.length && faceColors.every(validColor) ? faceColors : undefined;
     // Las texturas dañadas se descartan sin tirar el proyecto: la cara conserva su color.
     const textures = Array.isArray(faceTextures) && faceTextures.length === faces.length ? faceTextures.map((t) => unpackTexture(t)) : undefined;
-    const piece = makePiece(faces, color, painted, textures);
+    const flags = Array.isArray(faceFlags) && faceFlags.length === faces.length && faceFlags.every((f) => Number.isInteger(f) && f >= 0 && f <= 3) ? faceFlags : undefined;
+    const piece = makePiece(faces, color, painted, textures, flags);
     if (Number.isInteger(group) && (group as number) > 0) {
       piece.group = group as number;
       if (typeof groupName === 'string' && groupName.trim()) piece.groupName = groupName.trim().slice(0, 60);
     }
     if (Number.isInteger(layer) && (layer as number) > 1) piece.layer = layer as number;
-    if (!(volume(piece) > 1e-9)) throw new Error(`${label}: no encierra volumen`);
+    // Un sólido cerrado y convexo tiene que encerrar volumen; las mallas libres (abiertas, de una cara o torcidas) no lo exigen.
+    if (faces.length >= 4 && isConvex(piece) && !(volume(piece) > 1e-9)) throw new Error(`${label}: no encierra volumen`);
     return piece;
   });
   const marks = Array.isArray(file.marks) ? file.marks.filter(isVec3) : [];
