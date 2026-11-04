@@ -3537,7 +3537,7 @@ const GUIDE: Record<Mode, [string, string][]> = {
   mesh: [
     ['Clic en un vértice', 'elegirlo (Shift: sumar a los elegidos)'],
     ['Arrastrar un vértice', 'moverlo con imán a ¼ de celda; Ctrl lo suelta'],
-    ['Mover en: Libre · X · Y · Z', 'botones del panel (o teclas X / Y / Z): limitan el movimiento a un eje y se mantienen hasta que los cambies; R, T y las deformaciones empiezan con ese eje'],
+    ['Mover en: Libre · X · Y · Z', 'botones del panel (o teclas X / Y / Z, que en Malla no cambian la simetría): limitan el movimiento a un eje y se mantienen hasta que los cambies; R, T y las deformaciones empiezan con ese eje'],
     ['Ctrl+arrastrar en vacío', 'recuadro: elige todos los vértices dentro, también los de detrás'],
     ['Flechas', 'empujar los vértices elegidos un paso en la dirección de pantalla (Ctrl: paso fino)'],
     ['Supr', 'quitar los vértices elegidos'],
@@ -3551,7 +3551,7 @@ const GUIDE: Record<Mode, [string, string][]> = {
     ['Panel', 'Todos · Fusionar (junta los elegidos en uno) · Borrar · A la rejilla'],
     ['Panel (caras)', 'Crear cara con tres o más vértices · Borrar / Invertir / Extruir las caras cuyos vértices están todos elegidos'],
     ['Clic en una pieza', 'elegirla: solo se muestran sus vértices; en vacío suelta todo'],
-    ['Simetría', 'con X / Y / Z activos el movimiento se refleja en las piezas espejo'],
+    ['Simetría', 'con sus casillas X / Y / Z activas (en el panel Simetría; en Malla las teclas X / Y / Z fijan el eje de movimiento) el movimiento se refleja en las piezas espejo'],
     ['Malla libre', 'una pieza con un vértice hundido deja de ser convexa: se puede mover, extruir y pintar, pero no cortar, restar ni unir'],
     ['Esc', 'volver a Colocar'],
     ...VIEW_GUIDE.slice(0, 2),
