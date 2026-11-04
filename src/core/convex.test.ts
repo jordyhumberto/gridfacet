@@ -85,6 +85,15 @@ describe('triangulateFace', () => {
     }
   });
 
+  it('al bajar los dos puntos de una cara, la superficie sigue siendo un valle y no salta a una tapa plana con paredes', () => {
+    for (const d of [0.75, 0.5, 0.25, 0, -0.5, -1, -2]) {
+      const ring: Vec3[] = [[-0.5, 1, -0.5], [-0.5, d, 0], [-0.5, 1, 0.5], [0.5, 1, 0.5], [0.5, d, 0], [0.5, 1, -0.5]];
+      // El valle une los dos puntos hundidos (vértices 1 y 4) con una arista.
+      const joined = triangulateFace(ring).some((t) => t.includes(1) && t.includes(4) && t.filter((i) => i === 1 || i === 4).length === 2);
+      expect(joined).toBe(true);
+    }
+  });
+
   it('una cara en L cubre exactamente su área, sin tapar el hueco', () => {
     // L de área 3: cuadrado de 2×2 sin el cuadrante superior derecho.
     const l: Vec3[] = [[0, 0, 0], [2, 0, 0], [2, 1, 0], [1, 1, 0], [1, 2, 0], [0, 2, 0]];
