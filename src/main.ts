@@ -21,7 +21,7 @@ import { downloadBlob, exportGlb } from './render/glb';
 import { framesToPngs, framesToSheet, renderSprites } from './render/sprites';
 import { TextureLayer, atlasToPng } from './render/textures';
 import { buildObj } from './core/obj';
-import type { Rect } from './core/pixels';
+import type { BrushOptions, Rect } from './core/pixels';
 import { copyRegion, paintCell, pasteRegion, pixelClipboard, rectBetween, texelAt, textureOfFace, visibleColor, withFaceTexture } from './core/pixels';
 import { pointOf, type FaceTexture } from './core/texture';
 import { spriteFileName, type SpriteCamera } from './core/sprites';
@@ -1820,6 +1820,11 @@ const pixelModeEl = document.getElementById('pixelMode') as HTMLInputElement;
 const pixelToolEl = document.getElementById('pixelTool') as HTMLSelectElement;
 const pixelSizeEl = document.getElementById('pixelSize') as HTMLSelectElement;
 const pixelActionsEl = document.getElementById('pixelActions')!;
+const pixelShapeEl = document.getElementById('pixelShape') as HTMLSelectElement;
+const pixelMirrorXEl = document.getElementById('pixelMirrorX') as HTMLInputElement;
+const pixelMirrorYEl = document.getElementById('pixelMirrorY') as HTMLInputElement;
+/** Forma del pincel y espejo dentro de la cara, según los controles del panel. */
+const brushOptions = (): BrushOptions => ({ round: pixelShapeEl.value === 'round', mirrorX: pixelMirrorXEl.checked, mirrorY: pixelMirrorYEl.checked });
 const pixelPainting = (): boolean => mode === 'paint' && pixelModeEl.checked;
 /** Última cara tocada en modo píxeles: la que abre el botón "Plano". */
 let lastPixelFace: { piece: Piece; faceIndex: number } | null = null;
@@ -1866,7 +1871,7 @@ function applyPixelTool(stroke: NonNullable<typeof pixelStroke>, point: Vec3): v
     const cell = texelAt(target.piece.faces[target.faceIndex], target.texture, target.reflect ? target.reflect(point) : point);
     if (!cell) continue;
     // Entre dos movimientos se pinta la recta de casillas, para que un arrastre rápido no deje huecos.
-    changed += paintCell(target.texture, target, tool, cell, size, color);
+    changed += paintCell(target.texture, target, tool, cell, size, color, brushOptions());
   }
   if (changed === 0) return;
   stroke.changed = true;
@@ -2009,6 +2014,7 @@ function movePixelStroke(event: PointerEvent): void {
 const faceEditor = new FaceEditor(document.getElementById('faceEditor')!, document.getElementById('faceCanvas') as HTMLCanvasElement, {
   tool: () => pixelToolEl.value,
   size: () => Number(pixelSizeEl.value),
+  brush: brushOptions,
   color: () => color,
   pickColor: (c) => setColor(c),
   stillThere: (piece) => model.all().some((p) => p.id === piece.id),
