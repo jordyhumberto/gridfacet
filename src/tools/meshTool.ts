@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { PLANE_XY, PLANE_XZ, PLANE_YZ, axisAllowed, lockLabel, type AxisLock } from '../core/axisLock';
 import type { Piece, Vec3 } from '../core/piece';
 import { pieceKey, reflectPiece, reflections, type Reflection, type Symmetry } from '../core/symmetry';
 import { triangulateFace } from '../core/convex';
@@ -120,7 +121,7 @@ export class MeshTool {
     delta: Vec3;
   } | null = null;
   /** Eje al que se limita el movimiento (0 X, 1 Y, 2 Z); se mantiene entre arrastres hasta que se cambia. */
-  private axisLock: number | null = null;
+  private axisLock: AxisLock = null;
 
   /**
    * Qué vértices estaban elegidos antes y después de cada cambio, para devolverlos al deshacer y rehacer
@@ -194,15 +195,15 @@ export class MeshTool {
     this.host.onSelectionChange();
   }
 
-  get axis(): number | null {
+  get axis(): AxisLock {
     return this.axisLock;
   }
 
   /** Limita el movimiento a un eje (o lo suelta con `null`); lo usan los botones del panel y las teclas X/Y/Z. */
-  setAxis(axis: number | null): void {
+  setAxis(axis: AxisLock): void {
     this.axisLock = axis;
     if (this.drag?.moved) this.showGuide([this.drag.anchor[0] + this.drag.delta[0], this.drag.anchor[1] + this.drag.delta[1], this.drag.anchor[2] + this.drag.delta[2]]);
-    this.host.status(axis === null ? 'Movimiento libre' : `Movimiento solo en ${'XYZ'[axis]}`);
+    this.host.status(axis === null ? 'Movimiento libre' : `Movimiento solo en ${lockLabel(axis)}`);
     this.host.onSelectionChange();
   }
 
@@ -285,7 +286,7 @@ export class MeshTool {
       to[axis] += reach;
       from[axis] -= reach;
       positions.push(...from, ...to);
-      color.set(AXIS_COLORS[axis]).multiplyScalar(this.axisLock === null ? 0.8 : this.axisLock === axis ? 1 : 0.3);
+      color.set(AXIS_COLORS[axis]).multiplyScalar(this.axisLock === null ? 0.8 : axisAllowed(this.axisLock, axis) ? 1 : 0.3);
       colors.push(color.r, color.g, color.b, color.r, color.g, color.b);
     }
     this.guide.geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
@@ -506,11 +507,11 @@ export class MeshTool {
     const point = this.pointOnPlane(e, drag.plane);
     if (!point) return;
     let delta: Vec3 = [point.x - drag.grab.x, point.y - drag.grab.y, point.z - drag.grab.z];
-    if (this.axisLock !== null) delta = delta.map((v, i) => (i === this.axisLock ? v : 0)) as Vec3;
+    if (this.axisLock !== null) delta = delta.map((v, i) => (axisAllowed(this.axisLock, i) ? v : 0)) as Vec3;
     // Con imán la posición final del vértice agarrado cae en la rejilla; Ctrl lo suelta.
     if (!(e.ctrlKey || e.metaKey)) {
       delta = delta.map((v, i) => {
-        if (this.axisLock !== null && i !== this.axisLock) return 0;
+        if (!axisAllowed(this.axisLock, i)) return 0;
         return Math.round((drag.anchor[i] + v) / SNAP_STEP) * SNAP_STEP - drag.anchor[i];
       }) as Vec3;
     }
@@ -746,7 +747,9 @@ export class MeshTool {
     // En Malla, X / Y / Z fijan el eje (como los botones «Mover en») y no tocan la simetría, que se cambia con sus casillas.
     if (!e.ctrlKey && !e.metaKey && !e.altKey && (key === 'x' || key === 'y' || key === 'z')) {
       const axis = 'xyz'.indexOf(key);
-      this.setAxis(this.axisLock === axis ? null : axis);
+      // Con Mayús se fija el plano que deja fuera ese eje (Mayús+Z = XY), como en Blender.
+      const lock = e.shiftKey ? [PLANE_YZ, PLANE_XZ, PLANE_XY][axis] : axis;
+      this.setAxis(this.axisLock === lock ? null : lock);
       return true;
     }
     if (this.drag && key === 'escape') {
@@ -789,7 +792,7 @@ export class MeshTool {
       return;
     }
     this.pendingBefore = cloneSelection(this.selection);
-    this.modal = { kind, targets, pivot, half, axis: this.axisLock, start: null, last: null, value: kind === 'scale' ? 1 : 0, valid: kind === 'scale' ? 1 : 0, moved: false };
+    this.modal = { kind, targets, pivot, half, axis: this.axisLock !== null && this.axisLock < 3 ? this.axisLock : null, start: null, last: null, value: kind === 'scale' ? 1 : 0, valid: kind === 'scale' ? 1 : 0, moved: false };
     this.host.setOrbit(false);
     const name = { rotate: 'Girar', scale: 'Escalar', taper: 'Afinar', twist: 'Torcer', bend: 'Curvar' }[kind];
     const hint = kind === 'taper' || kind === 'twist' || kind === 'bend' ? 'mueve el ratón a los lados · X/Y/Z cambia el eje (por defecto Y)' : 'mueve el ratón · X/Y/Z fija el eje';
