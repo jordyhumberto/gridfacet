@@ -2960,9 +2960,20 @@ async function saveProject(asNew = false): Promise<void> {
         handle = await pickSave(suggested, 'Proyecto de Gridfacet', 'application/json', '.json');
         if (!handle) return;
       }
-      await writeHandle(handle, data);
-      fileHandle = handle;
-      name = handle.name;
+      try {
+        await writeHandle(handle, data);
+        fileHandle = handle;
+        name = handle.name;
+      } catch (error) {
+        // Algunos navegadores (o paneles integrados) crean el archivo pero no dejan escribir en él: queda vacío. Se guarda como descarga normal.
+        fileHandle = null;
+        downloadBlob(data, suggested, 'application/json');
+        statusEl.textContent = `No se pudo escribir en ${handle.name} (${errorText(error)}); se descargó ${suggested} en su lugar`;
+        fileName = suggested;
+        dirty = false;
+        syncFileName();
+        return;
+      }
     } else {
       downloadBlob(data, suggested, 'application/json');
     }
