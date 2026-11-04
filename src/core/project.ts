@@ -2,6 +2,7 @@ import { parseAnimation, type Animation } from './animation';
 import { isConvex } from './convex';
 import type { Layer } from './layers';
 import { makePiece, volume, type Piece, type Vec3 } from './piece';
+import { parseReferences, type RefImage } from './references';
 import { packTexture, unpackTexture, type PackedTexture } from './texture';
 
 /** Las capas guardadas con el proyecto. */
@@ -27,9 +28,11 @@ interface ProjectFile {
   gridSize?: number;
   /** Animación de los grupos (opcional: los proyectos antiguos no la tienen). */
   animation?: Animation;
+  /** Imágenes de referencia al fondo de la escena (opcional). */
+  references?: RefImage[];
 }
 
-export function serializeProject(pieces: Piece[], marks: Vec3[] = [], gridSize?: number, layers?: LayerState, animation?: Animation): string {
+export function serializeProject(pieces: Piece[], marks: Vec3[] = [], gridSize?: number, layers?: LayerState, animation?: Animation, references: RefImage[] = []): string {
   const project: ProjectFile = {
     format: FORMAT,
     version: VERSION,
@@ -47,6 +50,7 @@ export function serializeProject(pieces: Piece[], marks: Vec3[] = [], gridSize?:
     ...(marks.length > 0 ? { marks } : {}),
     ...(gridSize !== undefined ? { gridSize } : {}),
     ...(animation && animation.tracks.length > 0 ? { animation } : {}),
+    ...(references.length > 0 ? { references } : {}),
   };
   return JSON.stringify(project);
 }
@@ -60,7 +64,7 @@ export function parseProject(text: string): Piece[] {
 }
 
 /** Como `parseProject`, pero devuelve también los puntos de referencia. */
-export function parseProjectFull(text: string): { pieces: Piece[]; marks: Vec3[]; gridSize?: number; layers?: Partial<LayerState>; animation?: Animation } {
+export function parseProjectFull(text: string): { pieces: Piece[]; marks: Vec3[]; gridSize?: number; layers?: Partial<LayerState>; animation?: Animation; references: RefImage[] } {
   let data: unknown;
   try {
     data = JSON.parse(text);
@@ -102,5 +106,5 @@ export function parseProjectFull(text: string): { pieces: Piece[]; marks: Vec3[]
   const gridSize = Number.isInteger(file.gridSize) && file.gridSize! >= 2 && file.gridSize! <= 1024 ? file.gridSize : undefined;
   const layers = file.layers && Array.isArray(file.layers.layers) ? file.layers : undefined;
   const animation = file.animation ? parseAnimation(file.animation) : undefined;
-  return { pieces, marks, ...(gridSize !== undefined ? { gridSize } : {}), ...(layers ? { layers } : {}), ...(animation ? { animation } : {}) };
+  return { pieces, marks, ...(gridSize !== undefined ? { gridSize } : {}), ...(layers ? { layers } : {}), ...(animation ? { animation } : {}), references: parseReferences(file.references) };
 }
