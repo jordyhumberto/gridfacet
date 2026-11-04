@@ -409,6 +409,11 @@
           <div class="row" id="animPoseScale" hidden>
             <label title="Escala del grupo (1 = tamaño normal)">Escala <input type="number" data-anim="s" step="0.1" min="0.05" /></label>
           </div>
+          <div class="row" id="animMouseRow" hidden>
+            <button data-animpose="move" title="Mueve el grupo con el ratón en este fotograma: X/Y/Z fija el eje, Ctrl sin imán, clic confirma y pone la clave">Mover</button>
+            <button data-animpose="rotate" title="Gira el grupo con el ratón alrededor de su centro: X/Y/Z fija el eje, Ctrl sin imán, clic confirma y pone la clave">Girar</button>
+            <button data-animpose="scale" title="Escala el grupo con el ratón desde su centro: Ctrl sin imán, clic confirma y pone la clave">Escalar</button>
+          </div>
           <div class="row" id="animKeyRow" hidden>
             <button id="animSetKey" title="Guarda la pose de los campos como clave en este fotograma (los campos también la guardan al cambiarlos)">Poner clave</button>
             <button id="animRemoveKey" title="Quita la clave de este fotograma">Quitar clave</button>
