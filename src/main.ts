@@ -686,7 +686,7 @@ function updateHover(event: PointerEvent): void {
  * Coloca una pieza menor que una celda siguiendo al cursor dentro de la cara apuntada, sin saltar de celda en celda:
  * se mueve en pasos de un cuarto de su tamaño, se imanta a las aristas de las piezas cercanas y a la rejilla, y no se sale de la superficie que la recibe.
  * En el eje de la cara queda a ras de ella. En una pared también se mueve en vertical.
- * Las piezas de una celda o más solo se sueltan de la rejilla sobre una superficie de varias figuras en la que caben.
+ * Las piezas de una celda o más también se sueltan de la rejilla: en el suelo y las paredes de la sala, y sobre una superficie de varias figuras en la que caben.
  */
 function freePlacement(hit: THREE.Intersection, footW: number, footD: number, scale: number): void {
   const n = hit.face!.normal;
@@ -706,7 +706,8 @@ function freePlacement(hit: THREE.Intersection, footW: number, footD: number, sc
     return snapSpan(point[a], size, edgeLines(others, a, point, size + 0.6), hostBox?.min[a], hostBox?.max[a], cellLines(a, point, size + 0.6), size / 2);
   };
   // Una pieza de una celda o más también se mueve libre sobre una superficie formada por varias figuras, si cabe en ella.
-  const fits = (a: 0 | 1 | 2, size: number): boolean => flat !== null && (axis === a || flat.max[a] - flat.min[a] >= size - 1e-6);
+  // En el suelo y en las paredes de la sala (sin pieza debajo) también se mueve libre, no solo de celda en celda.
+  const fits = (a: 0 | 1 | 2, size: number): boolean => (flat !== null && (axis === a || flat.max[a] - flat.min[a] >= size - 1e-6)) || (flat === null && host === undefined);
   if (footW < 1 || fits(0, footW)) {
     const start = place(0, footW);
     target.cx = Math.floor(start + 1e-6);
