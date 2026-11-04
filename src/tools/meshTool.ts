@@ -652,7 +652,8 @@ export class MeshTool {
       this.beginTransform(key === 'r' ? 'rotate' : 'scale');
       return true;
     }
-    if (this.drag && (key === 'x' || key === 'y' || key === 'z')) {
+    // En Malla, X / Y / Z fijan el eje (como los botones «Mover en») y no tocan la simetría, que se cambia con sus casillas.
+    if (!e.ctrlKey && !e.metaKey && !e.altKey && (key === 'x' || key === 'y' || key === 'z')) {
       const axis = 'xyz'.indexOf(key);
       this.setAxis(this.axisLock === axis ? null : axis);
       return true;
