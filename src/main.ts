@@ -1857,6 +1857,10 @@ function previewStroke(stroke: NonNullable<typeof pixelStroke>): void {
 function applyPixelTool(stroke: NonNullable<typeof pixelStroke>, point: Vec3): void {
   const tool = pixelToolEl.value;
   const size = Number(pixelSizeEl.value);
+  if (tool === 'select') {
+    statusEl.textContent = 'Seleccionar solo se usa en Plano (botón Plano o doble clic en una cara); aquí, Mover desplaza todo el dibujo de la cara';
+    return;
+  }
   let changed = 0;
   for (const target of stroke.targets) {
     const cell = texelAt(target.piece.faces[target.faceIndex], target.texture, target.reflect ? target.reflect(point) : point);
@@ -3365,7 +3369,7 @@ const commands: Command[] = [
   { name: 'Paleta: guardar colores recientes', keywords: 'colores', run: () => document.getElementById('paletteSave')!.click() },
   { name: 'Paleta: importar .hex', keywords: 'colores lospec abrir', run: () => document.getElementById('paletteImport')!.click() },
   { name: 'Paleta: exportar .hex', keywords: 'colores lospec descargar', run: () => document.getElementById('paletteExport')!.click() },
-  ...([['pencil', 'Lápiz'], ['eraser', 'Borrador'], ['fill', 'Relleno'], ['line', 'Línea'], ['rect', 'Rectángulo'], ['rectfill', 'Rectángulo lleno'], ['ellipse', 'Elipse'], ['ellipsefill', 'Elipse llena'], ['replace', 'Reemplazar color'], ['dither', 'Tramado']] as const).map(([tool, label]): Command => ({
+  ...([['pencil', 'Lápiz'], ['eraser', 'Borrador'], ['fill', 'Relleno'], ['line', 'Línea'], ['rect', 'Rectángulo'], ['rectfill', 'Rectángulo lleno'], ['ellipse', 'Elipse'], ['ellipsefill', 'Elipse llena'], ['replace', 'Reemplazar color'], ['dither', 'Tramado'], ['select', 'Seleccionar (en Plano)'], ['move', 'Mover']] as const).map(([tool, label]): Command => ({
     name: `Píxeles: ${label}`,
     keywords: 'pintar textura cara',
     run: () => {

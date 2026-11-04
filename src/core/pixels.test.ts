@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { CATALOG, buildPiece } from './catalog';
-import { drawShape, paintCell, replaceColor, floodFill, stamp, stampLine, texelAt, textureOfFace, visibleColor, withFaceTexture } from './pixels';
+import { drawShape, moveRegion, paintCell, rectBetween, replaceColor, floodFill, stamp, stampLine, texelAt, textureOfFace, visibleColor, withFaceTexture } from './pixels';
 import { CLEAR, blankTexture, pointOf } from './texture';
 
 const cube = () => buildPiece(CATALOG[0], 0, 0, 0, 0, 0x336699);
@@ -152,5 +152,35 @@ describe('formas, reemplazar color y tramado', () => {
     paintCell(t, { start: null, last: null, base: null }, 'dither', { x: 0, y: 0 }, 1, 4);
     paintCell(t, { start: null, last: { x: 0, y: 0 }, base: null }, 'dither', { x: 5, y: 0 }, 1, 4);
     expect(t.pixels).toEqual([4, CLEAR, 4, CLEAR, 4, CLEAR]);
+  });
+});
+
+describe('seleccionar y mover', () => {
+  const row = (pixels: number[]) => ({ w: pixels.length, h: 1, pixels });
+
+  it('mueve solo la región y deja libre lo que dejó', () => {
+    const t = row([1, 2, 3, CLEAR, CLEAR, 9]);
+    const moved = moveRegion(t, { x0: 0, y0: 0, x1: 1, y1: 0 }, 2, 0);
+    expect(moved.pixels).toEqual([CLEAR, CLEAR, 1, 2, CLEAR, 9]);
+    expect(t.pixels).toEqual([1, 2, 3, CLEAR, CLEAR, 9]);
+  });
+
+  it('sin región mueve toda la cara y pierde lo que sale', () => {
+    expect(moveRegion(row([1, 2, 3]), null, 1, 0).pixels).toEqual([CLEAR, 1, 2]);
+    expect(moveRegion(row([1, 2, 3]), null, -1, 0).pixels).toEqual([2, 3, CLEAR]);
+  });
+
+  it('el rectángulo se ordena sea cual sea la dirección del arrastre', () => {
+    expect(rectBetween({ x: 5, y: 4 }, { x: 1, y: 2 })).toEqual({ x0: 1, y0: 2, x1: 5, y1: 4 });
+  });
+
+  it('Mover en un trazo parte siempre de la textura original, sin acumular movimientos', () => {
+    const t = row([1, CLEAR, CLEAR, CLEAR]);
+    const state: Parameters<typeof paintCell>[1] = { start: null, last: null, base: null, selection: null };
+    paintCell(t, state, 'move', { x: 0, y: 0 }, 1, 5);
+    paintCell(t, state, 'move', { x: 3, y: 0 }, 1, 5);
+    paintCell(t, state, 'move', { x: 1, y: 0 }, 1, 5);
+    expect(t.pixels).toEqual([CLEAR, 1, CLEAR, CLEAR]);
+    expect(state.shift).toEqual({ x: 1, y: 0 });
   });
 });
