@@ -98,6 +98,31 @@ export type ShapeTool = (typeof SHAPE_TOOLS)[number];
 export const isShapeTool = (tool: string): tool is ShapeTool => (SHAPE_TOOLS as readonly string[]).includes(tool);
 
 type Cell = { x: number; y: number };
+/** Rectángulo de casillas, con los dos extremos incluidos. */
+export type Rect = { x0: number; y0: number; x1: number; y1: number };
+
+/** Rectángulo entre dos casillas, con las esquinas en orden. */
+export const rectBetween = (a: Cell, b: Cell): Rect => ({ x0: Math.min(a.x, b.x), y0: Math.min(a.y, b.y), x1: Math.max(a.x, b.x), y1: Math.max(a.y, b.y) });
+
+/** Copia de la textura con el contenido de la región (o de toda ella) desplazado; lo que sale de la textura se pierde y lo que deja libre queda sin pintar. */
+export function moveRegion(texture: FaceTexture, region: Rect | null, dx: number, dy: number): FaceTexture {
+  const r = region ?? { x0: 0, y0: 0, x1: texture.w - 1, y1: texture.h - 1 };
+  const x0 = Math.max(0, r.x0);
+  const y0 = Math.max(0, r.y0);
+  const x1 = Math.min(texture.w - 1, r.x1);
+  const y1 = Math.min(texture.h - 1, r.y1);
+  const pixels = [...texture.pixels];
+  for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) pixels[y * texture.w + x] = CLEAR;
+  for (let y = y0; y <= y1; y++) {
+    for (let x = x0; x <= x1; x++) {
+      const tx = x + dx;
+      const ty = y + dy;
+      if (tx < 0 || ty < 0 || tx >= texture.w || ty >= texture.h) continue;
+      pixels[ty * texture.w + tx] = texture.pixels[y * texture.w + x];
+    }
+  }
+  return { w: texture.w, h: texture.h, pixels };
+}
 
 /** Dibuja una forma entre dos casillas opuestas (línea, rectángulo o elipse, con borde del grosor del pincel o rellena). Devuelve cuántas casillas cambiaron. */
 export function drawShape(texture: FaceTexture, tool: ShapeTool, a: Cell, b: Cell, size: number, value: number): number {
@@ -165,6 +190,10 @@ export interface StrokeState {
   start: Cell | null;
   last: Cell | null;
   base: FaceTexture | null;
+  /** Región elegida que mueve la herramienta Mover; sin ella se mueve toda la cara. */
+  selection?: Rect | null;
+  /** Cuánto se ha movido el contenido desde que empezó el trazo (lo rellena Mover). */
+  shift?: Cell;
 }
 
 /** Aplica la herramienta elegida a la casilla bajo el puntero, dentro de un trazo. Devuelve cuántas casillas cambiaron. */
@@ -181,6 +210,20 @@ export function paintCell(texture: FaceTexture, state: StrokeState, tool: string
     }
     return reshape(texture, state.base, tool, state.start, cell, size, color);
   }
+  if (tool === 'move') {
+    if (!state.start || !state.base) {
+      state.start = cell;
+      state.base = { w: texture.w, h: texture.h, pixels: [...texture.pixels] };
+    }
+    const dx = cell.x - state.start.x;
+    const dy = cell.y - state.start.y;
+    state.shift = { x: dx, y: dy };
+    const next = moveRegion(state.base, state.selection ?? null, dx, dy);
+    if (next.pixels.every((p, i) => p === texture.pixels[i])) return 0;
+    texture.pixels = next.pixels;
+    return 1;
+  }
+  if (tool === 'select') return 0;
   if (tool === 'dither') return stampLine(texture, from.x, from.y, cell.x, cell.y, size, color, checker);
   return stampLine(texture, from.x, from.y, cell.x, cell.y, size, tool === 'eraser' ? CLEAR : color);
 }

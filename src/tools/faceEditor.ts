@@ -1,6 +1,6 @@
 import { CLEAR, uvOf, type FaceTexture } from '../core/texture';
 import { faceColorOf, type Piece } from '../core/piece';
-import { paintCell, textureOfFace, visibleColor, type StrokeState } from '../core/pixels';
+import { paintCell, rectBetween, textureOfFace, visibleColor, type Rect, type StrokeState } from '../core/pixels';
 
 /** Lo que el editor necesita de la aplicación: las herramientas elegidas y cómo llevar el resultado al modelo. */
 export interface FaceEditorHost {
@@ -25,6 +25,8 @@ export class FaceEditor {
   private texture: FaceTexture = { w: 1, h: 1, pixels: [CLEAR] };
   private scale = 8;
   private stroke: { texture: FaceTexture; changed: boolean; state: StrokeState } | null = null;
+  /** Región elegida con la herramienta Seleccionar: es la que mueve Mover y la que se ve con borde discontinuo. */
+  private selection: Rect | null = null;
   private readonly context: CanvasRenderingContext2D;
 
   constructor(
@@ -50,6 +52,7 @@ export class FaceEditor {
     this.piece = piece;
     this.faceIndex = faceIndex;
     this.texture = textureOfFace(piece, faceIndex);
+    this.selection = null;
     this.scale = Math.max(4, Math.floor(MAX_SIDE / Math.max(this.texture.w, this.texture.h)));
     this.canvas.width = this.texture.w * this.scale;
     this.canvas.height = this.texture.h * this.scale;
@@ -61,6 +64,7 @@ export class FaceEditor {
 
   close(): void {
     this.stroke = null;
+    this.selection = null;
     this.root.hidden = true;
     this.piece = null;
   }
@@ -112,6 +116,23 @@ export class FaceEditor {
     context.beginPath();
     this.outline();
     context.stroke();
+    this.drawSelection();
+  }
+
+  /** La región elegida (desplazada mientras se mueve) con borde discontinuo. */
+  private drawSelection(): void {
+    const shift = this.stroke?.state.shift;
+    const r = this.selection;
+    if (!r) return;
+    const { context, scale } = this;
+    const dx = shift?.x ?? 0;
+    const dy = shift?.y ?? 0;
+    context.save();
+    context.setLineDash([5, 4]);
+    context.lineWidth = 1.5;
+    context.strokeStyle = '#ffd24a';
+    context.strokeRect((r.x0 + dx) * scale + 0.5, (r.y0 + dy) * scale + 0.5, (r.x1 - r.x0 + 1) * scale - 1, (r.y1 - r.y0 + 1) * scale - 1);
+    context.restore();
   }
 
   private cellAt(e: PointerEvent): { x: number; y: number } {
@@ -137,7 +158,7 @@ export class FaceEditor {
     } catch {
       // Sin captura el trazo sigue mientras el puntero esté sobre el lienzo.
     }
-    this.stroke = { texture: { w: this.texture.w, h: this.texture.h, pixels: [...this.texture.pixels] }, changed: false, state: { start: null, last: null, base: null } };
+    this.stroke = { texture: { w: this.texture.w, h: this.texture.h, pixels: [...this.texture.pixels] }, changed: false, state: { start: null, last: null, base: null, selection: this.selection } };
     this.paint(cell);
   }
 
@@ -148,7 +169,15 @@ export class FaceEditor {
   private paint({ x, y }: { x: number; y: number }): void {
     const stroke = this.stroke;
     if (!stroke || !this.piece) return;
-    const changed = paintCell(stroke.texture, stroke.state, this.host.tool(), { x, y }, this.host.size(), this.host.color());
+    const tool = this.host.tool();
+    if (tool === 'select') {
+      stroke.state.start ??= { x, y };
+      stroke.state.last = { x, y };
+      this.selection = rectBetween(stroke.state.start, { x, y });
+      this.draw(stroke.texture);
+      return;
+    }
+    const changed = paintCell(stroke.texture, stroke.state, tool, { x, y }, this.host.size(), this.host.color());
     if (changed === 0) return;
     stroke.changed = true;
     this.draw(stroke.texture);
@@ -158,8 +187,23 @@ export class FaceEditor {
   private up(): void {
     const stroke = this.stroke;
     this.stroke = null;
-    if (!stroke?.changed || !this.piece) return;
+    if (stroke && this.host.tool() === 'select') {
+      const { start, last } = stroke.state;
+      // Un clic sin arrastrar quita la selección.
+      if (start && last && start.x === last.x && start.y === last.y) this.selection = null;
+      this.draw(this.texture);
+      return;
+    }
+    if (stroke?.state.shift && this.selection) {
+      const { x, y } = stroke.state.shift;
+      this.selection = { x0: this.selection.x0 + x, y0: this.selection.y0 + y, x1: this.selection.x1 + x, y1: this.selection.y1 + y };
+    }
+    if (!stroke?.changed || !this.piece) {
+      this.draw(this.texture);
+      return;
+    }
     this.piece = this.host.commit(this.piece, this.faceIndex, stroke.texture);
     this.texture = stroke.texture;
+    this.draw(this.texture);
   }
 }
