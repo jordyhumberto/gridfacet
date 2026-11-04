@@ -1963,6 +1963,7 @@ const meshTool = new MeshTool({
   status: (message) => (statusEl.textContent = message),
   onSelectionChange: () => syncMeshActions(),
 });
+model.onHistory = (kind) => meshTool.historyMoved(kind);
 if (import.meta.env.DEV) (window as unknown as Record<string, unknown>).__mesh = meshTool;
 function syncMeshActions(): void {
   meshActionsEl.hidden = mode !== 'mesh';

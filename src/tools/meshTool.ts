@@ -62,6 +62,7 @@ interface Target {
 }
 
 const sameId = (made: Piece, old: Piece): Piece => ({ ...made, id: old.id });
+const cloneSelection = (selection: VertexSelection): VertexSelection => new Map([...selection].map(([id, keys]) => [id, new Set(keys)]));
 /** Los vértices no se mueven: la selección se queda donde está. */
 const keepPosition = (p: Vec3): Vec3 => p;
 
@@ -86,6 +87,13 @@ export class MeshTool {
     delta: Vec3;
   } | null = null;
   private axisLock: number | null = null;
+
+  /**
+   * Qué vértices estaban elegidos antes y después de cada cambio, para devolverlos al deshacer y rehacer
+   * (cada entrada va con el número de cambios del modelo que había tras el cambio).
+   */
+  private history: { depth: number; before: VertexSelection; after: VertexSelection }[] = [];
+  private pendingBefore: VertexSelection | null = null;
 
   /** Giro o escala en curso: se maneja moviendo el ratón (sin pulsar) y se confirma con un clic o Intro. */
   private modal: {
@@ -132,6 +140,7 @@ export class MeshTool {
   }
 
   activate(): void {
+    this.history = [];
     this.active = true;
     this.overlay.visible = true;
     this.refresh();
@@ -144,6 +153,23 @@ export class MeshTool {
     this.selection.clear();
     this.hover = null;
     this.host.onSelectionChange();
+  }
+
+  /** Anota la elección de antes y de ahora para el cambio que acaba de entrar en el historial del modelo. */
+  private record(before: VertexSelection): void {
+    const depth = this.host.model.undoDepth;
+    this.history = this.history.filter((h) => h.depth < depth);
+    this.history.push({ depth, before, after: cloneSelection(this.selection) });
+  }
+
+  /** Tras deshacer o rehacer un cambio de esta herramienta, los vértices elegidos vuelven a como estaban en ese momento. */
+  historyMoved(kind: 'undo' | 'redo'): void {
+    if (!this.active) return;
+    const depth = this.host.model.undoDepth;
+    const entry = this.history.find((h) => h.depth === (kind === 'undo' ? depth + 1 : depth));
+    if (!entry) return;
+    this.selection = cloneSelection(kind === 'undo' ? entry.before : entry.after);
+    this.refresh();
   }
 
   /** Vuelve a dibujar los vértices (tras un cambio del modelo o de la selección de piezas). */
@@ -306,6 +332,7 @@ export class MeshTool {
     const normal = camera.getWorldDirection(new THREE.Vector3());
     const plane = new THREE.Plane().setFromNormalAndCoplanarPoint(normal, new THREE.Vector3(...anchor));
     const grab = this.pointOnPlane(e, plane) ?? new THREE.Vector3(...anchor);
+    this.pendingBefore = cloneSelection(this.selection);
     this.drag = { targets, anchor, plane, grab, startX: e.clientX, startY: e.clientY, moved: false, delta: [0, 0, 0] };
     this.host.setOrbit(false);
     this.host.domElement.setPointerCapture(e.pointerId);
@@ -448,6 +475,7 @@ export class MeshTool {
       originals.push(target.original);
     }
     this.host.model.commitPreview({ added: finals, removed: originals });
+    if (this.pendingBefore) this.record(this.pendingBefore);
     this.refresh();
   }
 
@@ -579,6 +607,7 @@ export class MeshTool {
       this.host.status('Elige vértices que ocupen algo de espacio para afinar, torcer o curvar');
       return;
     }
+    this.pendingBefore = cloneSelection(this.selection);
     this.modal = { kind, targets, pivot, half, axis: null, start: null, last: null, value: kind === 'scale' ? 1 : 0, moved: false };
     this.host.setOrbit(false);
     const name = { rotate: 'Girar', scale: 'Escalar', taper: 'Afinar', twist: 'Torcer', bend: 'Curvar' }[kind];
@@ -688,6 +717,7 @@ export class MeshTool {
       originals.push(target.original);
     }
     this.host.model.commitPreview({ added: finals, removed: originals });
+    if (this.pendingBefore) this.record(this.pendingBefore);
     this.refresh();
     this.host.status({ rotate: 'Giro aplicado', scale: 'Escala aplicada', taper: 'Afinado aplicado', twist: 'Torcido aplicado', bend: 'Curvado aplicado' }[modal.kind]);
   }
@@ -889,8 +919,10 @@ export class MeshTool {
     const result = splitEdge(piece, a, b, t);
     if (!result) return false;
     const next = sameId(result.piece, piece);
+    const before = cloneSelection(this.selection);
     this.host.model.apply({ added: [next], removed: [piece] });
     this.selection = new Map([[piece.id, new Set([vertexKey(result.vertex)])]]);
+    this.record(before);
     this.refresh();
     return true;
   }
@@ -902,6 +934,7 @@ export class MeshTool {
   private change(operation: (piece: Piece, keys: Set<string>, dir: (v: Vec3) => Vec3) => Piece | { piece: Piece; select: Set<string> } | null, after?: (position: Vec3, dir: (v: Vec3) => Vec3) => Vec3): void {
     const targets = this.buildTargets();
     if (targets.length === 0) return;
+    const before = cloneSelection(this.selection);
     const removed: Piece[] = [];
     const added: Piece[] = [];
     const next: VertexSelection = new Map();
@@ -918,8 +951,10 @@ export class MeshTool {
         next.set(target.original.id, new Set(uniqueVertices(target.original).filter((p) => target.keys.has(vertexKey(p))).map((p) => vertexKey(after(p, target.dir)))));
       }
     }
+    const depthBefore = this.host.model.undoDepth;
     this.host.model.apply({ added, removed });
     this.selection = next;
+    if (this.host.model.undoDepth > depthBefore) this.record(before);
     this.refresh();
   }
 }
