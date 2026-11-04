@@ -49,3 +49,21 @@ describe('proyecto', () => {
     expect(parseProjectFull(serializeProject([cube])).marks).toEqual([]);
   });
 });
+
+describe('animación en el proyecto', () => {
+  it('se guarda y se vuelve a leer', async () => {
+    const { emptyAnimation, setKey } = await import('./animation');
+    const { CATALOG, buildPiece } = await import('./catalog');
+    const { withGroup } = await import('./piece');
+    const piece = withGroup(buildPiece(CATALOG[0], 0, 0, 0, 0, 0x336699), 4, 'Brazo');
+    const animation = setKey(emptyAnimation(), 4, 6, { pos: [1, 0, 0], rot: [0, 90, 0], scale: [1, 1, 1] });
+    const back = parseProjectFull(serializeProject([piece], [], undefined, undefined, animation));
+    expect(back.animation).toEqual(animation);
+  });
+
+  it('un proyecto sin animación no la trae, y una animación dañada se ignora', () => {
+    expect(parseProjectFull(serializeProject([])).animation).toBeUndefined();
+    const text = JSON.stringify({ format: JSON.parse(serializeProject([])).format, version: 1, pieces: [], animation: { frames: 'x' } });
+    expect(parseProjectFull(text).animation).toBeUndefined();
+  });
+});

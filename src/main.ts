@@ -14,6 +14,8 @@ import { alignChange, distributeChange, groundChange, partsOf, resizeLongestChan
 import { searchCommands, type Command } from './core/commands';
 import { parseHexColors, parsePalettes, toHexText, upsertPalette, type Palette } from './core/palettes';
 import { parseProjectFull, serializeProject } from './core/project';
+import { emptyAnimation, pruneTracks, removeKey, resize as resizeAnimation, sampleTrack, setKey, trackOf, MAX_FPS, MAX_FRAMES, type Animation, type Pose } from './core/animation';
+import { AnimationPlayer } from './render/animationPlayer';
 import { canPickOpen, canPickSave, pickOpen, pickSave, writeHandle, type FileHandle } from './fileAccess';
 import { downloadBlob, exportGlb } from './render/glb';
 import { framesToPngs, framesToSheet, renderSprites } from './render/sprites';
@@ -163,7 +165,7 @@ function scheduleAutosave(): void {
   window.clearTimeout(autosaveTimer);
   autosaveTimer = window.setTimeout(() => {
     try {
-      localStorage.setItem(AUTOSAVE_KEY, serializeProject(model.all(), model.points(), gridSize, layers.toJSON()));
+      localStorage.setItem(AUTOSAVE_KEY, serializeProject(model.all(), model.points(), gridSize, layers.toJSON(), pruneTracks(animation, model.all())));
     } catch {
       // Sin espacio o sin acceso al almacenamiento: no se copia, pero el trabajo sigue.
     }
@@ -2859,7 +2861,7 @@ const errorText = (error: unknown): string => (error instanceof Error ? error.me
 /** Guardar escribe sobre el archivo actual; "Guardar como" (o un proyecto nuevo) abre el diálogo para elegir carpeta y nombre. */
 async function saveProject(asNew = false): Promise<void> {
   const pieces = model.all();
-  const data = serializeProject(pieces, model.points(), gridSize, layers.toJSON());
+  const data = serializeProject(pieces, model.points(), gridSize, layers.toJSON(), pruneTracks(animation, pieces));
   const suggested = fileName === 'Sin título' ? 'gridfacet-proyecto.json' : fileName.replace(/(\.json)?$/i, '.json');
   let name = suggested;
   try {
@@ -2888,12 +2890,14 @@ async function saveProject(asNew = false): Promise<void> {
 /** Abrir reemplaza la escena como un cambio más, así que se puede deshacer. */
 async function openProject(file: File, handle: FileHandle | null = null): Promise<void> {
   try {
-    const { pieces: loaded, marks, gridSize: savedSize, layers: savedLayers } = parseProjectFull(await file.text());
+    const { pieces: loaded, marks, gridSize: savedSize, layers: savedLayers, animation: savedAnimation } = parseProjectFull(await file.text());
     if (savedSize !== undefined) setGridSize(savedSize);
     if (mode === 'cut') cutTool.cancel();
     // Las piezas abiertas traen su capa: las nuevas no deben tomar la activa de antes.
     model.activeLayer = 1;
+    stopAnimationView();
     model.apply({ added: loaded, removed: model.all(), marksAdded: marks, marksRemoved: model.points() });
+    setAnimation(savedAnimation ?? emptyAnimation());
     layers.load(savedLayers, loaded);
     applyLayerState();
     fileHandle = handle;
@@ -3958,17 +3962,194 @@ window.addEventListener('keydown', (e) => {
   }
 });
 
+// Animación: claves de pose (mover, girar, escalar) por grupo de piezas. Se ve en un reproductor aparte que sustituye a las piezas
+// mientras dura la vista previa; cualquier edición del modelo la termina.
+let animation: Animation = emptyAnimation();
+let animFrame = 0;
+let animPlaying = false;
+let animClock = 0;
+const animPlayer = new AnimationPlayer(scene3d, {
+  hide: (ids) => {
+    for (const id of ids) {
+      batches.remove(id);
+      textureLayer.remove(id);
+      const object = objects.get(id);
+      if (object) object.visible = false;
+    }
+  },
+  show: (ids) => {
+    for (const id of ids) {
+      const piece = model.get(id);
+      if (!piece) continue;
+      if (!hidden.has(id) && !selection.has(id)) batches.add(piece);
+      if (!hidden.has(id)) textureLayer.add(piece);
+      const object = objects.get(id);
+      if (object) object.visible = true;
+    }
+  },
+});
+const animEl = <T extends HTMLElement>(id: string): T => document.getElementById(id) as T;
+const animSlider = animEl<HTMLInputElement>('animFrame');
+const animPlayButton = animEl<HTMLButtonElement>('animPlay');
+const animStopButton = animEl<HTMLButtonElement>('animStop');
+const animFramesInput = animEl<HTMLInputElement>('animFrames');
+const animFpsInput = animEl<HTMLInputElement>('animFps');
+const animPoseInputs = [...document.querySelectorAll<HTMLInputElement>('input[data-anim]')];
+const animPoseInput = (name: string): HTMLInputElement => animPoseInputs.find((el) => el.dataset.anim === name)!;
+
+/** El grupo que se está animando: el del primer grupo entre las piezas elegidas. */
+function animGroup(): { id: number; name: string } | null {
+  const piece = selectedPieces().find((p) => p.group !== undefined);
+  return piece ? { id: piece.group!, name: piece.groupName ?? `Grupo ${piece.group}` } : null;
+}
+
+function visibleForAnimation(): Piece[] {
+  return model.all().filter((piece) => !hidden.has(piece.id) && !layers.isHidden(piece));
+}
+
+function touchAnimation(): void {
+  dirty = true;
+  scheduleAutosave();
+  syncFileName();
+}
+
+/** Vuelve a las piezas reales (termina la vista previa de la animación). */
+function stopAnimationView(): void {
+  animPlaying = false;
+  animPlayer.stop();
+  animStopButton.hidden = true;
+  animPlayButton.textContent = '▶ Reproducir';
+}
+
+function showAnimationFrame(frame = animFrame): void {
+  if (animation.tracks.length === 0) {
+    animPlayer.stop();
+    animStopButton.hidden = true;
+  } else {
+    animPlayer.show(visibleForAnimation(), animation, frame);
+    animStopButton.hidden = false;
+  }
+}
+
+function refreshAnimationPanel(): void {
+  animSlider.max = String(animation.frames - 1);
+  animSlider.value = String(animFrame);
+  animEl('animFrameLabel').textContent = `${animFrame + 1} / ${animation.frames}`;
+  animFramesInput.value = String(animation.frames);
+  animFpsInput.value = String(animation.fps);
+  const group = animGroup();
+  const track = group ? trackOf(animation, group.id) : undefined;
+  animEl('animGroup').textContent = group
+    ? `Grupo: ${group.name}`
+    : 'Elige un grupo de piezas para animarlo (Ctrl+G agrupa las piezas elegidas)';
+  for (const id of ['animPose', 'animPoseRot', 'animPoseScale', 'animKeyRow']) animEl(id).hidden = !group;
+  if (group) {
+    const pose = sampleTrack(track, animFrame);
+    const set = (name: string, value: number): void => {
+      const input = animPoseInput(name);
+      if (document.activeElement !== input) input.value = String(+value.toFixed(3));
+    };
+    set('px', pose.pos[0]); set('py', pose.pos[1]); set('pz', pose.pos[2]);
+    set('rx', pose.rot[0]); set('ry', pose.rot[1]); set('rz', pose.rot[2]);
+    set('s', pose.scale[0]);
+  }
+  animEl('animKeys').textContent = track
+    ? `Claves: ${track.keys.map((k) => (k.frame === animFrame ? `[${k.frame + 1}]` : String(k.frame + 1))).join(', ')}`
+    : group ? 'Sin claves: pon una en este fotograma' : '';
+}
+
+function setAnimation(next: Animation): void {
+  animation = next;
+  animFrame = Math.min(animFrame, animation.frames - 1);
+  refreshAnimationPanel();
+}
+
+function poseFromInputs(): Pose {
+  const n = (name: string, fallback: number): number => {
+    const v = Number(animPoseInput(name).value);
+    return Number.isFinite(v) ? v : fallback;
+  };
+  const scale = Math.max(n('s', 1), 0.05);
+  return { pos: [n('px', 0), n('py', 0), n('pz', 0)], rot: [n('rx', 0), n('ry', 0), n('rz', 0)], scale: [scale, scale, scale] };
+}
+
+function writeKey(): void {
+  const group = animGroup();
+  if (!group) return;
+  animation = setKey(animation, group.id, animFrame, poseFromInputs());
+  touchAnimation();
+  showAnimationFrame();
+  refreshAnimationPanel();
+}
+
+animSlider.addEventListener('input', () => {
+  animPlaying = false;
+  animPlayButton.textContent = '▶ Reproducir';
+  animFrame = Number(animSlider.value);
+  showAnimationFrame();
+  refreshAnimationPanel();
+});
+animPlayButton.addEventListener('click', () => {
+  animPlayButton.blur();
+  if (animation.tracks.length === 0) {
+    statusEl.textContent = 'Todavía no hay claves: elige un grupo, ponle una pose en un fotograma y otra en otro';
+    return;
+  }
+  animPlaying = !animPlaying;
+  animClock = animFrame;
+  animPlayButton.textContent = animPlaying ? '⏸ Pausa' : '▶ Reproducir';
+  showAnimationFrame();
+});
+animStopButton.addEventListener('click', () => {
+  stopAnimationView();
+  refreshAnimationPanel();
+});
+animEl('animSetKey').addEventListener('click', writeKey);
+animEl('animRemoveKey').addEventListener('click', () => {
+  const group = animGroup();
+  if (!group) return;
+  animation = removeKey(animation, group.id, animFrame);
+  touchAnimation();
+  showAnimationFrame();
+  refreshAnimationPanel();
+});
+for (const input of animPoseInputs) input.addEventListener('change', writeKey);
+for (const input of [animFramesInput, animFpsInput]) {
+  input.addEventListener('change', () => {
+    animation = resizeAnimation(animation, Math.min(Number(animFramesInput.value) || 24, MAX_FRAMES), Math.min(Number(animFpsInput.value) || 12, MAX_FPS));
+    animFrame = Math.min(animFrame, animation.frames - 1);
+    touchAnimation();
+    showAnimationFrame();
+    refreshAnimationPanel();
+  });
+}
+// Cualquier cambio del modelo termina la vista previa; al elegir otro grupo se muestran sus claves.
+const modelChanged = model.onChange;
+model.onChange = (change) => {
+  if (animPlayer.active) stopAnimationView();
+  modelChanged(change);
+  animation = pruneTracks(animation, model.all());
+  refreshAnimationPanel();
+};
+const selectionChanged = selection.onChange;
+selection.onChange = () => {
+  selectionChanged();
+  refreshAnimationPanel();
+};
+refreshAnimationPanel();
+
 /** Al abrir la página con la escena vacía, recupera la última copia automática si la hay. */
 function restoreAutosave(): void {
   if (model.all().length > 0) return;
   try {
     const text = localStorage.getItem(AUTOSAVE_KEY);
     if (!text) return;
-    const { pieces: loaded, marks, gridSize: savedSize, layers: savedLayers } = parseProjectFull(text);
+    const { pieces: loaded, marks, gridSize: savedSize, layers: savedLayers, animation: savedAnimation } = parseProjectFull(text);
     if (loaded.length === 0) return;
     if (savedSize !== undefined) setGridSize(savedSize);
     model.activeLayer = 1;
     model.apply({ added: loaded, removed: [], marksAdded: marks });
+    setAnimation(savedAnimation ?? emptyAnimation());
     layers.load(savedLayers, loaded);
     applyLayerState();
     statusEl.textContent = `Recuperado tu último trabajo (${loaded.length} piezas). Guárdalo en un archivo para no perderlo`;
@@ -3992,6 +4173,13 @@ renderer.setAnimationLoop((now) => {
   const dt = Math.min((now - lastFrame) / 1000, 0.1);
   lastFrame = now;
   updatePan(dt);
+  if (animPlaying) {
+    animClock = (animClock + dt * animation.fps) % animation.frames;
+    animFrame = Math.floor(animClock);
+    animPlayer.show(visibleForAnimation(), animation, animClock);
+    animSlider.value = String(animFrame);
+    animEl('animFrameLabel').textContent = `${animFrame + 1} / ${animation.frames}`;
+  }
   controls.update();
   batches.flush();
   renderer.render(scene3d, camera);

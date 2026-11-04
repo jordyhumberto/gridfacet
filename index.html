@@ -379,6 +379,42 @@
             <label title="Nombre del grupo elegido; se usa para nombrar los objetos del GLB">Nombre <input type="text" id="groupNameInput" maxlength="40" /></label>
           </div>
         </section>
+        <section id="animation">
+          <h4><span class="title">Animación</span></h4>
+          <div class="row">
+            <button id="animPlay" title="Reproduce la animación en bucle">▶ Reproducir</button>
+            <button id="animStop" title="Vuelve a mostrar las piezas tal como están, para seguir editando" hidden>Volver a editar</button>
+          </div>
+          <div class="row">
+            <input type="range" id="animFrame" min="0" max="23" value="0" step="1" title="Fotograma" style="flex:1" />
+            <small id="animFrameLabel"></small>
+          </div>
+          <div class="row">
+            <label title="Cuántos fotogramas dura la animación">Fotogramas <input type="number" id="animFrames" min="2" max="1000" step="1" /></label>
+            <label title="Fotogramas por segundo">FPS <input type="number" id="animFps" min="1" max="60" step="1" /></label>
+          </div>
+          <small id="animGroup"></small>
+          <div class="row" id="animPose" hidden>
+            <small>Mover</small>
+            <label>X <input type="number" data-anim="px" step="0.25" /></label>
+            <label>Y <input type="number" data-anim="py" step="0.25" /></label>
+            <label>Z <input type="number" data-anim="pz" step="0.25" /></label>
+          </div>
+          <div class="row" id="animPoseRot" hidden>
+            <small>Girar°</small>
+            <label>X <input type="number" data-anim="rx" step="5" /></label>
+            <label>Y <input type="number" data-anim="ry" step="5" /></label>
+            <label>Z <input type="number" data-anim="rz" step="5" /></label>
+          </div>
+          <div class="row" id="animPoseScale" hidden>
+            <label title="Escala del grupo (1 = tamaño normal)">Escala <input type="number" data-anim="s" step="0.1" min="0.05" /></label>
+          </div>
+          <div class="row" id="animKeyRow" hidden>
+            <button id="animSetKey" title="Guarda la pose de los campos como clave en este fotograma (los campos también la guardan al cambiarlos)">Poner clave</button>
+            <button id="animRemoveKey" title="Quita la clave de este fotograma">Quitar clave</button>
+          </div>
+          <small id="animKeys"></small>
+        </section>
         <section id="inspector" hidden>
           <h4><span class="title">Selección</span></h4>
           <div class="row" id="inspectorPos" title="Centro de la selección, en celdas">
