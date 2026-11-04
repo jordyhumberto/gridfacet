@@ -2,9 +2,9 @@ import { describe, expect, it } from 'vitest';
 import { CATALOG, buildPiece } from './catalog';
 import { isConvex } from './convex';
 import { floodFill, textureOfFace, withFaceTexture } from './pixels';
-import type { Vec3 } from './piece';
+import { faceNormal, volume, type Vec3 } from './piece';
 import { sampleTexture, pointOf, uvOf } from './texture';
-import { deleteVertices, mergeVertices, moveVertices, placeVertices, uniqueVertices, vertexKey } from './vertices';
+import { addFace, deleteFaces, deleteVertices, extrudeFaces, facesWithin, flipFaces, mergeVertices, moveVertices, placeVertices, splitEdge, uniqueVertices, vertexKey } from './vertices';
 
 const cube = () => buildPiece(CATALOG[0], 0, 0, 0, 0, 0x336699);
 const topCorner = (piece = cube()): Vec3 => {
@@ -99,5 +99,69 @@ describe('deleteVertices', () => {
   it('quitar todos los vértices no deja pieza', () => {
     const piece = cube();
     expect(deleteVertices(piece, new Set(uniqueVertices(piece).map(vertexKey)))).toBeNull();
+  });
+});
+
+describe('caras', () => {
+  const topFace = (piece = cube()) => piece.faces.findIndex((f) => f.every((p) => p[1] === topCorner(piece)[1]));
+  const keysOfFace = (piece: ReturnType<typeof cube>, index: number) => new Set(piece.faces[index].map(vertexKey));
+
+  it('facesWithin encuentra las caras cuyos vértices están todos elegidos', () => {
+    const piece = cube();
+    const top = topFace(piece);
+    expect(facesWithin(piece, keysOfFace(piece, top))).toEqual([top]);
+    expect(facesWithin(piece, keysOf(topCorner(piece)))).toEqual([]);
+  });
+
+  it('borrar una cara abre la pieza y volver a crearla la cierra con la normal hacia fuera', () => {
+    const piece = cube();
+    const top = topFace(piece);
+    const open = deleteFaces(piece, new Set([top]))!;
+    expect(open.faces).toHaveLength(5);
+    const closed = addFace(open, keysOfFace(piece, top))!;
+    expect(closed.faces).toHaveLength(6);
+    expect(isConvex(closed)).toBe(true);
+    expect(volume(closed)).toBeCloseTo(volume(piece), 9);
+  });
+
+  it('no crea una cara que ya existe ni con menos de tres vértices', () => {
+    const piece = cube();
+    expect(addFace(piece, keysOfFace(piece, topFace(piece)))).toBeNull();
+    expect(addFace(piece, keysOf(topCorner(piece)))).toBeNull();
+  });
+
+  it('invertir una cara da la vuelta a su normal', () => {
+    const piece = cube();
+    const top = topFace(piece);
+    const flipped = flipFaces(piece, new Set([top]))!;
+    expect(faceNormal(flipped.faces[top])[1]).toBeLessThan(0);
+    expect(faceNormal(piece.faces[top])[1]).toBeGreaterThan(0);
+  });
+
+  it('un vértice sobre una arista entra en las dos caras que la comparten', () => {
+    const piece = cube();
+    const a = topCorner(piece);
+    const b = piece.faces.flat().find((p) => p[1] === a[1] && p[0] !== a[0] && p[2] === a[2])!;
+    const { piece: split, vertex } = splitEdge(piece, a, b, 0.5)!;
+    expect(uniqueVertices(split)).toHaveLength(9);
+    expect(split.faces.filter((f) => f.some((p) => vertexKey(p) === vertexKey(vertex)))).toHaveLength(2);
+    expect(splitEdge(piece, a, b, 0)).toBeNull();
+  });
+
+  it('extruir una cara sube sus vértices y cierra las paredes', () => {
+    const piece = cube();
+    const top = topFace(piece);
+    const result = extrudeFaces(piece, new Set([top]), 0.5)!;
+    expect(result.piece.faces).toHaveLength(6 + 4);
+    expect(result.keys.size).toBe(4);
+    expect(uniqueVertices(result.piece)).toHaveLength(12);
+    expect(volume(result.piece)).toBeCloseTo(volume(piece) + 0.5, 9);
+    expect(isConvex(result.piece)).toBe(true);
+  });
+
+  it('extruir hacia dentro cava y deja una malla libre', () => {
+    const piece = cube();
+    const result = extrudeFaces(piece, new Set([topFace(piece)]), -0.3)!;
+    expect(volume(result.piece)).toBeCloseTo(volume(piece) - 0.3, 9);
   });
 });

@@ -1,4 +1,4 @@
-import { makePiece, type Piece, type Vec3 } from './piece';
+import { faceNormal, makePiece, type Piece, type Vec3 } from './piece';
 import { remapTexture, type FaceTexture } from './texture';
 
 /** Clave de un vértice por su posición: los de varias caras que coinciden son el mismo vértice de la pieza. */
@@ -67,4 +67,171 @@ export function mergeVertices(piece: Piece, keys: ReadonlySet<string>): Piece | 
 /** Quita los vértices elegidos de todas las caras que los usan; una cara con menos de tres vértices se pierde. */
 export function deleteVertices(piece: Piece, keys: ReadonlySet<string>): Piece | null {
   return rebuild(piece, (face) => face.filter((p) => !keys.has(vertexKey(p))), false);
+}
+
+/** Índices de las caras cuyos vértices están todos entre los elegidos. */
+export function facesWithin(piece: Piece, keys: ReadonlySet<string>): number[] {
+  return piece.faces.flatMap((face, i) => (face.every((p) => keys.has(vertexKey(p))) ? [i] : []));
+}
+
+/** Quita las caras indicadas; la pieza queda abierta por ahí. Devuelve null si no queda ninguna cara. */
+export function deleteFaces(piece: Piece, indices: ReadonlySet<number>): Piece | null {
+  return rebuild(piece, (face, i) => (indices.has(i) ? null : face), false);
+}
+
+/** Da la vuelta a las caras indicadas (la normal pasa a mirar al otro lado); sus píxeles siguen pegados a la superficie. */
+export function flipFaces(piece: Piece, indices: ReadonlySet<number>): Piece | null {
+  return rebuild(piece, (face, i) => (indices.has(i) ? [...face].reverse() : face), false);
+}
+
+const lerp = (a: Vec3, b: Vec3, t: number): Vec3 => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t];
+
+/** Pone un vértice nuevo sobre la arista entre dos vértices, a la fracción `t` (0–1) desde el primero, en todas las caras que la comparten. */
+export function splitEdge(piece: Piece, a: Vec3, b: Vec3, t: number): { piece: Piece; vertex: Vec3 } | null {
+  if (!(t > 0 && t < 1)) return null;
+  const vertex = lerp(a, b, t);
+  let found = false;
+  const result = rebuild(
+    piece,
+    (face) => {
+      const ring: Vec3[] = [];
+      face.forEach((p, i) => {
+        ring.push(p);
+        const next = face[(i + 1) % face.length];
+        if ((same(p, a) && same(next, b)) || (same(p, b) && same(next, a))) {
+          found = true;
+          ring.push(vertex);
+        }
+      });
+      return ring;
+    },
+    false,
+  );
+  return found && result ? { piece: result, vertex } : null;
+}
+
+const centreOf = (points: Vec3[]): Vec3 => [0, 1, 2].map((k) => points.reduce((sum, p) => sum + p[k], 0) / points.length) as Vec3;
+
+/** Los vértices elegidos puestos en orden alrededor de su centro, en un plano que se ajusta a ellos. */
+function ringAround(points: Vec3[]): Vec3[] {
+  const c = centreOf(points);
+  const rel = points.map((p) => [p[0] - c[0], p[1] - c[1], p[2] - c[2]] as Vec3);
+  // Normal: el mayor producto vectorial entre dos vértices.
+  let best: Vec3 = [0, 0, 0];
+  for (const u of rel) {
+    for (const v of rel) {
+      const n: Vec3 = [u[1] * v[2] - u[2] * v[1], u[2] * v[0] - u[0] * v[2], u[0] * v[1] - u[1] * v[0]];
+      if (Math.hypot(...n) > Math.hypot(...best)) best = n;
+    }
+  }
+  const length = Math.hypot(...best);
+  if (length < 1e-9) return [];
+  const n: Vec3 = [best[0] / length, best[1] / length, best[2] / length];
+  const first = rel.find((r) => Math.hypot(...r) > 1e-9)!;
+  const fl = Math.hypot(...first);
+  const u: Vec3 = [first[0] / fl, first[1] / fl, first[2] / fl];
+  const w: Vec3 = [n[1] * u[2] - n[2] * u[1], n[2] * u[0] - n[0] * u[2], n[0] * u[1] - n[1] * u[0]];
+  const angle = (r: Vec3): number => Math.atan2(r[0] * w[0] + r[1] * w[1] + r[2] * w[2], r[0] * u[0] + r[1] * u[1] + r[2] * u[2]);
+  return points
+    .map((p, i) => ({ p, a: angle(rel[i]) }))
+    .sort((x, y) => x.a - y.a)
+    .map((o) => o.p);
+}
+
+/** Copia de `source` con otras caras, colores y texturas, conservando grupo, nombre de grupo y capa. */
+function withFaces(source: Piece, faces: Vec3[][], colors: number[], textures: (FaceTexture | null)[]): Piece {
+  const result = makePiece(faces, source.color, colors, source.faceTextures ? textures : undefined);
+  if (source.group !== undefined) result.group = source.group;
+  if (source.groupName) result.groupName = source.groupName;
+  if (source.layer !== undefined) result.layer = source.layer;
+  return result;
+}
+
+/**
+ * Crea una cara con los vértices elegidos (tres o más), puestos en orden alrededor de su centro y con la normal hacia fuera de la pieza.
+ * Devuelve null si hay menos de tres, si no forman una superficie o si ya existe una cara con esos vértices.
+ */
+export function addFace(piece: Piece, keys: ReadonlySet<string>): Piece | null {
+  const chosen = uniqueVertices(piece).filter((p) => keys.has(vertexKey(p)));
+  if (chosen.length < 3) return null;
+  let ring = ringAround(chosen);
+  if (ring.length < 3) return null;
+  const middle = centreOf(uniqueVertices(piece));
+  const centre = centreOf(ring);
+  const n = faceNormal(ring);
+  if (n[0] * (centre[0] - middle[0]) + n[1] * (centre[1] - middle[1]) + n[2] * (centre[2] - middle[2]) < 0) ring = [...ring].reverse();
+  const wanted = chosen.map(vertexKey).sort().join('|');
+  if (piece.faces.some((face) => [...new Set(face.map(vertexKey))].sort().join('|') === wanted)) return null;
+  return withFaces(
+    piece,
+    [...piece.faces, ring],
+    [...piece.faces.map((_, i) => piece.faceColors?.[i] ?? piece.color), piece.color],
+    [...(piece.faceTextures ?? piece.faces.map(() => null)), null],
+  );
+}
+
+/**
+ * Extruye las caras indicadas `distance` celdas a lo largo de su normal: la cara sube con copias de sus vértices y se cierran las paredes
+ * por el borde. Devuelve la pieza y las claves de los vértices nuevos (para seguir moviéndolos).
+ */
+export function extrudeFaces(piece: Piece, indices: ReadonlySet<number>, distance: number): { piece: Piece; keys: Set<string> } | null {
+  const chosen = [...indices].filter((i) => piece.faces[i]);
+  if (chosen.length === 0 || Math.abs(distance) < 1e-9) return null;
+  // Desplazamiento de cada vértice: la media de las normales de las caras elegidas que lo usan.
+  const sums = new Map<string, Vec3>();
+  const counts = new Map<string, number>();
+  for (const i of chosen) {
+    const n = faceNormal(piece.faces[i]);
+    const length = Math.hypot(...n) || 1;
+    for (const p of piece.faces[i]) {
+      const key = vertexKey(p);
+      const sum = sums.get(key) ?? [0, 0, 0];
+      sums.set(key, [sum[0] + n[0] / length, sum[1] + n[1] / length, sum[2] + n[2] / length]);
+      counts.set(key, (counts.get(key) ?? 0) + 1);
+    }
+  }
+  const lift = (p: Vec3): Vec3 => {
+    const key = vertexKey(p);
+    const sum = sums.get(key)!;
+    const count = counts.get(key)!;
+    return [p[0] + (sum[0] / count) * distance, p[1] + (sum[1] / count) * distance, p[2] + (sum[2] / count) * distance];
+  };
+  const faces: Vec3[][] = [];
+  const colors: number[] = [];
+  const textures: (FaceTexture | null)[] = [];
+  const keys = new Set<string>();
+  piece.faces.forEach((face, i) => {
+    colors.push(piece.faceColors?.[i] ?? piece.color);
+    const texture = piece.faceTextures?.[i] ?? null;
+    if (!indices.has(i)) {
+      faces.push(face);
+      textures.push(texture);
+      return;
+    }
+    const top = face.map(lift);
+    for (const p of top) keys.add(vertexKey(p));
+    faces.push(top);
+    textures.push(texture ? remapTexture(texture, face, top, (p) => p) : null);
+  });
+  // Las paredes salen de las aristas que solo usa una de las caras elegidas.
+  const edgeKey = (a: Vec3, b: Vec3): string => [vertexKey(a), vertexKey(b)].sort().join('>');
+  const uses = new Map<string, number>();
+  for (const i of chosen) {
+    const face = piece.faces[i];
+    face.forEach((p, k) => {
+      const key = edgeKey(p, face[(k + 1) % face.length]);
+      uses.set(key, (uses.get(key) ?? 0) + 1);
+    });
+  }
+  for (const i of chosen) {
+    const face = piece.faces[i];
+    face.forEach((a, k) => {
+      const b = face[(k + 1) % face.length];
+      if (uses.get(edgeKey(a, b)) !== 1) return;
+      faces.push([a, b, lift(b), lift(a)]);
+      colors.push(piece.faceColors?.[i] ?? piece.color);
+      textures.push(null);
+    });
+  }
+  return { piece: withFaces(piece, faces, colors, textures), keys };
 }
