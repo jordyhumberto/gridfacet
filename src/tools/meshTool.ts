@@ -11,6 +11,9 @@ export const SNAP_STEP = 0.25;
 /** Distancia máxima entre dos comprobaciones al recorrer un movimiento (menor que el grosor mínimo del cuerpo), y tope de comprobaciones. */
 const PATH_STEP = 0.03;
 const PATH_MAX = 200;
+/** Lo máximo que cambia el valor de girar, escalar o deformar entre dos comprobaciones de un mismo movimiento, y en cuántos tramos se recorre. */
+const MODAL_REACH = 0.5;
+const MODAL_STEPS = 48;
 /** Cuánto sube una cara al extruirla (después se afina arrastrando o con las flechas). */
 const EXTRUDE_DISTANCE = 0.5;
 /** Distancia en pantalla (px) a la que el cursor "agarra" una arista para ponerle un vértice. */
@@ -140,6 +143,8 @@ export class MeshTool {
     start: { x: number; y: number; angle: number; distance: number } | null;
     last: { x: number; y: number; free: boolean } | null;
     value: number;
+    /** Último valor con el que el cuerpo no se aplastaba ni se atravesaba. */
+    valid: number;
     moved: boolean;
   } | null = null;
 
@@ -555,7 +560,11 @@ export class MeshTool {
 
   /** ¿Alguna pieza se aplastaría o se atravesaría a sí misma con este desplazamiento, siendo que antes no? */
   private collides(targets: Target[], delta: Vec3): boolean {
-    const moved = this.placed(targets, delta);
+    return this.collapseOf(targets, this.placed(targets, delta));
+  }
+
+  /** ¿Alguna de estas piezas movidas se aplasta o se atraviesa a sí misma, siendo que su original no? */
+  private collapseOf(targets: Target[], moved: (Piece | null)[]): boolean {
     return moved.some((piece, i) => {
       if (!piece) return false;
       const original = targets[i].original;
@@ -759,7 +768,7 @@ export class MeshTool {
       return;
     }
     this.pendingBefore = cloneSelection(this.selection);
-    this.modal = { kind, targets, pivot, half, axis: this.axisLock, start: null, last: null, value: kind === 'scale' ? 1 : 0, moved: false };
+    this.modal = { kind, targets, pivot, half, axis: this.axisLock, start: null, last: null, value: kind === 'scale' ? 1 : 0, valid: kind === 'scale' ? 1 : 0, moved: false };
     this.host.setOrbit(false);
     const name = { rotate: 'Girar', scale: 'Escalar', taper: 'Afinar', twist: 'Torcer', bend: 'Curvar' }[kind];
     const hint = kind === 'taper' || kind === 'twist' || kind === 'bend' ? 'mueve el ratón a los lados · X/Y/Z cambia el eje (por defecto Y)' : 'mueve el ratón · X/Y/Z fija el eje';
@@ -787,7 +796,8 @@ export class MeshTool {
       modal.start = { x, y, angle, distance };
       return;
     }
-    let map: (p: Vec3) => Vec3;
+    let mapAt: (value: number) => (p: Vec3) => Vec3;
+    let value: number;
     if (modal.kind === 'taper' || modal.kind === 'twist' || modal.kind === 'bend') {
       // Se maneja con el movimiento horizontal del cursor; el eje por defecto es el vertical.
       const axis = modal.axis ?? 1;
@@ -800,9 +810,9 @@ export class MeshTool {
       if (!free) amount = Math.round(amount / SCALE_STEP) * SCALE_STEP;
       if (modal.kind === 'taper') amount = Math.max(amount, -0.95);
       if (modal.kind === 'bend') amount = Math.min(Math.max(amount, -1.5), 1.5);
-      modal.value = amount;
+      value = amount;
       const point = { taper: taperPoint, twist: twistPoint, bend: bendPoint }[modal.kind];
-      map = (p) => point(p, modal.pivot, axis, half, amount);
+      mapAt = (v) => (p) => point(p, modal.pivot, axis, half, v);
       this.host.status(`${{ taper: 'Afinar', twist: 'Torcer', bend: 'Curvar' }[modal.kind]} ${amount >= 0 ? '+' : ''}${amount.toFixed(2)} en ${'XYZ'[axis]}`);
     } else if (modal.kind === 'rotate') {
       const axis = this.rotationAxis();
@@ -811,20 +821,53 @@ export class MeshTool {
       const sign = axis[0] * toward.x + axis[1] * toward.y + axis[2] * toward.z < 0 ? -1 : 1;
       let theta = (angle - modal.start.angle) * sign;
       if (!free) theta = Math.round(theta / ROTATE_STEP) * ROTATE_STEP;
-      modal.value = theta;
-      map = (p) => rotateAbout(p, modal.pivot, axis, theta);
+      value = theta;
+      mapAt = (v) => (p) => rotateAbout(p, modal.pivot, axis, v);
       this.host.status(`Girar ${Math.round((theta * 180) / Math.PI)}°${modal.axis === null ? '' : ' en ' + 'XYZ'[modal.axis]}`);
     } else {
       let factor = distance / modal.start.distance;
       if (!free) factor = Math.round(factor / SCALE_STEP) * SCALE_STEP;
       factor = Math.max(factor, SCALE_STEP);
-      modal.value = factor;
-      const factors = [0, 1, 2].map((k) => (modal.axis === null || modal.axis === k ? factor : 1)) as Vec3;
-      map = (p) => scaleAbout(p, modal.pivot, factors);
+      value = factor;
+      mapAt = (v) => {
+        const factors = [0, 1, 2].map((k) => (modal.axis === null || modal.axis === k ? v : 1)) as Vec3;
+        return (p) => scaleAbout(p, modal.pivot, factors);
+      };
       this.host.status(`Escalar ×${factor.toFixed(2)}${modal.axis === null ? '' : ' en ' + 'XYZ'[modal.axis]}`);
     }
+    // El cuerpo no se aplasta ni se atraviesa: si el valor pedido lo hiciera, se queda en el último valor donde no pasaba.
+    const from = modal.valid;
+    const reach = Math.sign(value - from) * Math.min(Math.abs(value - from), MODAL_REACH);
+    const target = from + reach;
+    const hit = (v: number): boolean => this.collapseOf(modal.targets, this.placedMap(modal.targets, mapAt(v)));
+    let first = 0;
+    for (let i = 1; i <= MODAL_STEPS && first === 0; i++) if (hit(from + (reach * i) / MODAL_STEPS)) first = i;
+    let result = target;
+    if (first > 0) {
+      let lo = from + (reach * (first - 1)) / MODAL_STEPS;
+      let hi = from + (reach * first) / MODAL_STEPS;
+      for (let i = 0; i < 8; i++) {
+        const mid = (lo + hi) / 2;
+        if (hit(mid)) hi = mid;
+        else lo = mid;
+      }
+      result = lo;
+      this.host.status('El cuerpo no puede aplastarse más contra sí mismo');
+    }
+    modal.valid = result;
+    modal.value = result;
     modal.moved = true;
-    this.previewMap(modal.targets, map);
+    this.previewMap(modal.targets, mapAt(result));
+  }
+
+  /** Las piezas con cada vértice elegido llevado por `map` (las imágenes en espejo reciben la transformación reflejada). */
+  private placedMap(targets: Target[], map: (p: Vec3) => Vec3): (Piece | null)[] {
+    return targets.map((target) =>
+      placeVertices(target.original, target.keys, (p) => {
+        const { mirror } = partOf(target, p);
+        return mirror ? mirror(map(mirror(p))) : map(p);
+      }, true),
+    );
   }
 
   /** Coloca las piezas en su estado inicial con cada vértice elegido llevado por `map` (las imágenes en espejo reciben la transformación reflejada). */
