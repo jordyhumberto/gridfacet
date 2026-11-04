@@ -1,11 +1,13 @@
 import { CLEAR, uvOf, type FaceTexture } from '../core/texture';
 import { faceColorOf, type Piece } from '../core/piece';
-import { copyRegion, paintCell, pasteRegion, pixelClipboard, rectBetween, textureOfFace, visibleColor, type Rect, type StrokeState } from '../core/pixels';
+import { type BrushOptions, copyRegion, paintCell, pasteRegion, pixelClipboard, rectBetween, textureOfFace, visibleColor, type Rect, type StrokeState } from '../core/pixels';
 
 /** Lo que el editor necesita de la aplicación: las herramientas elegidas y cómo llevar el resultado al modelo. */
 export interface FaceEditorHost {
   tool(): string;
   size(): number;
+  /** Forma del pincel y espejo dentro de la cara. */
+  brush(): BrushOptions;
   color(): number;
   pickColor(color: number): void;
   /** ¿Sigue la pieza en el modelo? (un deshacer puede haberla cambiado). */
@@ -191,7 +193,7 @@ export class FaceEditor {
       this.draw(stroke.texture);
       return;
     }
-    const changed = paintCell(stroke.texture, stroke.state, tool, { x, y }, this.host.size(), this.host.color());
+    const changed = paintCell(stroke.texture, stroke.state, tool, { x, y }, this.host.size(), this.host.color(), this.host.brush());
     if (changed === 0) return;
     stroke.changed = true;
     this.draw(stroke.texture);

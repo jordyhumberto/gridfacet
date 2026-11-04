@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { CATALOG, buildPiece } from './catalog';
-import { copyRegion, drawShape, moveRegion, pasteRegion, paintCell, rectBetween, replaceColor, floodFill, stamp, stampLine, texelAt, textureOfFace, visibleColor, withFaceTexture } from './pixels';
+import { copyRegion, drawShape, roundMask, moveRegion, pasteRegion, paintCell, rectBetween, replaceColor, floodFill, stamp, stampLine, texelAt, textureOfFace, visibleColor, withFaceTexture } from './pixels';
 import { CLEAR, blankTexture, pointOf } from './texture';
 
 const cube = () => buildPiece(CATALOG[0], 0, 0, 0, 0, 0x336699);
@@ -206,5 +206,49 @@ describe('copiar y pegar píxeles', () => {
   it('mover con copia deja el original y no borra con lo sin pintar', () => {
     const t = tex(4, 1, [1, CLEAR, 9, CLEAR]);
     expect(moveRegion(t, { x0: 0, y0: 0, x1: 1, y1: 0 }, 2, 0, true).pixels).toEqual([1, CLEAR, 1, CLEAR]);
+  });
+});
+
+describe('pincel redondo y espejo en la cara', () => {
+  const grid = (w: number, h: number) => blankTexture(w, h);
+  const state = () => ({ start: null, last: null, base: null });
+  const count = (t: ReturnType<typeof blankTexture>) => t.pixels.filter((p) => p !== CLEAR).length;
+
+  it('el pincel redondo quita las esquinas del cuadrado cuando es grande', () => {
+    const square = grid(9, 9);
+    const round = grid(9, 9);
+    paintCell(square, state(), 'pencil', { x: 4, y: 4 }, 5, 1);
+    paintCell(round, state(), 'pencil', { x: 4, y: 4 }, 5, 1, { round: true });
+    expect(count(square)).toBe(25);
+    expect(count(round)).toBeLessThan(25);
+    expect(round.pixels[2 * 9 + 2]).toBe(CLEAR);
+    expect(round.pixels[4 * 9 + 4]).toBe(1);
+    expect(round.pixels[4 * 9 + 2]).toBe(1);
+  });
+
+  it('con 1 o 2 px el pincel redondo es igual que el cuadrado', () => {
+    expect(roundMask(1)).toBeUndefined();
+    expect(roundMask(2)).toBeUndefined();
+  });
+
+  it('el espejo horizontal repite el trazo reflejado', () => {
+    const t = grid(8, 4);
+    const st = state();
+    paintCell(t, st, 'pencil', { x: 1, y: 1 }, 1, 3, { mirrorX: true });
+    paintCell(t, st, 'pencil', { x: 3, y: 1 }, 1, 3, { mirrorX: true });
+    for (let y = 0; y < 4; y++) for (let x = 0; x < 8; x++) expect(t.pixels[y * 8 + x]).toBe(t.pixels[y * 8 + (7 - x)]);
+    expect(count(t)).toBe(6);
+  });
+
+  it('con los dos espejos salen cuatro copias, también en una forma', () => {
+    const t = grid(8, 8);
+    paintCell(t, state(), 'pencil', { x: 1, y: 2 }, 1, 3, { mirrorX: true, mirrorY: true });
+    expect(count(t)).toBe(4);
+    const r = grid(8, 8);
+    const st = state();
+    paintCell(r, st, 'rectfill', { x: 0, y: 0 }, 1, 3, { mirrorX: true });
+    paintCell(r, st, 'rectfill', { x: 2, y: 1 }, 1, 3, { mirrorX: true });
+    expect(count(r)).toBe(12);
+    for (let y = 0; y < 8; y++) for (let x = 0; x < 8; x++) expect(r.pixels[y * 8 + x]).toBe(r.pixels[y * 8 + (7 - x)]);
   });
 });

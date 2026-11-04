@@ -297,7 +297,15 @@
               <option value="3">3 px</option>
               <option value="4">4 px</option>
               <option value="8">8 px</option>
+              <option value="12">12 px</option>
+              <option value="16">16 px</option>
             </select>
+            <select id="pixelShape" title="Forma del pincel">
+              <option value="square">Cuadrado</option>
+              <option value="round">Redondo</option>
+            </select>
+            <label title="Espejo dentro de la cara: lo que pintas se repite reflejado de izquierda a derecha"><input type="checkbox" id="pixelMirrorX" /> Espejo ↔</label>
+            <label title="Espejo dentro de la cara: lo que pintas se repite reflejado de arriba abajo"><input type="checkbox" id="pixelMirrorY" /> Espejo ↕</label>
             <button id="pixelFlat" title="Abre la última cara que tocaste en plano, ampliada (también con doble clic sobre una cara)">Plano</button>
             <small>Arrastra para pintar · Alt: tomar el color · Ctrl+Z deshace el trazo</small>
           </div>
