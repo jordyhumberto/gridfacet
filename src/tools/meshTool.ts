@@ -95,6 +95,39 @@ export const AXIS_COLORS = [0xff4d4d, 0x6fdc4a, 0x4d8dff];
 /** Cuánto sobresalen las líneas guía a cada lado del vértice agarrado, en celdas. */
 const GUIDE_REACH = 3;
 
+/** Un vértice a menos de esto del plano de simetría cuenta como estando en él. */
+const PLANE_SNAP = 0.02;
+
+const distance3 = (a: Vec3, b: Vec3): number => Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
+
+/** Distancia del punto al plano de la cara (por sus tres primeros vértices no alineados). */
+function planeDistance(face: Vec3[], point: Vec3): number {
+  const [a, b] = face;
+  for (let k = 2; k < face.length; k++) {
+    const u = [b[0] - a[0], b[1] - a[1], b[2] - a[2]];
+    const v = [face[k][0] - a[0], face[k][1] - a[1], face[k][2] - a[2]];
+    const n = [u[1] * v[2] - u[2] * v[1], u[2] * v[0] - u[0] * v[2], u[0] * v[1] - u[1] * v[0]];
+    const length = Math.hypot(n[0], n[1], n[2]);
+    if (length < 1e-9) continue;
+    return Math.abs((n[0] * (point[0] - a[0]) + n[1] * (point[1] - a[1]) + n[2] * (point[2] - a[2])) / length);
+  }
+  return Infinity;
+}
+
+/** La arista de la pieza cuyos extremos están (a menos de 0,02) en esos dos puntos, en cualquier orden. */
+function nearestEdge(piece: Piece, a: Vec3, b: Vec3): { a: Vec3; b: Vec3; swapped: boolean } | null {
+  const tolerance = 0.02;
+  for (const face of piece.faces) {
+    for (let i = 0; i < face.length; i++) {
+      const p = face[i];
+      const q = face[(i + 1) % face.length];
+      if (distance3(p, a) < tolerance && distance3(q, b) < tolerance) return { a: p, b: q, swapped: false };
+      if (distance3(p, b) < tolerance && distance3(q, a) < tolerance) return { a: p, b: q, swapped: true };
+    }
+  }
+  return null;
+}
+
 export class MeshTool {
   private selection: VertexSelection = new Map();
   private overlay = new THREE.Group();
@@ -518,8 +551,14 @@ export class MeshTool {
     const sym = this.host.symmetry();
     (['x', 'y', 'z'] as const).forEach((axis, i) => {
       if (!sym[axis]) return;
-      const side = Math.sign(drag.anchor[i] - sym.center[i]);
-      if (side !== 0 && (drag.anchor[i] + delta[i] - sym.center[i]) * side < 0) delta[i] = sym.center[i] - drag.anchor[i];
+      const offset = drag.anchor[i] - sym.center[i];
+      // Un vértice en el plano es su propia imagen: si se saliera de él, la figura dejaría de ser simétrica. Uno casi en el plano cuenta como en el plano.
+      if (Math.abs(offset) < PLANE_SNAP) {
+        delta[i] = sym.center[i] - drag.anchor[i];
+        return;
+      }
+      const side = Math.sign(offset);
+      if ((drag.anchor[i] + delta[i] - sym.center[i]) * side < 0) delta[i] = sym.center[i] - drag.anchor[i];
     });
     if (delta.every((v, i) => Math.abs(v - drag.delta[i]) < 1e-9)) return;
     // El cuerpo no se aplasta ni se atraviesa: si el desplazamiento lo hiciera, el vértice se queda en el último punto donde no pasaba.
@@ -1120,9 +1159,36 @@ export class MeshTool {
       }
       if (image) edits.set(other.id, sameId(image.piece, other));
     }
+    // La pieza puede no ser una imagen exacta de sí misma (un vértice a unas milésimas del plano, por ejemplo): el espejo se busca entonces por posición.
+    const point: Vec3 = [face.point.x, face.point.y, face.point.z];
+    let mirrored = images.length;
+    for (const reflection of this.missingReflections(images)) {
+      const target = reflection.point(point);
+      if (distance3(target, point) < 1e-6) continue;
+      for (const piece of this.host.model.editable()) {
+        const current = edits.get(piece.id) ?? piece;
+        let done = false;
+        for (let i = 0; i < current.faces.length && !done; i++) {
+          if (planeDistance(current.faces[i], target) > 1e-3) continue;
+          const found = addVertexOnFace(current, i, target);
+          if (found && distance3(found.vertex, target) < 1e-6) {
+            edits.set(piece.id, sameId(found.piece, piece));
+            done = true;
+            mirrored++;
+          }
+        }
+        if (done) break;
+      }
+    }
     this.commitVertex(edits, face.piece.id, result.vertex);
-    this.host.status(images.length > 0 ? 'Vértice añadido en la cara y en su espejo: muévelo para deformar' : 'Vértice añadido en la cara: muévelo para deformar');
+    this.host.status(mirrored > 0 ? 'Vértice añadido en la cara y en su espejo: muévelo para deformar' : reflections(this.host.symmetry()).length > 0 ? 'Vértice añadido, pero no se encontró su cara espejo (¿la pieza no es simétrica?)' : 'Vértice añadido en la cara: muévelo para deformar');
     return true;
+  }
+
+  /** Los espejos activos que `images` no cubre (porque la pieza no es una imagen exacta de sí misma). */
+  private missingReflections(images: { reflection: Reflection }[]): Reflection[] {
+    const probe: Vec3 = [0.123, 0.456, 0.789];
+    return reflections(this.host.symmetry()).filter((r) => !images.some((i) => distance3(i.reflection.point(probe), r.point(probe)) < 1e-9));
   }
 
   /** Las piezas que son la imagen en espejo de esta con la simetría activa (puede ser ella misma si es simétrica), con su reflexión. */
@@ -1194,6 +1260,23 @@ export class MeshTool {
       const current = edits.get(other.id) ?? other;
       const image = splitEdge(current, reflection.point(a), reflection.point(b), t);
       if (image) edits.set(other.id, sameId(image.piece, other));
+    }
+    // Sin pieza imagen exacta, la arista espejo se busca por posición (con unas milésimas de margen).
+    const imagesDone = this.mirrorImages(piece);
+    for (const reflection of this.missingReflections(imagesDone)) {
+      const wantA = reflection.point(a);
+      const wantB = reflection.point(b);
+      if (distance3(wantA, a) < 1e-6 && distance3(wantB, b) < 1e-6) continue;
+      for (const other of this.host.model.editable()) {
+        const current = edits.get(other.id) ?? other;
+        const edge = nearestEdge(current, wantA, wantB);
+        if (!edge) continue;
+        const image = splitEdge(current, edge.a, edge.b, edge.swapped ? 1 - t : t);
+        if (image) {
+          edits.set(other.id, sameId(image.piece, other));
+          break;
+        }
+      }
     }
     this.commitVertex(edits, piece.id, result.vertex);
     return true;
