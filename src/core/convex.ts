@@ -53,6 +53,10 @@ const triangleFacing = (a: Vec3, b: Vec3, c: Vec3, normal: Vec3): { area: number
 /** Lo que cuesta un triángulo dado la vuelta: más que cualquier área posible, para que solo salga si no hay otra forma de partir la cara. */
 const FLIPPED_PENALTY = 1e6;
 
+/** Un triángulo cuyo coseno con la normal de la cara baja de esto cuenta como «de canto»; su coste, mayor que el área de cualquier cara normal, pero menor que el de uno dado la vuelta. */
+const EDGE_ON = 0.1;
+const EDGE_ON_PENALTY = 1e3;
+
 /** ¿Algún vértice se sale del plano de la cara? (una cara alabeada, con puntas o pliegues). */
 function isWarped(face: Vec3[], normal: Vec3): boolean {
   const length = Math.hypot(...normal);
@@ -76,7 +80,10 @@ function minimumAreaTriangles(face: Vec3[], normal: Vec3): [number, number, numb
       cost[i][j] = Infinity;
       for (let k = i + 1; k < j; k++) {
         const { area, facing } = triangleFacing(face[i], face[k], face[j], normal);
-        const total = cost[i][k] + cost[k][j] + area + (facing < -1e-9 ? FLIPPED_PENALTY : 0);
+        // Un triángulo casi de canto respecto a la cara (como la pared de una muesca) también cuesta: si no, al bajar un vértice la superficie
+        // pasa de repente de un valle a una tapa plana con paredes, y la figura parece romperse.
+        const edgeOn = area > 1e-12 && facing >= -1e-9 ? Math.max(0, EDGE_ON - facing / (2 * area)) / EDGE_ON : facing < -1e-9 ? 0 : 1;
+        const total = cost[i][k] + cost[k][j] + area + (facing < -1e-9 ? FLIPPED_PENALTY : edgeOn * EDGE_ON_PENALTY);
         if (total < cost[i][j] - 1e-9) {
           cost[i][j] = total;
           split[i][j] = k;
