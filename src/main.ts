@@ -14,7 +14,7 @@ import { alignChange, distributeChange, groundChange, partsOf, resizeLongestChan
 import { searchCommands, type Command } from './core/commands';
 import { parseHexColors, parsePalettes, toHexText, upsertPalette, type Palette } from './core/palettes';
 import { parseProjectFull, serializeProject } from './core/project';
-import { emptyAnimation, pruneTracks, removeKey, resize as resizeAnimation, sampleTrack, setKey, trackOf, MAX_FPS, MAX_FRAMES, type Animation, type Pose } from './core/animation';
+import { groupCentre, emptyAnimation, pruneTracks, removeKey, resize as resizeAnimation, sampleTrack, setKey, trackOf, MAX_FPS, MAX_FRAMES, type Animation, type Pose } from './core/animation';
 import { AnimationPlayer } from './render/animationPlayer';
 import { canPickOpen, canPickSave, pickOpen, pickSave, writeHandle, type FileHandle } from './fileAccess';
 import { downloadBlob, exportGlb } from './render/glb';
@@ -3761,6 +3761,10 @@ window.addEventListener('keydown', (e) => {
   // Con el foco en un selector las teclas le pertenecen a él.
   if (e.target instanceof HTMLSelectElement || e.target instanceof HTMLTextAreaElement) return;
   if (e.target instanceof HTMLInputElement && (e.target.type === 'number' || e.target.type === 'text' || e.target.type === 'search')) return;
+  if (poseDragKey(e)) {
+    e.preventDefault();
+    return;
+  }
   const key = e.key.toLowerCase();
   // Teclado numérico, como en Blender: 1 frente, 3 derecha, 7 arriba (con Ctrl, la opuesta) y 5 alterna ortográfica/perspectiva.
   if (e.code.startsWith('Numpad') && !e.altKey && !e.shiftKey) {
@@ -4047,7 +4051,7 @@ function refreshAnimationPanel(): void {
   animEl('animGroup').textContent = group
     ? `Grupo: ${group.name}`
     : 'Elige un grupo de piezas para animarlo (Ctrl+G agrupa las piezas elegidas)';
-  for (const id of ['animPose', 'animPoseRot', 'animPoseScale', 'animKeyRow']) animEl(id).hidden = !group;
+  for (const id of ['animPose', 'animPoseRot', 'animPoseScale', 'animKeyRow', 'animMouseRow']) animEl(id).hidden = !group;
   if (group) {
     const pose = sampleTrack(track, animFrame);
     const set = (name: string, value: number): void => {
@@ -4119,6 +4123,151 @@ function redoAnimationStep(): boolean {
   animationUndo.push(step);
   applyAnimation(step.after);
   statusEl.textContent = 'Animación: cambio rehecho';
+  return true;
+}
+
+/**
+ * Posar con el ratón: mover, girar o escalar el grupo elegido en el fotograma actual moviendo el ratón sin pulsar.
+ * Clic o Intro confirman (y ponen la clave), Esc o clic derecho cancelan, X/Y/Z fijan el eje y Ctrl quita el imán.
+ */
+const POSE_MOVE_STEP = 0.25;
+const POSE_ROTATE_STEP = 5;
+const POSE_SCALE_STEP = 0.05;
+let poseDrag: {
+  kind: 'move' | 'rotate' | 'scale';
+  group: number;
+  start: Pose;
+  /** Dónde está el centro del grupo ahora (con el desplazamiento de la pose). */
+  pivot: THREE.Vector3;
+  axis: number | null;
+  /** Se fija con el primer movimiento del ratón. */
+  reference: { x: number; y: number; angle: number; distance: number; point: THREE.Vector3 | null } | null;
+  last: { x: number; y: number; free: boolean } | null;
+  result: Animation | null;
+} | null = null;
+
+function beginPoseDrag(kind: 'move' | 'rotate' | 'scale'): void {
+  const group = animGroup();
+  if (!group || poseDrag) return;
+  const members = model.all().filter((p) => p.group === group.id);
+  const start = sampleTrack(trackOf(animation, group.id), animFrame);
+  const centre = groupCentre(members);
+  poseDrag = {
+    kind,
+    group: group.id,
+    start,
+    pivot: new THREE.Vector3(centre[0] + start.pos[0], centre[1] + start.pos[1], centre[2] + start.pos[2]),
+    axis: null,
+    reference: null,
+    last: null,
+    result: null,
+  };
+  controls.enabled = false;
+  statusEl.textContent = `${{ move: 'Mover', rotate: 'Girar', scale: 'Escalar' }[kind]} el grupo: mueve el ratón${kind === 'scale' ? '' : ' · X/Y/Z fija el eje'} · Ctrl sin imán · clic o Intro confirma · Esc cancela`;
+}
+
+function updatePoseDrag(): void {
+  const drag = poseDrag;
+  if (!drag || !drag.last) return;
+  const { x, y, free } = drag.last;
+  const rect = renderer.domElement.getBoundingClientRect();
+  const projected = drag.pivot.clone().project(camera);
+  const cx = rect.left + ((projected.x + 1) / 2) * rect.width;
+  const cy = rect.top + ((1 - projected.y) / 2) * rect.height;
+  const forward = camera.getWorldDirection(new THREE.Vector3());
+  const onPlane = (): THREE.Vector3 | null => {
+    const ray = new THREE.Raycaster();
+    ray.setFromCamera(new THREE.Vector2(((x - rect.left) / rect.width) * 2 - 1, -((y - rect.top) / rect.height) * 2 + 1), camera);
+    return ray.ray.intersectPlane(new THREE.Plane().setFromNormalAndCoplanarPoint(forward, drag.pivot), new THREE.Vector3());
+  };
+  if (!drag.reference) {
+    drag.reference = { x, y, angle: Math.atan2(y - cy, x - cx), distance: Math.max(Math.hypot(x - cx, y - cy), 8), point: drag.kind === 'move' ? onPlane() : null };
+    return;
+  }
+  const ref = drag.reference;
+  const pose: Pose = { pos: [...drag.start.pos], rot: [...drag.start.rot], scale: [...drag.start.scale] };
+  let label = '';
+  if (drag.kind === 'move') {
+    const point = onPlane();
+    if (!point || !ref.point) return;
+    const delta = [point.x - ref.point.x, point.y - ref.point.y, point.z - ref.point.z];
+    for (let k = 0; k < 3; k++) {
+      if (drag.axis !== null && drag.axis !== k) continue;
+      let value = drag.start.pos[k] + delta[k];
+      if (!free) value = Math.round(value / POSE_MOVE_STEP) * POSE_MOVE_STEP;
+      pose.pos[k] = value;
+    }
+    label = `Mover ${pose.pos.map((v) => +v.toFixed(2)).join(', ')}`;
+  } else if (drag.kind === 'rotate') {
+    // Eje: el elegido, o el del mundo más parecido a la dirección de la cámara; el giro suma al ángulo de ese eje.
+    const abs = [Math.abs(forward.x), Math.abs(forward.y), Math.abs(forward.z)];
+    const axis = drag.axis ?? abs.indexOf(Math.max(...abs));
+    const towardsViewer = [forward.x, forward.y, forward.z][axis] < 0;
+    let degrees = ((Math.atan2(y - cy, x - cx) - ref.angle) * 180) / Math.PI * (towardsViewer ? -1 : 1);
+    degrees = ((degrees + 540) % 360) - 180;
+    if (!free) degrees = Math.round(degrees / POSE_ROTATE_STEP) * POSE_ROTATE_STEP;
+    pose.rot[axis] = drag.start.rot[axis] + degrees;
+    label = `Girar ${'XYZ'[axis]} ${Math.round(pose.rot[axis])}°`;
+  } else {
+    let factor = Math.max(Math.hypot(x - cx, y - cy), 8) / ref.distance;
+    if (!free) factor = Math.round(factor / POSE_SCALE_STEP) * POSE_SCALE_STEP;
+    const scale = Math.max(drag.start.scale[0] * factor, 0.05);
+    pose.scale = [scale, scale, scale];
+    label = `Escalar ×${scale.toFixed(2)}`;
+  }
+  drag.result = setKey(animation, drag.group, animFrame, pose);
+  animPlayer.show(visibleForAnimation(), drag.result, animFrame);
+  animStopButton.hidden = false;
+  statusEl.textContent = label;
+}
+
+function finishPoseDrag(commit: boolean): void {
+  const drag = poseDrag;
+  if (!drag) return;
+  poseDrag = null;
+  controls.enabled = true;
+  if (commit && drag.result) editAnimation(drag.result);
+  else {
+    showAnimationFrame();
+    refreshAnimationPanel();
+  }
+  statusEl.textContent = commit && drag.result ? 'Clave puesta' : 'Cancelado';
+}
+
+for (const button of document.querySelectorAll<HTMLButtonElement>('button[data-animpose]')) {
+  button.addEventListener('click', () => {
+    button.blur();
+    animPlaying = false;
+    animPlayButton.textContent = '▶ Reproducir';
+    beginPoseDrag(button.dataset.animpose as 'move' | 'rotate' | 'scale');
+  });
+}
+renderer.domElement.addEventListener('pointermove', (e) => {
+  if (!poseDrag) return;
+  poseDrag.last = { x: e.clientX, y: e.clientY, free: e.ctrlKey || e.metaKey };
+  updatePoseDrag();
+});
+window.addEventListener(
+  'pointerdown',
+  (e) => {
+    if (!poseDrag || e.target !== renderer.domElement) return;
+    e.stopImmediatePropagation();
+    e.preventDefault();
+    if (e.button === 0) finishPoseDrag(true);
+    else if (e.button === 2) finishPoseDrag(false);
+  },
+  { capture: true },
+);
+/** Teclas durante el posado con el ratón; devuelve true si se usó la tecla. */
+function poseDragKey(e: KeyboardEvent): boolean {
+  if (!poseDrag) return false;
+  const key = e.key.toLowerCase();
+  if (key === 'x' || key === 'y' || key === 'z') {
+    const axis = 'xyz'.indexOf(key);
+    poseDrag.axis = poseDrag.axis === axis ? null : axis;
+    updatePoseDrag();
+  } else if (key === 'escape') finishPoseDrag(false);
+  else if (key === 'enter') finishPoseDrag(true);
   return true;
 }
 
