@@ -2902,7 +2902,7 @@ async function openProject(file: File, handle: FileHandle | null = null): Promis
     model.apply({ added: loaded, removed: model.all(), marksAdded: marks, marksRemoved: model.points() });
     setAnimation(savedAnimation ?? emptyAnimation());
     // Abrir reemplaza también la animación: si se deshace lo de abrir, vuelve la de antes.
-    if (animation !== previousAnimation) animationUndo.push({ before: previousAnimation, after: animation, depth: model.undoDepth - 1, serial: model.serial });
+    if (animation !== previousAnimation) animationUndo.push({ before: previousAnimation, after: animation, depth: model.undoDepth - 1, serial: model.serial, withModel: true });
     animationRedo = [];
     layers.load(savedLayers, loaded);
     applyLayerState();
@@ -4085,6 +4085,8 @@ interface AnimationStep {
   depth: number;
   /** En un paso deshecho, el contador del modelo en ese momento: si cambia, ya no se puede rehacer. */
   serial: number;
+  /** El paso va pegado al cambio del modelo siguiente (abrir un archivo): un solo Ctrl+Z o Ctrl+Y deshace o rehace los dos. */
+  withModel?: boolean;
 }
 const animationUndo: AnimationStep[] = [];
 let animationRedo: AnimationStep[] = [];
@@ -4123,6 +4125,7 @@ function redoAnimationStep(): boolean {
   if (!step || step.depth !== model.undoDepth) return false;
   animationRedo.pop();
   animationUndo.push(step);
+  if (step.withModel) model.redo();
   applyAnimation(step.after);
   statusEl.textContent = 'Animación: cambio rehecho';
   return true;
@@ -4274,7 +4277,11 @@ function poseDragKey(e: KeyboardEvent): boolean {
 }
 
 function undo(): void {
-  if (!undoAnimationStep()) model.undo();
+  if (undoAnimationStep()) return;
+  model.undo();
+  // Abrir un archivo cambió piezas y animación a la vez: se deshacen juntas.
+  const step = animationUndo[animationUndo.length - 1];
+  if (step?.withModel && step.depth === model.undoDepth) undoAnimationStep();
 }
 
 function poseFromInputs(): Pose {
