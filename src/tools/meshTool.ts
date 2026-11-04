@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import type { Piece, Vec3 } from '../core/piece';
 import { pieceKey, reflectPiece, reflections, type Reflection, type Symmetry } from '../core/symmetry';
 import { triangulateFace } from '../core/convex';
-import { addFace, deleteFaces, deleteVertices, extrudeFaces, facesWithin, flipFaces, mergeVertices, moveVertices, placeVertices, rotateAbout, scaleAbout, setFaceFlags, splitEdge, addVertexOnFace, taperPoint, twistPoint, bendPoint, uniqueVertices, vertexKey } from '../core/vertices';
+import { addFace, deleteFaces, deleteVertices, extrudeFaces, facesWithin, flipFaces, mergeVertices, placeVertices, rotateAbout, scaleAbout, setFaceFlags, splitEdge, addVertexOnFace, taperPoint, twistPoint, bendPoint, uniqueVertices, vertexKey } from '../core/vertices';
 import type { ModelScene } from '../scene';
 
 /** Paso de la rejilla de imán, en celdas. */
@@ -52,14 +52,30 @@ export interface MeshToolHost {
 type VertexSelection = Map<number, Set<string>>;
 
 /** Una pieza que se mueve en el arrastre: su estado inicial, qué vértices lleva y cómo se transforma el desplazamiento. */
-interface Target {
-  original: Piece;
+/** Un grupo de vértices de una pieza que se mueven juntos: los elegidos, o las imágenes en espejo de una reflexión. */
+interface Part {
   keys: Set<string>;
-  /** Dirección del desplazamiento para esta pieza: la identidad, o el reflejo si es la imagen en espejo de la elegida. */
+  /** Dirección del desplazamiento para estos vértices: la identidad, o el reflejo si son la imagen en espejo de los elegidos. */
   dir: (v: Vec3) => Vec3;
-  /** Reflejo de un punto, si esta pieza es la imagen en espejo de la elegida; sin él, la identidad. */
+  /** Reflejo de un punto, si son la imagen en espejo de los elegidos; sin él, la identidad. */
   mirror?: (p: Vec3) => Vec3;
 }
+
+/**
+ * Una pieza con los vértices que cambian. Aparece una sola vez aunque varios grupos la toquen (una pieza que cruza el plano de simetría
+ * es imagen de sí misma): si hubiera dos entradas con la misma pieza, la segunda pisaría a la primera y los vértices se quedarían sin mover.
+ */
+interface Target {
+  original: Piece;
+  /** Todos los vértices que cambian (la unión de los de cada grupo). */
+  keys: Set<string>;
+  parts: Part[];
+}
+
+/** El grupo al que pertenece un vértice de la pieza (los grupos no comparten vértices). */
+const partOf = (target: Target, p: Vec3): Part => target.parts.find((part) => part.keys.has(vertexKey(p))) ?? target.parts[0];
+/** Los vértices que eligió la persona, sin las imágenes en espejo. */
+const chosenKeys = (target: Target): Set<string> => target.parts.find((part) => !part.mirror)?.keys ?? new Set();
 
 const sameId = (made: Piece, old: Piece): Piece => ({ ...made, id: old.id });
 const cloneSelection = (selection: VertexSelection): VertexSelection => new Map([...selection].map(([id, keys]) => [id, new Set(keys)]));
@@ -414,7 +430,12 @@ export class MeshTool {
       if (fresh.size === 0) return;
       for (const key of fresh) already.add(key);
       taken.set(piece.id, already);
-      targets.push({ original: piece, keys: fresh, dir, mirror });
+      const part: Part = { keys: fresh, dir, mirror };
+      const existing = targets.find((t) => t.original.id === piece.id);
+      if (existing) {
+        existing.parts.push(part);
+        for (const key of fresh) existing.keys.add(key);
+      } else targets.push({ original: piece, keys: new Set(fresh), parts: [part] });
     };
     for (const [id, keys] of this.selection) {
       const piece = this.host.model.get(id);
@@ -422,7 +443,8 @@ export class MeshTool {
     }
     const mirrors = reflections(this.host.symmetry());
     if (mirrors.length > 0) {
-      const chosen = [...targets];
+      // Los vértices elegidos, antes de añadir imágenes (sobre estos se calculan todos los espejos).
+      const chosen = targets.map((t) => ({ original: t.original, keys: new Set(t.keys) }));
       for (const reflection of mirrors) {
         const images = new Set<string>();
         for (const target of chosen) {
@@ -490,20 +512,21 @@ export class MeshTool {
     const drag = this.drag!;
     this.showGuide([drag.anchor[0] + delta[0], drag.anchor[1] + delta[1], drag.anchor[2] + delta[2]]);
     // La selección sigue a los vértices movidos (cambian de clave al cambiar de sitio) antes de avisar al modelo, que la revisa.
+    const shifted = (target: Target) => (p: Vec3): Vec3 => {
+      const d = partOf(target, p).dir(delta);
+      return [p[0] + d[0], p[1] + d[1], p[2] + d[2]];
+    };
     for (const target of drag.targets) {
       if (!this.selection.has(target.original.id)) continue;
-      const d = target.dir(delta);
-      const moved = new Set<string>();
-      for (const position of uniqueVertices(target.original)) {
-        if (target.keys.has(vertexKey(position))) moved.add(vertexKey([position[0] + d[0], position[1] + d[1], position[2] + d[2]]));
-      }
-      this.selection.set(target.original.id, moved);
+      const chosen = chosenKeys(target);
+      const to = shifted(target);
+      this.selection.set(target.original.id, new Set(uniqueVertices(target.original).filter((position) => chosen.has(vertexKey(position))).map((position) => vertexKey(to(position)))));
     }
     const removed: Piece[] = [];
     const added: Piece[] = [];
     for (const target of drag.targets) {
       const current = this.host.model.get(target.original.id);
-      const moved = moveVertices(target.original, target.keys, target.dir(delta), true);
+      const moved = placeVertices(target.original, target.keys, shifted(target), true);
       if (current) removed.push(current);
       if (moved) added.push(moved);
     }
@@ -558,7 +581,7 @@ export class MeshTool {
       const current = this.host.model.get(target.original.id);
       if (current) removed.push(current);
       added.push(target.original);
-      if (this.selection.has(target.original.id)) this.selection.set(target.original.id, new Set(target.keys));
+      if (this.selection.has(target.original.id)) this.selection.set(target.original.id, new Set(chosenKeys(target)));
     }
     this.host.model.preview({ added, removed });
     this.refresh();
@@ -663,9 +686,9 @@ export class MeshTool {
     const min: Vec3 = [Infinity, Infinity, Infinity];
     const max: Vec3 = [-Infinity, -Infinity, -Infinity];
     for (const target of targets) {
-      if (target.mirror) continue;
+      const chosen = chosenKeys(target);
       for (const p of uniqueVertices(target.original)) {
-        if (!target.keys.has(vertexKey(p))) continue;
+        if (!chosen.has(vertexKey(p))) continue;
         for (let k = 0; k < 3; k++) {
           min[k] = Math.min(min[k], p[k]);
           max[k] = Math.max(max[k], p[k]);
@@ -749,11 +772,15 @@ export class MeshTool {
 
   /** Coloca las piezas en su estado inicial con cada vértice elegido llevado por `map` (las imágenes en espejo reciben la transformación reflejada). */
   private previewMap(targets: Target[], map: (p: Vec3) => Vec3): void {
-    const placed = (target: Target) => (p: Vec3): Vec3 => (target.mirror ? target.mirror(map(target.mirror(p))) : map(p));
+    const placed = (target: Target) => (p: Vec3): Vec3 => {
+      const { mirror } = partOf(target, p);
+      return mirror ? mirror(map(mirror(p))) : map(p);
+    };
     for (const target of targets) {
       if (!this.selection.has(target.original.id)) continue;
       const to = placed(target);
-      this.selection.set(target.original.id, new Set(uniqueVertices(target.original).filter((p) => target.keys.has(vertexKey(p))).map((p) => vertexKey(to(p)))));
+      const chosen = chosenKeys(target);
+      this.selection.set(target.original.id, new Set(uniqueVertices(target.original).filter((p) => chosen.has(vertexKey(p))).map((p) => vertexKey(to(p)))));
     }
     const removed: Piece[] = [];
     const added: Piece[] = [];
@@ -813,9 +840,13 @@ export class MeshTool {
     const b = this.worldAxis(vertical);
     const delta: Vec3 = [(a[0] * sx + b[0] * sy) * step, (a[1] * sx + b[1] * sy) * step, (a[2] * sx + b[2] * sy) * step];
     this.change(
-      (piece, keys, dir) => moveVertices(piece, keys, dir(delta), true),
-      (p, dir) => {
-        const d = dir(delta);
+      (piece, keys, dirAt) =>
+        placeVertices(piece, keys, (p) => {
+          const d = dirAt(p)(delta);
+          return [p[0] + d[0], p[1] + d[1], p[2] + d[2]];
+        }, true),
+      (p, dirAt) => {
+        const d = dirAt(p)(delta);
         return [p[0] + d[0], p[1] + d[1], p[2] + d[2]];
       },
     );
@@ -1062,7 +1093,7 @@ export class MeshTool {
    * Aplica una operación sobre cada pieza con vértices elegidos (y sus imágenes en espejo) como un único paso de deshacer.
    * Con `after` la selección sigue a los vértices a su posición nueva; sin él se vacía (fusionar, borrar).
    */
-  private change(operation: (piece: Piece, keys: Set<string>, dir: (v: Vec3) => Vec3) => Piece | { piece: Piece; select: Set<string> } | null, after?: (position: Vec3, dir: (v: Vec3) => Vec3) => Vec3): void {
+  private change(operation: (piece: Piece, keys: Set<string>, dirAt: (p: Vec3) => (v: Vec3) => Vec3) => Piece | { piece: Piece; select: Set<string> } | null, after?: (position: Vec3, dirAt: (p: Vec3) => (v: Vec3) => Vec3) => Vec3): void {
     const targets = this.buildTargets();
     if (targets.length === 0) return;
     const before = cloneSelection(this.selection);
@@ -1070,7 +1101,8 @@ export class MeshTool {
     const added: Piece[] = [];
     const next: VertexSelection = new Map();
     for (const target of targets) {
-      const outcome = operation(target.original, target.keys, target.dir);
+      const dirAt = (p: Vec3): ((v: Vec3) => Vec3) => partOf(target, p).dir;
+      const outcome = operation(target.original, target.keys, dirAt);
       removed.push(target.original);
       if (!outcome) continue;
       const result = 'select' in outcome ? outcome.piece : outcome;
@@ -1079,7 +1111,8 @@ export class MeshTool {
         // La operación dice qué vértices quedan elegidos (por ejemplo los de la cara recién extruida).
         if (this.selection.has(target.original.id)) next.set(target.original.id, outcome.select);
       } else if (after && this.selection.has(target.original.id)) {
-        next.set(target.original.id, new Set(uniqueVertices(target.original).filter((p) => target.keys.has(vertexKey(p))).map((p) => vertexKey(after(p, target.dir)))));
+        const chosen = chosenKeys(target);
+        next.set(target.original.id, new Set(uniqueVertices(target.original).filter((p) => chosen.has(vertexKey(p))).map((p) => vertexKey(after(p, dirAt)))));
       }
     }
     const depthBefore = this.host.model.undoDepth;
