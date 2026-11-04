@@ -22,6 +22,11 @@ Dentro de la app, el botón **Ayuda y atajos (?)** explica cada herramienta.
 - **Cara**: extruir, cavar (cráteres con paredes inclinadas y reborde) y dividir. **Excavar** resta una pieza de otras; **Fusionar** une piezas si el resultado es convexo.
 - **Crecer** una cara o toda la cara conectada, con la cantidad que quieras (¼, ⅓, ½, 1…).
 - **Repetir** en serie con desplazamiento, giro y escala; **simetría**, grupos con nombre, espejo, pintar por cara y últimos colores.
+- **Malla libre (estilo picoCAD)**: además de poliedros convexos, las piezas se pueden volver mallas libres (abiertas, cóncavas, de una sola cara). Con la herramienta **Malla** eliges vértices (clic, recuadro con Ctrl, *Todos*) y los mueves, **giras** (R), **escalas** (T), **afinas**, **tuerces** o **curvas**; también **fusionar** y **borrar** vértices, **a la rejilla**, partir una arista con un vértice nuevo y respetar la **simetría**. Con los vértices elegidos puedes **crear**, **borrar**, **invertir** y **extruir caras**.
+- **Propiedades de cara**: *Doble cara* (hojas, ropa), *Sin sombra* (se ve con su color tal cual) y *Al fondo* (se dibuja bajo todo lo demás: huellas, sombras pintadas; solo en el editor, porque el GLB no guarda el orden de dibujo). Doble cara y Sin sombra sí viajan al GLB.
+- **Vistas ortogonales**: teclado numérico 1 (frente), 3 (lado), 7 (arriba) y 5 (alternar perspectiva/ortogonal) para modelar con precisión.
+- **Animación por claves, por grupo**: panel *Animación* con fotogramas y FPS; eliges un grupo, pones **claves** de posición, giro y escala (en los campos o **posando con el ratón**: Mover, Girar, Escalar) y reproduces en bucle. Ctrl+Z y Ctrl+Y deshacen y rehacen también las claves, en orden con el resto de cambios. La animación se guarda en el proyecto y sale en el GLB como un clip llamado `Animacion` (un nodo por grupo animado), validado con `gltf-validator`.
+- **Deshacer sin perder la selección**: al deshacer o rehacer, los vértices elegidos vuelven a como estaban. Abrir un archivo se deshace de una vez, piezas y animación.
 - **Contador de triángulos** con presupuesto, útil para mantenerse en el rango de un personaje PS1 (300–800).
 - **Exportar GLB** (uniendo por color o una malla por pieza) y guardar/abrir proyectos `.gridfacet.json`. Los proyectos antiguos (`.novoxel.json`) se siguen abriendo.
 
@@ -36,7 +41,8 @@ npx vite-node scripts/tiburon.ts
 ## Estructura
 
 - `src/core/`: geometría y operaciones sobre piezas (corte, casco convexo, resta, extrusión, exportación…), con sus pruebas.
-- `src/tools/`: herramientas interactivas (cortar, rellenar, vértices).
+- `src/tools/`: herramientas interactivas (cortar, rellenar, vértices y malla libre).
+- `src/core/animation.ts` y `src/render/animationPlayer.ts`: claves, muestreo y reproducción de la animación.
 - `src/render/`: mallas, sombreado y GLB.
 - `src/main.ts`: interfaz y cableado.
 
