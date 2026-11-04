@@ -2821,11 +2821,12 @@ document.getElementById('export')!.addEventListener('click', async () => {
   const exportMode = (document.getElementById('exportMode') as HTMLSelectElement).value as ExportMode;
   const suggested = fileName === 'Sin título' ? 'gridfacet.glb' : fileName.replace(/\.json$/i, '') + '.glb';
   try {
+    // El selector de archivos se pide primero: necesita el gesto del usuario, que se pierde si antes se tarda en generar el modelo.
+    const handle = canPickSave() ? await pickSave(suggested, 'Modelo GLB', 'model/gltf-binary', '.glb') : null;
+    if (canPickSave() && !handle) return;
     const data = await exportGlb(pieces, exportMode, (id) => layers.get(id)?.name ?? `Capa_${id}`);
     let saved = suggested;
-    if (canPickSave()) {
-      const handle = await pickSave(suggested, 'Modelo GLB', 'model/gltf-binary', '.glb');
-      if (!handle) return;
+    if (handle) {
       await writeHandle(handle, data);
       saved = handle.name;
     } else {
@@ -3337,7 +3338,7 @@ const GUIDE: Record<Mode, [string, string][]> = {
     ['Alt+clic', 'tomar el color de la cara (cuentagotas)'],
     ['Casilla “Píxeles”', 'pinta píxeles sueltos en vez de la cara entera: arrastra con lápiz, borrador o relleno (Alt toma el color del píxel); un trazo es un solo paso de deshacer'],
     ['Doble clic / Plano', 'con “Píxeles” abre la cara en plano, ampliada, para pintarla de frente con las mismas herramientas (Esc cierra)'],
-    ['Texturas', 'se conservan al mover, girar, espejar, cortar, hundir y guardar; las caras nuevas que crea un corte nacen sin pintar'],
+    ['Texturas', 'se conservan al mover, girar, espejar, cortar, hundir y guardar; al crecer una cara, la de arriba del cuerpo nuevo hereda sus píxeles; las caras nuevas de un corte nacen sin pintar'],
     ['Colores', 'selector junto a “Piezas” y los últimos 10 usados'],
     ['Esc', 'volver a Colocar'],
     ...VIEW_GUIDE.slice(0, 2),

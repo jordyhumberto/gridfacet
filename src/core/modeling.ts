@@ -1,6 +1,7 @@
 import type { Change } from './cut';
 import { convexHull } from './hull';
 import type { FaceOf } from './region';
+import { remapTexture } from './texture';
 import { boundsOf } from './transform';
 import {
   clipPiece,
@@ -109,7 +110,17 @@ export function extrudeFaceChange(piece: Piece, faceIndex: number, distance: num
   if (distance > 0) {
     const faces = convexHull([...ring(1, 0), ...ring(taper, distance)]);
     if (!faces) return { added: [], removed: [] };
-    const body = keepGroup(makePiece(faces, faceColorOf(piece, faceIndex)), piece);
+    // La cara de arriba del cuerpo nuevo es la misma cara desplazada: hereda sus píxeles.
+    const source = piece.faceTextures?.[faceIndex];
+    const lift = (p: Vec3): Vec3 => sub(p, scale(n, distance));
+    const textures = source
+      ? faces.map((f) => {
+          const flat = unit(faceNormal(f));
+          const onTop = dot(flat, n) > 0.999 && Math.abs(dot(centroid(f), n) - (dot(c, n) + distance)) < 1e-6;
+          return onTop ? remapTexture(source, face, f, lift) : null;
+        })
+      : undefined;
+    const body = keepGroup(makePiece(faces, faceColorOf(piece, faceIndex), undefined, textures), piece);
     return { added: [body], removed: [] };
   }
 
