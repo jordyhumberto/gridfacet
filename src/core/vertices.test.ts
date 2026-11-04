@@ -4,7 +4,7 @@ import { isConvex } from './convex';
 import { floodFill, textureOfFace, withFaceTexture } from './pixels';
 import { FACE_DOUBLE, FACE_UNLIT, faceNormal, volume, type Vec3 } from './piece';
 import { sampleTexture, pointOf, uvOf } from './texture';
-import { addFace, deleteFaces, deleteVertices, extrudeFaces, facesWithin, flipFaces, mergeVertices, moveVertices, placeVertices, setFaceFlags, splitEdge, uniqueVertices, vertexKey } from './vertices';
+import { addFace, deleteFaces, deleteVertices, extrudeFaces, facesWithin, flipFaces, mergeVertices, moveVertices, placeVertices, rotateAbout, scaleAbout, setFaceFlags, splitEdge, uniqueVertices, vertexKey } from './vertices';
 
 const cube = () => buildPiece(CATALOG[0], 0, 0, 0, 0, 0x336699);
 const topCorner = (piece = cube()): Vec3 => {
@@ -192,5 +192,34 @@ describe('propiedades de cara', () => {
     expect(moved.faceFlags![index]).toBe(FACE_UNLIT);
     const extruded = extrudeFaces(piece, new Set([index]), 0.5)!;
     expect(extruded.piece.faceFlags!.filter((f) => f === FACE_UNLIT).length).toBe(5);
+  });
+});
+
+describe('girar y escalar vértices', () => {
+  it('girar 90° alrededor de Y lleva (1,0,0) a (0,0,-1)', () => {
+    const r = rotateAbout([1, 0, 0], [0, 0, 0], [0, 1, 0], Math.PI / 2);
+    expect(r[0]).toBeCloseTo(0, 9);
+    expect(r[2]).toBeCloseTo(-1, 9);
+  });
+
+  it('el pivote no se mueve y las distancias se conservan', () => {
+    const pivot: Vec3 = [2, 1, 3];
+    expect(rotateAbout(pivot, pivot, [0, 0, 1], 1.1)).toEqual(pivot);
+    const p: Vec3 = [4, 1, 3];
+    const r = rotateAbout(p, pivot, [0, 1, 0], 0.7);
+    expect(Math.hypot(r[0] - 2, r[1] - 1, r[2] - 3)).toBeCloseTo(2, 9);
+  });
+
+  it('escalar respecto a un pivote deja el pivote quieto', () => {
+    expect(scaleAbout([3, 1, 1], [1, 1, 1], [2, 1, 1])).toEqual([5, 1, 1]);
+    expect(scaleAbout([1, 1, 1], [1, 1, 1], [3, 3, 3])).toEqual([1, 1, 1]);
+  });
+
+  it('girar un cubo 90° con placeVertices lo deja igual de grande', () => {
+    const cube = buildPiece(CATALOG[0], 0, 0, 0, 0, 0x336699);
+    const keys = new Set(uniqueVertices(cube).map(vertexKey));
+    const turned = placeVertices(cube, keys, (p) => rotateAbout(p, [0.5, 0.5, 0.5], [0, 1, 0], Math.PI / 2), true)!;
+    const xs = uniqueVertices(turned).map((p) => p[0]);
+    expect(Math.max(...xs) - Math.min(...xs)).toBeCloseTo(1, 6);
   });
 });

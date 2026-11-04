@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import type { Piece, Vec3 } from '../core/piece';
 import { reflections, type Symmetry } from '../core/symmetry';
 import { triangulateFace } from '../core/convex';
-import { addFace, deleteFaces, deleteVertices, extrudeFaces, facesWithin, flipFaces, mergeVertices, moveVertices, placeVertices, setFaceFlags, splitEdge, uniqueVertices, vertexKey } from '../core/vertices';
+import { addFace, deleteFaces, deleteVertices, extrudeFaces, facesWithin, flipFaces, mergeVertices, moveVertices, placeVertices, rotateAbout, scaleAbout, setFaceFlags, splitEdge, uniqueVertices, vertexKey } from '../core/vertices';
 import type { ModelScene } from '../scene';
 
 /** Paso de la rejilla de imán, en celdas. */
@@ -17,6 +17,9 @@ const FINE_STEP = 1 / 16;
 const PICK_RADIUS = 12;
 /** Con más vértices que estos no se dibujan todos (solo los de la selección). */
 const MAX_VISIBLE = 4000;
+/** Con imán, el giro avanza de 15° en 15° y la escala de 0,05 en 0,05. */
+const ROTATE_STEP = Math.PI / 12;
+const SCALE_STEP = 0.05;
 /** Lo que hay que mover el cursor antes de que un clic pase a ser un arrastre. */
 const DRAG_THRESHOLD = 3;
 
@@ -50,6 +53,8 @@ interface Target {
   keys: Set<string>;
   /** Dirección del desplazamiento para esta pieza: la identidad, o el reflejo si es la imagen en espejo de la elegida. */
   dir: (v: Vec3) => Vec3;
+  /** Reflejo de un punto, si esta pieza es la imagen en espejo de la elegida; sin él, la identidad. */
+  mirror?: (p: Vec3) => Vec3;
 }
 
 const sameId = (made: Piece, old: Piece): Piece => ({ ...made, id: old.id });
@@ -78,6 +83,19 @@ export class MeshTool {
   } | null = null;
   private axisLock: number | null = null;
 
+  /** Giro o escala en curso: se maneja moviendo el ratón (sin pulsar) y se confirma con un clic o Intro. */
+  private modal: {
+    kind: 'rotate' | 'scale';
+    targets: Target[];
+    pivot: Vec3;
+    axis: number | null;
+    /** Posición del cursor al empezar (se fija con el primer movimiento) y lo que valía entonces. */
+    start: { x: number; y: number; angle: number; distance: number } | null;
+    last: { x: number; y: number; free: boolean } | null;
+    value: number;
+    moved: boolean;
+  } | null = null;
+
   constructor(private readonly host: MeshToolHost) {
     this.points.renderOrder = 999;
     this.points.frustumCulled = false;
@@ -98,7 +116,7 @@ export class MeshTool {
   }
 
   get isDragging(): boolean {
-    return this.drag !== null || this.marquee !== null;
+    return this.drag !== null || this.marquee !== null || this.modal !== null;
   }
 
   get count(): number {
@@ -229,6 +247,14 @@ export class MeshTool {
   // ——— Ratón ———
 
   private down(e: PointerEvent): void {
+    if (this.active && this.modal) {
+      // Mientras se gira o escala, el clic izquierdo confirma y el derecho cancela.
+      e.stopImmediatePropagation();
+      e.preventDefault();
+      if (e.button === 0) this.finishModal(true);
+      else if (e.button === 2) this.finishModal(false);
+      return;
+    }
     if (!this.active || e.button !== 0) return;
     if (e.altKey && !this.vertexAt(e.clientX, e.clientY)) {
       // Alt+clic sobre una arista le pone un vértice nuevo (en cuartos de su largo; Ctrl lo coloca donde se hizo clic).
@@ -284,13 +310,13 @@ export class MeshTool {
     const identity = (v: Vec3): Vec3 => v;
     const targets: Target[] = [];
     const taken = new Map<number, Set<string>>();
-    const add = (piece: Piece, keys: Set<string>, dir: (v: Vec3) => Vec3): void => {
+    const add = (piece: Piece, keys: Set<string>, dir: (v: Vec3) => Vec3, mirror?: (p: Vec3) => Vec3): void => {
       const already = taken.get(piece.id) ?? new Set<string>();
       const fresh = new Set([...keys].filter((key) => !already.has(key)));
       if (fresh.size === 0) return;
       for (const key of fresh) already.add(key);
       taken.set(piece.id, already);
-      targets.push({ original: piece, keys: fresh, dir });
+      targets.push({ original: piece, keys: fresh, dir, mirror });
     };
     for (const [id, keys] of this.selection) {
       const piece = this.host.model.get(id);
@@ -306,7 +332,7 @@ export class MeshTool {
         }
         for (const piece of this.host.model.editable()) {
           const found = new Set(uniqueVertices(piece).map(vertexKey).filter((key) => images.has(key)));
-          if (found.size > 0) add(piece, found, reflection.dir);
+          if (found.size > 0) add(piece, found, reflection.dir, reflection.point);
         }
       }
     }
@@ -323,6 +349,11 @@ export class MeshTool {
 
   private move(e: PointerEvent): void {
     if (!this.active) return;
+    if (this.modal) {
+      this.modal.last = { x: e.clientX, y: e.clientY, free: e.ctrlKey || e.metaKey };
+      this.updateModal();
+      return;
+    }
     if (this.marquee) {
       this.drawMarquee(e);
       return;
@@ -428,6 +459,7 @@ export class MeshTool {
   }
 
   cancel(): void {
+    if (this.modal) this.finishModal(false);
     if (this.drag) this.finishDrag(false);
     if (this.marquee) {
       this.marquee = null;
@@ -478,6 +510,19 @@ export class MeshTool {
   handleKey(e: KeyboardEvent): boolean {
     if (!this.active) return false;
     const key = e.key.toLowerCase();
+    if (this.modal) {
+      if (key === 'x' || key === 'y' || key === 'z') {
+        const axis = 'xyz'.indexOf(key);
+        this.modal.axis = this.modal.axis === axis ? null : axis;
+        this.updateModal();
+      } else if (key === 'escape') this.finishModal(false);
+      else if (key === 'enter') this.finishModal(true);
+      return true;
+    }
+    if (!this.drag && this.count > 0 && !e.ctrlKey && !e.metaKey && !e.altKey && (key === 'r' || key === 't')) {
+      this.beginTransform(key === 'r' ? 'rotate' : 'scale');
+      return true;
+    }
     if (this.drag && (key === 'x' || key === 'y' || key === 'z')) {
       const axis = 'xyz'.indexOf(key);
       this.axisLock = this.axisLock === axis ? null : axis;
@@ -499,6 +544,123 @@ export class MeshTool {
       return true;
     }
     return false;
+  }
+
+  /** Empieza a girar (R) o escalar (T) los vértices elegidos alrededor de su centro; se maneja moviendo el ratón. */
+  beginTransform(kind: 'rotate' | 'scale'): void {
+    if (this.drag || this.modal) return;
+    const targets = this.buildTargets();
+    if (targets.length === 0) {
+      this.host.status('Elige algún vértice para girarlo o escalarlo');
+      return;
+    }
+    // El pivote es el centro de la caja de los vértices elegidos (sin contar las imágenes en espejo).
+    const min: Vec3 = [Infinity, Infinity, Infinity];
+    const max: Vec3 = [-Infinity, -Infinity, -Infinity];
+    for (const target of targets) {
+      if (target.mirror) continue;
+      for (const p of uniqueVertices(target.original)) {
+        if (!target.keys.has(vertexKey(p))) continue;
+        for (let k = 0; k < 3; k++) {
+          min[k] = Math.min(min[k], p[k]);
+          max[k] = Math.max(max[k], p[k]);
+        }
+      }
+    }
+    const pivot = [0, 1, 2].map((k) => (min[k] + max[k]) / 2) as Vec3;
+    this.modal = { kind, targets, pivot, axis: null, start: null, last: null, value: kind === 'rotate' ? 0 : 1, moved: false };
+    this.host.setOrbit(false);
+    this.host.status(`${kind === 'rotate' ? 'Girar' : 'Escalar'}: mueve el ratón · X/Y/Z fija el eje · Ctrl sin imán · clic o Intro confirma · Esc cancela`);
+  }
+
+  /** Eje de giro: el del mundo elegido, o el más parecido a la dirección de la cámara. */
+  private rotationAxis(): Vec3 {
+    const modal = this.modal!;
+    if (modal.axis !== null) return [0, 1, 2].map((k) => (k === modal.axis ? 1 : 0)) as Vec3;
+    const direction = this.host.camera.getWorldDirection(new THREE.Vector3());
+    const axis = this.worldAxis(direction);
+    return axis;
+  }
+
+  private updateModal(): void {
+    const modal = this.modal;
+    if (!modal || !modal.last) return;
+    const centre = this.screenOf(modal.pivot);
+    const { x, y, free } = modal.last;
+    const angle = Math.atan2(y - centre.y, x - centre.x);
+    const distance = Math.max(Math.hypot(x - centre.x, y - centre.y), 8);
+    if (!modal.start) {
+      // El primer movimiento fija el punto de partida: así no hay salto al empezar.
+      modal.start = { x, y, angle, distance };
+      return;
+    }
+    let map: (p: Vec3) => Vec3;
+    if (modal.kind === 'rotate') {
+      const axis = this.rotationAxis();
+      const toward = this.host.camera.getWorldDirection(new THREE.Vector3());
+      // Si el eje apunta hacia quien mira, el giro positivo se ve en sentido contrario al de las agujas; el cursor se mide al revés.
+      const sign = axis[0] * toward.x + axis[1] * toward.y + axis[2] * toward.z < 0 ? -1 : 1;
+      let theta = (angle - modal.start.angle) * sign;
+      if (!free) theta = Math.round(theta / ROTATE_STEP) * ROTATE_STEP;
+      modal.value = theta;
+      map = (p) => rotateAbout(p, modal.pivot, axis, theta);
+      this.host.status(`Girar ${Math.round((theta * 180) / Math.PI)}°${modal.axis === null ? '' : ' en ' + 'XYZ'[modal.axis]}`);
+    } else {
+      let factor = distance / modal.start.distance;
+      if (!free) factor = Math.round(factor / SCALE_STEP) * SCALE_STEP;
+      factor = Math.max(factor, SCALE_STEP);
+      modal.value = factor;
+      const factors = [0, 1, 2].map((k) => (modal.axis === null || modal.axis === k ? factor : 1)) as Vec3;
+      map = (p) => scaleAbout(p, modal.pivot, factors);
+      this.host.status(`Escalar ×${factor.toFixed(2)}${modal.axis === null ? '' : ' en ' + 'XYZ'[modal.axis]}`);
+    }
+    modal.moved = true;
+    this.previewMap(modal.targets, map);
+  }
+
+  /** Coloca las piezas en su estado inicial con cada vértice elegido llevado por `map` (las imágenes en espejo reciben la transformación reflejada). */
+  private previewMap(targets: Target[], map: (p: Vec3) => Vec3): void {
+    const placed = (target: Target) => (p: Vec3): Vec3 => (target.mirror ? target.mirror(map(target.mirror(p))) : map(p));
+    for (const target of targets) {
+      if (!this.selection.has(target.original.id)) continue;
+      const to = placed(target);
+      this.selection.set(target.original.id, new Set(uniqueVertices(target.original).filter((p) => target.keys.has(vertexKey(p))).map((p) => vertexKey(to(p)))));
+    }
+    const removed: Piece[] = [];
+    const added: Piece[] = [];
+    for (const target of targets) {
+      const current = this.host.model.get(target.original.id);
+      const result = placeVertices(target.original, target.keys, placed(target), true);
+      if (current) removed.push(current);
+      if (result) added.push(result);
+    }
+    this.host.model.preview({ added, removed });
+  }
+
+  private finishModal(commit: boolean): void {
+    const modal = this.modal;
+    if (!modal) return;
+    this.modal = null;
+    this.host.setOrbit(true);
+    if (!modal.moved) {
+      this.host.status('');
+      return;
+    }
+    if (!commit) {
+      this.restore(modal.targets);
+      this.host.status('Cancelado');
+      return;
+    }
+    const finals: Piece[] = [];
+    const originals: Piece[] = [];
+    for (const target of modal.targets) {
+      const current = this.host.model.get(target.original.id);
+      if (current) finals.push(current);
+      originals.push(target.original);
+    }
+    this.host.model.commitPreview({ added: finals, removed: originals });
+    this.refresh();
+    this.host.status(modal.kind === 'rotate' ? 'Giro aplicado' : 'Escala aplicada');
   }
 
   /** Eje del mundo que más se parece a una dirección de pantalla. */

@@ -1987,6 +1987,8 @@ meshActionsEl.querySelectorAll<HTMLButtonElement>('button[data-mesh]').forEach((
     else if (action === 'merge') meshTool.mergeSelected();
     else if (action === 'delete') meshTool.deleteSelected();
     else if (action === 'snap') meshTool.snapToGrid();
+    else if (action === 'rotate') meshTool.beginTransform('rotate');
+    else if (action === 'scale') meshTool.beginTransform('scale');
     else if (action === 'face') meshTool.createFace();
     else if (action === 'delface') meshTool.deleteFacesSelected();
     else if (action === 'flip') meshTool.flipSelected();
@@ -3415,6 +3417,7 @@ const GUIDE: Record<Mode, [string, string][]> = {
     ['Ctrl+arrastrar en vacío', 'recuadro: elige todos los vértices dentro, también los de detrás'],
     ['Flechas', 'empujar los vértices elegidos un paso en la dirección de pantalla (Ctrl: paso fino)'],
     ['Supr', 'quitar los vértices elegidos'],
+    ['R / T', 'girar / escalar los vértices elegidos alrededor de su centro: mueve el ratón, X/Y/Z fija el eje, clic confirma, Esc cancela (Ctrl: sin imán)'],
     ['Shift+clic en una cara', 'elegir todos sus vértices (se suman a los elegidos)'],
     ['Doble cara · Sin sombra', 'casillas del panel: afectan a las caras cuyos vértices están todos elegidos'],
     ['Alt+clic en una arista', 'ponerle un vértice nuevo (en cuartos; Ctrl: donde hagas clic)'],

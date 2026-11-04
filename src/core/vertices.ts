@@ -258,3 +258,18 @@ export function setFaceFlags(piece: Piece, indices: ReadonlySet<number>, flag: n
   if (piece.layer !== undefined) result.layer = piece.layer;
   return result;
 }
+
+/** Gira un punto `angle` radianes alrededor del eje `axis` (unitario) que pasa por `pivot`, con la regla de la mano derecha. */
+export function rotateAbout(p: Vec3, pivot: Vec3, axis: Vec3, angle: number): Vec3 {
+  const v: Vec3 = [p[0] - pivot[0], p[1] - pivot[1], p[2] - pivot[2]];
+  const cos = Math.cos(angle);
+  const sin = Math.sin(angle);
+  const dot = axis[0] * v[0] + axis[1] * v[1] + axis[2] * v[2];
+  const cross: Vec3 = [axis[1] * v[2] - axis[2] * v[1], axis[2] * v[0] - axis[0] * v[2], axis[0] * v[1] - axis[1] * v[0]];
+  return [0, 1, 2].map((k) => pivot[k] + v[k] * cos + cross[k] * sin + axis[k] * dot * (1 - cos)) as Vec3;
+}
+
+/** Escala un punto respecto a `pivot`, con un factor por eje. */
+export function scaleAbout(p: Vec3, pivot: Vec3, factors: Vec3): Vec3 {
+  return [0, 1, 2].map((k) => pivot[k] + (p[k] - pivot[k]) * factors[k]) as Vec3;
+}
