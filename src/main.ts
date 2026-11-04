@@ -2896,8 +2896,12 @@ async function openProject(file: File, handle: FileHandle | null = null): Promis
     // Las piezas abiertas traen su capa: las nuevas no deben tomar la activa de antes.
     model.activeLayer = 1;
     stopAnimationView();
+    const previousAnimation = animation;
     model.apply({ added: loaded, removed: model.all(), marksAdded: marks, marksRemoved: model.points() });
     setAnimation(savedAnimation ?? emptyAnimation());
+    // Abrir reemplaza también la animación: si se deshace lo de abrir, vuelve la de antes.
+    if (animation !== previousAnimation) animationUndo.push({ before: previousAnimation, after: animation, depth: model.undoDepth - 1, serial: model.serial });
+    animationRedo = [];
     layers.load(savedLayers, loaded);
     applyLayerState();
     fileHandle = handle;
@@ -3148,7 +3152,7 @@ helpModal.addEventListener('pointerdown', (e) => {
 function redo(): void {
   const tool = mode === 'cut' ? cutTool : mode === 'fill' ? fillTool : mode === 'outline' ? outlineTool : null;
   if (tool?.hasRedo) tool.redoPoint();
-  else model.redo();
+  else if (!redoAnimationStep()) model.redo();
 }
 
 // Barra de ayuda contextual: dice qué se puede hacer ahora y cambia con el modo, la fase y la selección.
@@ -3174,7 +3178,7 @@ const MODE_INFO: Record<Mode, { name: string; color: string }> = {
 const hasSelection = (): boolean => selection.size > 0;
 const commands: Command[] = [
   ...(Object.keys(MODE_INFO) as Mode[]).map((name): Command => ({ name: `Herramienta: ${MODE_INFO[name].name}`, keywords: 'modo', run: () => setMode(name) })),
-  { name: 'Deshacer', shortcut: 'Ctrl+Z', run: () => model.undo() },
+  { name: 'Deshacer', shortcut: 'Ctrl+Z', run: () => undo() },
   { name: 'Rehacer', shortcut: 'Ctrl+Y', run: redo },
   { name: 'Copiar', shortcut: 'Ctrl+C', enabled: hasSelection, run: copySelected },
   { name: 'Pegar', shortcut: 'Ctrl+V', enabled: () => clipboard.length > 0, run: pasteClipboard },
@@ -3797,7 +3801,7 @@ window.addEventListener('keydown', (e) => {
       tool.undoPoint();
       return;
     }
-    model.undo();
+    undo();
     return;
   }
   if ((e.ctrlKey || e.metaKey) && key === 's') {
@@ -4065,6 +4069,63 @@ function setAnimation(next: Animation): void {
   refreshAnimationPanel();
 }
 
+/**
+ * Historial de la animación, entrelazado con el del modelo: cada paso recuerda cuántos cambios del modelo había (`depth`) y así
+ * Ctrl+Z deshace en el orden en que se hicieron las cosas, sean piezas o claves.
+ */
+interface AnimationStep {
+  before: Animation;
+  after: Animation;
+  depth: number;
+  /** En un paso deshecho, el contador del modelo en ese momento: si cambia, ya no se puede rehacer. */
+  serial: number;
+}
+const animationUndo: AnimationStep[] = [];
+let animationRedo: AnimationStep[] = [];
+
+function applyAnimation(next: Animation): void {
+  animation = next;
+  animFrame = Math.min(animFrame, animation.frames - 1);
+  touchAnimation();
+  showAnimationFrame();
+  refreshAnimationPanel();
+}
+
+/** Cambia la animación como un paso que se puede deshacer. */
+function editAnimation(next: Animation): void {
+  if (next === animation) return;
+  animationUndo.push({ before: animation, after: next, depth: model.undoDepth, serial: model.serial });
+  animationRedo = [];
+  applyAnimation(next);
+}
+
+/** Deshace un paso de animación si fue lo último que se hizo; devuelve false si toca deshacer el modelo. */
+function undoAnimationStep(): boolean {
+  const step = animationUndo[animationUndo.length - 1];
+  if (!step || step.depth !== model.undoDepth) return false;
+  animationUndo.pop();
+  // Lo deshecho solo se puede rehacer mientras no haya un cambio nuevo en el modelo: se anota con el contador de ahora.
+  animationRedo.push({ ...step, serial: model.serial });
+  applyAnimation(step.before);
+  statusEl.textContent = 'Animación: cambio deshecho';
+  return true;
+}
+
+function redoAnimationStep(): boolean {
+  animationRedo = animationRedo.filter((step) => step.serial === model.serial);
+  const step = animationRedo[animationRedo.length - 1];
+  if (!step || step.depth !== model.undoDepth) return false;
+  animationRedo.pop();
+  animationUndo.push(step);
+  applyAnimation(step.after);
+  statusEl.textContent = 'Animación: cambio rehecho';
+  return true;
+}
+
+function undo(): void {
+  if (!undoAnimationStep()) model.undo();
+}
+
 function poseFromInputs(): Pose {
   const n = (name: string, fallback: number): number => {
     const v = Number(animPoseInput(name).value);
@@ -4077,10 +4138,7 @@ function poseFromInputs(): Pose {
 function writeKey(): void {
   const group = animGroup();
   if (!group) return;
-  animation = setKey(animation, group.id, animFrame, poseFromInputs());
-  touchAnimation();
-  showAnimationFrame();
-  refreshAnimationPanel();
+  editAnimation(setKey(animation, group.id, animFrame, poseFromInputs()));
 }
 
 animSlider.addEventListener('input', () => {
@@ -4109,19 +4167,12 @@ animEl('animSetKey').addEventListener('click', writeKey);
 animEl('animRemoveKey').addEventListener('click', () => {
   const group = animGroup();
   if (!group) return;
-  animation = removeKey(animation, group.id, animFrame);
-  touchAnimation();
-  showAnimationFrame();
-  refreshAnimationPanel();
+  editAnimation(removeKey(animation, group.id, animFrame));
 });
 for (const input of animPoseInputs) input.addEventListener('change', writeKey);
 for (const input of [animFramesInput, animFpsInput]) {
   input.addEventListener('change', () => {
-    animation = resizeAnimation(animation, Math.min(Number(animFramesInput.value) || 24, MAX_FRAMES), Math.min(Number(animFpsInput.value) || 12, MAX_FPS));
-    animFrame = Math.min(animFrame, animation.frames - 1);
-    touchAnimation();
-    showAnimationFrame();
-    refreshAnimationPanel();
+    editAnimation(resizeAnimation(animation, Math.min(Number(animFramesInput.value) || 24, MAX_FRAMES), Math.min(Number(animFpsInput.value) || 12, MAX_FPS)));
   });
 }
 // Cualquier cambio del modelo termina la vista previa; al elegir otro grupo se muestran sus claves.

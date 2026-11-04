@@ -10,6 +10,16 @@ export class ModelScene {
   private undoStack: Change[] = [];
   private redoStack: Change[] = [];
 
+  /** Cuántos cambios se pueden deshacer y rehacer ahora. */
+  get undoDepth(): number {
+    return this.undoStack.length;
+  }
+  get redoDepth(): number {
+    return this.redoStack.length;
+  }
+  /** Sube con cada cambio nuevo (no al deshacer ni rehacer): sirve para saber si lo rehacible sigue valiendo. */
+  serial = 0;
+
   /** Capa en la que quedan las piezas nuevas que no traen una (la activa del panel). */
   activeLayer = 1;
   /** Dice si una pieza está bloqueada: se ve y cuenta para choques e imanes, pero las herramientas de edición no la tocan. */
@@ -49,6 +59,7 @@ export class ModelScene {
     this.write(change);
     this.undoStack.push(change);
     this.redoStack = [];
+    this.serial++;
   }
 
   /**
@@ -64,6 +75,7 @@ export class ModelScene {
     if (change.added.length === 0 && change.removed.length === 0) return;
     this.undoStack.push(change);
     this.redoStack = [];
+    this.serial++;
   }
 
   undo(): void {
