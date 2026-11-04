@@ -158,86 +158,6 @@
             <button id="saveAs" title="Ctrl+Alt+S">Guardar como…</button>
             <input type="file" id="openFile" accept=".json,application/json" hidden />
           </div>
-          <div class="row">
-            <select id="exportMode" title="Cómo se agrupan las piezas en el GLB">
-              <option value="merged">Unión por color (sin interior)</option>
-              <option value="perLayer">Una unión por capa</option>
-              <option value="perPiece">Una pieza por objeto</option>
-            </select>
-            <button id="export">Exportar GLB</button>
-            <button id="exportObj" title="OBJ con el material (.mtl) y, si hay píxeles pintados, el atlas de texturas (.png): tres archivos que deben quedar juntos">Exportar OBJ</button>
-          </div>
-          <div class="row" title="Imágenes de píxel art del modelo, sin suavizado y con fondo transparente">
-            <select id="spriteCamera" title="Cámara">
-              <option value="isometric">Isométrica</option>
-              <option value="side">Lateral</option>
-              <option value="top">Cenital</option>
-            </select>
-            <select id="spriteViews" title="Direcciones alrededor del modelo">
-              <option value="1">1 vista</option>
-              <option value="4" selected>4 vistas</option>
-              <option value="8">8 vistas</option>
-              <option value="16">16 vistas</option>
-            </select>
-            <select id="spriteSize" title="Tamaño máximo en píxeles">
-              <option value="16">16 px</option>
-              <option value="32">32 px</option>
-              <option value="48">48 px</option>
-              <option value="64" selected>64 px</option>
-              <option value="128">128 px</option>
-              <option value="256">256 px</option>
-            </select>
-          </div>
-          <div class="row">
-            <select id="spriteShading" title="Plano: colores tal cual. Sombreado: luz y sombra por cara">
-              <option value="shaded">Sombreado</option>
-              <option value="flat">Plano</option>
-            </select>
-            <label title="Borde de un píxel alrededor del dibujo"><input type="checkbox" id="spriteOutline" /> Contorno</label>
-            <label title="Todas las vistas en un solo PNG"><input type="checkbox" id="spriteSheet" checked /> Hoja</label>
-            <button id="exportSprites">Exportar sprites</button>
-          </div>
-        </section>
-        <section>
-          <h4><span class="title">Piezas</span><input type="color" id="color" value="#d9534f" title="Color de la pieza" /></h4>
-          <div class="row grid" id="pieces"></div>
-          <div class="row" id="placeSize" title="Escala de la pieza al colocarla; en la lámina, el lado">
-            <small>Tamaño</small>
-            <button data-place-size="1">1</button>
-            <button data-place-size="0.75">¾</button>
-            <button data-place-size="0.5">½</button>
-            <button data-place-size="0.25">¼</button>
-            <input type="number" id="placeSizeInput" min="0.1" max="4" step="0.05" placeholder="otro" title="Escala exacta (1 = tamaño normal)" />
-          </div>
-          <div class="row" id="slopeRow" title="Cómo se coloca una pieza sobre una cara inclinada, como el techo de rampas">
-            <label>En pendientes
-              <select id="slopeMode">
-                <option value="seat">Asentada (vertical, base cortada)</option>
-                <option value="perp">Perpendicular a la cara</option>
-                <option value="grid">A la rejilla (como antes)</option>
-              </select>
-            </label>
-          </div>
-          <div class="row" id="slabThick" title="Grosor de la lámina, en celdas" hidden>
-            <small>Grosor</small>
-            <button data-thick="0.125">⅛</button>
-            <button data-thick="0.25">¼</button>
-            <button data-thick="0.5">½</button>
-            <input type="number" id="slabThickInput" min="0.02" max="4" step="0.025" placeholder="otro" title="Grosor exacto en celdas" />
-          </div>
-          <div id="recentColors" title="Últimos 10 colores usados: clic para volver a elegir uno"></div>
-          <div class="row" id="paletteRow">
-            <select id="paletteSel" title="Paleta que se muestra: los últimos colores o una guardada"></select>
-            <button id="paletteSave" title="Guarda los últimos colores como una paleta con nombre">Guardar</button>
-            <button id="paletteImport" title="Abre un archivo .hex (un color por línea, como los de Lospec) como paleta">Importar</button>
-            <button id="paletteExport" title="Guarda la paleta mostrada como archivo .hex">Exportar</button>
-            <button id="paletteDel" title="Borra la paleta mostrada">✕</button>
-            <input type="file" id="paletteFile" accept=".hex,.txt,text/plain" hidden />
-          </div>
-          <div class="row" id="triRow">
-            <small id="triStats"></small>
-            <label title="Presupuesto de triángulos: se pone en rojo al pasarlo (un personaje PS1 ronda 300–800)">Máx <input type="number" id="triBudget" min="0" step="100" value="800" /></label>
-          </div>
         </section>
         <section>
           <h4><span class="title">Herramientas</span></h4>
@@ -380,6 +300,50 @@
             <label title="Dónde corta, contando desde la cara: 0,5 es por la mitad">Corte <input type="number" id="faceFraction" min="0.05" max="0.95" step="0.05" value="0.5" /></label>
           </div>
         </section>
+        <section>
+          <h4><span class="title">Piezas</span></h4>
+          <div class="row grid" id="pieces"></div>
+          <div class="row" id="placeSize" title="Escala de la pieza al colocarla; en la lámina, el lado">
+            <small>Tamaño</small>
+            <button data-place-size="1">1</button>
+            <button data-place-size="0.75">¾</button>
+            <button data-place-size="0.5">½</button>
+            <button data-place-size="0.25">¼</button>
+            <input type="number" id="placeSizeInput" min="0.1" max="4" step="0.05" placeholder="otro" title="Escala exacta (1 = tamaño normal)" />
+          </div>
+          <div class="row" id="slopeRow" title="Cómo se coloca una pieza sobre una cara inclinada, como el techo de rampas">
+            <label>En pendientes
+              <select id="slopeMode">
+                <option value="seat">Asentada (vertical, base cortada)</option>
+                <option value="perp">Perpendicular a la cara</option>
+                <option value="grid">A la rejilla (como antes)</option>
+              </select>
+            </label>
+          </div>
+          <div class="row" id="slabThick" title="Grosor de la lámina, en celdas" hidden>
+            <small>Grosor</small>
+            <button data-thick="0.125">⅛</button>
+            <button data-thick="0.25">¼</button>
+            <button data-thick="0.5">½</button>
+            <input type="number" id="slabThickInput" min="0.02" max="4" step="0.025" placeholder="otro" title="Grosor exacto en celdas" />
+          </div>
+          <div class="row" id="triRow">
+            <small id="triStats"></small>
+            <label title="Presupuesto de triángulos: se pone en rojo al pasarlo (un personaje PS1 ronda 300–800)">Máx <input type="number" id="triBudget" min="0" step="100" value="800" /></label>
+          </div>
+        </section>
+        <section>
+          <h4><span class="title">Colores</span><input type="color" id="color" value="#d9534f" title="Color de la pieza" /></h4>
+          <div id="recentColors" title="Últimos 10 colores usados: clic para volver a elegir uno"></div>
+          <div class="row" id="paletteRow">
+            <select id="paletteSel" title="Paleta que se muestra: los últimos colores o una guardada"></select>
+            <button id="paletteSave" title="Guarda los últimos colores como una paleta con nombre">Guardar</button>
+            <button id="paletteImport" title="Abre un archivo .hex (un color por línea, como los de Lospec) como paleta">Importar</button>
+            <button id="paletteExport" title="Guarda la paleta mostrada como archivo .hex">Exportar</button>
+            <button id="paletteDel" title="Borra la paleta mostrada">✕</button>
+            <input type="file" id="paletteFile" accept=".hex,.txt,text/plain" hidden />
+          </div>
+        </section>
         <section id="layers">
           <h4><span class="title">Capas</span></h4>
           <div id="layerList"></div>
@@ -428,6 +392,14 @@
           </div>
         </section>
         <section>
+          <h4><span class="title">Simetría</span></h4>
+          <div class="row" id="symRow" title="Lo que hagas se repite reflejado en los ejes activos">
+            <label><input type="checkbox" data-sym="x" /> X</label><input type="number" data-symc="x" step="0.5" title="Posición del plano X" />
+            <label><input type="checkbox" data-sym="y" /> Y</label><input type="number" data-symc="y" step="0.5" title="Altura del plano Y" />
+            <label><input type="checkbox" data-sym="z" /> Z</label><input type="number" data-symc="z" step="0.5" title="Posición del plano Z" />
+          </div>
+        </section>
+        <section>
           <h4><span class="title">Vista</span></h4>
           <div class="row" id="views">
             <button data-view="+x">+X</button><button data-view="-x">−X</button>
@@ -449,11 +421,45 @@
           </div>
         </section>
         <section>
-          <h4><span class="title">Simetría</span></h4>
-          <div class="row" id="symRow" title="Lo que hagas se repite reflejado en los ejes activos">
-            <label><input type="checkbox" data-sym="x" /> X</label><input type="number" data-symc="x" step="0.5" title="Posición del plano X" />
-            <label><input type="checkbox" data-sym="y" /> Y</label><input type="number" data-symc="y" step="0.5" title="Altura del plano Y" />
-            <label><input type="checkbox" data-sym="z" /> Z</label><input type="number" data-symc="z" step="0.5" title="Posición del plano Z" />
+          <h4><span class="title">Exportar</span></h4>
+          <div class="row">
+            <select id="exportMode" title="Cómo se agrupan las piezas en el GLB">
+              <option value="merged">Unión por color (sin interior)</option>
+              <option value="perLayer">Una unión por capa</option>
+              <option value="perPiece">Una pieza por objeto</option>
+            </select>
+            <button id="export">Exportar GLB</button>
+            <button id="exportObj" title="OBJ con el material (.mtl) y, si hay píxeles pintados, el atlas de texturas (.png): tres archivos que deben quedar juntos">Exportar OBJ</button>
+          </div>
+          <div class="row" title="Imágenes de píxel art del modelo, sin suavizado y con fondo transparente">
+            <select id="spriteCamera" title="Cámara">
+              <option value="isometric">Isométrica</option>
+              <option value="side">Lateral</option>
+              <option value="top">Cenital</option>
+            </select>
+            <select id="spriteViews" title="Direcciones alrededor del modelo">
+              <option value="1">1 vista</option>
+              <option value="4" selected>4 vistas</option>
+              <option value="8">8 vistas</option>
+              <option value="16">16 vistas</option>
+            </select>
+            <select id="spriteSize" title="Tamaño máximo en píxeles">
+              <option value="16">16 px</option>
+              <option value="32">32 px</option>
+              <option value="48">48 px</option>
+              <option value="64" selected>64 px</option>
+              <option value="128">128 px</option>
+              <option value="256">256 px</option>
+            </select>
+          </div>
+          <div class="row">
+            <select id="spriteShading" title="Plano: colores tal cual. Sombreado: luz y sombra por cara">
+              <option value="shaded">Sombreado</option>
+              <option value="flat">Plano</option>
+            </select>
+            <label title="Borde de un píxel alrededor del dibujo"><input type="checkbox" id="spriteOutline" /> Contorno</label>
+            <label title="Todas las vistas en un solo PNG"><input type="checkbox" id="spriteSheet" checked /> Hoja</label>
+            <button id="exportSprites">Exportar sprites</button>
           </div>
         </section>
         <div class="row"><button id="helpOpen" title="Atajos y funciones (tecla ?)">Ayuda y atajos (?)</button></div>
