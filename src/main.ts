@@ -1969,6 +1969,10 @@ function syncMeshActions(): void {
   meshActionsEl.hidden = mode !== 'mesh';
   const count = meshTool.count;
   meshInfoEl.textContent = count === 0 ? 'Ningún vértice elegido' : `${count} vértice(s) elegidos`;
+  meshActionsEl.querySelectorAll<HTMLButtonElement>('button[data-meshaxis]').forEach((button) => {
+    const axis = button.dataset.meshaxis === 'free' ? null : Number(button.dataset.meshaxis);
+    button.classList.toggle('active', axis === meshTool.axis);
+  });
   meshActionsEl.querySelectorAll<HTMLButtonElement>('button[data-mesh]').forEach((button) => {
     button.disabled = button.dataset.mesh !== 'all' && count === 0;
   });
@@ -1983,6 +1987,12 @@ function syncMeshActions(): void {
 for (const [input, flag] of [[meshDoubleEl, FACE_DOUBLE], [meshUnlitEl, FACE_UNLIT], [meshBehindEl, FACE_BEHIND]] as const) {
   input.addEventListener('change', () => meshTool.setFaceFlag(flag, input.checked));
 }
+meshActionsEl.querySelectorAll<HTMLButtonElement>('button[data-meshaxis]').forEach((button) =>
+  button.addEventListener('click', () => {
+    button.blur();
+    meshTool.setAxis(button.dataset.meshaxis === 'free' ? null : Number(button.dataset.meshaxis));
+  }),
+);
 meshActionsEl.querySelectorAll<HTMLButtonElement>('button[data-mesh]').forEach((button) =>
   button.addEventListener('click', () => {
     button.blur();
@@ -3449,7 +3459,8 @@ const GUIDE: Record<Mode, [string, string][]> = {
   ],
   mesh: [
     ['Clic en un vértice', 'elegirlo (Shift: sumar a los elegidos)'],
-    ['Arrastrar un vértice', 'moverlo con imán a ¼ de celda; Ctrl lo suelta; X / Y / Z fija el eje'],
+    ['Arrastrar un vértice', 'moverlo con imán a ¼ de celda; Ctrl lo suelta'],
+    ['Mover en: Libre · X · Y · Z', 'botones del panel (o teclas X / Y / Z): limitan el movimiento a un eje y se mantienen hasta que los cambies; R, T y las deformaciones empiezan con ese eje'],
     ['Ctrl+arrastrar en vacío', 'recuadro: elige todos los vértices dentro, también los de detrás'],
     ['Flechas', 'empujar los vértices elegidos un paso en la dirección de pantalla (Ctrl: paso fino)'],
     ['Supr', 'quitar los vértices elegidos'],
