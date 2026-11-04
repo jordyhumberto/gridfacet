@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import type { Piece, Vec3 } from '../core/piece';
-import { reflections, type Symmetry } from '../core/symmetry';
+import { pieceKey, reflectPiece, reflections, type Reflection, type Symmetry } from '../core/symmetry';
 import { triangulateFace } from '../core/convex';
 import { addFace, deleteFaces, deleteVertices, extrudeFaces, facesWithin, flipFaces, mergeVertices, moveVertices, placeVertices, rotateAbout, scaleAbout, setFaceFlags, splitEdge, addVertexOnFace, taperPoint, twistPoint, bendPoint, uniqueVertices, vertexKey } from '../core/vertices';
 import type { ModelScene } from '../scene';
@@ -968,14 +968,44 @@ export class MeshTool {
       this.host.status('Ahí no cabe un vértice: apunta al interior de la cara, lejos de sus aristas');
       return false;
     }
-    const next = sameId(result.piece, face.piece);
+    const edits = new Map<number, Piece>([[face.piece.id, sameId(result.piece, face.piece)]]);
+    const images = this.mirrorImages(face.piece);
+    // Con simetría, el mismo vértice entra en la cara espejo de cada pieza imagen.
+    for (const { reflection, other } of images) {
+      const current = edits.get(other.id) ?? other;
+      const mirroredCorners = new Set(face.piece.faces[face.index].map((p) => vertexKey(reflection.point(p))));
+      const index = current.faces.findIndex((f) => f.length === mirroredCorners.size && f.every((p) => mirroredCorners.has(vertexKey(p))));
+      if (index < 0) continue;
+      const image = addVertexOnFace(current, index, reflection.point([face.point.x, face.point.y, face.point.z]));
+      if (image) edits.set(other.id, sameId(image.piece, other));
+    }
+    this.commitVertex(edits, face.piece.id, result.vertex);
+    this.host.status(images.length > 0 ? 'Vértice añadido en la cara y en su espejo: muévelo para deformar' : 'Vértice añadido en la cara: muévelo para deformar');
+    return true;
+  }
+
+  /** Las piezas que son la imagen en espejo de esta con la simetría activa (puede ser ella misma si es simétrica), con su reflexión. */
+  private mirrorImages(piece: Piece): { reflection: Reflection; other: Piece }[] {
+    const mirrors = reflections(this.host.symmetry());
+    if (mirrors.length === 0) return [];
+    const candidates = this.host.model.editable().map((p) => ({ p, key: pieceKey(p) }));
+    const out: { reflection: Reflection; other: Piece }[] = [];
+    for (const reflection of mirrors) {
+      const key = pieceKey(reflectPiece(piece, reflection));
+      const found = candidates.find((c) => c.key === key);
+      if (found) out.push({ reflection, other: found.p });
+    }
+    return out;
+  }
+
+  /** Aplica las piezas editadas de una sola vez, deja elegido el vértice nuevo de la pieza apuntada y lo anota para deshacer. */
+  private commitVertex(edits: Map<number, Piece>, pieceId: number, vertex: Vec3): void {
     const before = cloneSelection(this.selection);
-    this.host.model.apply({ added: [next], removed: [face.piece] });
-    this.selection = new Map([[face.piece.id, new Set([vertexKey(result.vertex)])]]);
+    const removed = [...edits.keys()].map((id) => this.host.model.get(id)).filter((p): p is Piece => !!p);
+    this.host.model.apply({ added: [...edits.values()], removed });
+    this.selection = new Map([[pieceId, new Set([vertexKey(vertex)])]]);
     this.record(before);
     this.refresh();
-    this.host.status('Vértice añadido en la cara: muévelo para deformar');
-    return true;
   }
 
   private splitEdgeAt(e: Pick<PointerEvent, 'clientX' | 'clientY' | 'ctrlKey' | 'metaKey'>): boolean {
@@ -1017,12 +1047,14 @@ export class MeshTool {
     else t = Math.min(0.95, Math.max(0.05, t));
     const result = splitEdge(piece, a, b, t);
     if (!result) return false;
-    const next = sameId(result.piece, piece);
-    const before = cloneSelection(this.selection);
-    this.host.model.apply({ added: [next], removed: [piece] });
-    this.selection = new Map([[piece.id, new Set([vertexKey(result.vertex)])]]);
-    this.record(before);
-    this.refresh();
+    const edits = new Map<number, Piece>([[piece.id, sameId(result.piece, piece)]]);
+    // Con simetría, la arista espejo de cada pieza imagen recibe el vértice en el punto reflejado.
+    for (const { reflection, other } of this.mirrorImages(piece)) {
+      const current = edits.get(other.id) ?? other;
+      const image = splitEdge(current, reflection.point(a), reflection.point(b), t);
+      if (image) edits.set(other.id, sameId(image.piece, other));
+    }
+    this.commitVertex(edits, piece.id, result.vertex);
     return true;
   }
 
