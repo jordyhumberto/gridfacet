@@ -25,6 +25,9 @@ export class ModelScene {
   /** Dice si una pieza está bloqueada: se ve y cuenta para choques e imanes, pero las herramientas de edición no la tocan. */
   isLocked: (piece: Piece) => boolean = () => false;
 
+  /** Se llama cuando termina un deshacer o un rehacer (con el historial ya en su sitio). */
+  onHistory: (kind: 'undo' | 'redo') => void = () => {};
+
   /** Se llama con el cambio efectivo cada vez que el contenido se modifica. */
   onChange: (change: Change) => void = () => {};
 
@@ -83,6 +86,7 @@ export class ModelScene {
     if (!change) return;
     this.write({ added: change.removed, removed: change.added, marksAdded: change.marksRemoved, marksRemoved: change.marksAdded });
     this.redoStack.push(change);
+    this.onHistory('undo');
   }
 
   redo(): void {
@@ -90,6 +94,7 @@ export class ModelScene {
     if (!change) return;
     this.write(change);
     this.undoStack.push(change);
+    this.onHistory('redo');
   }
 
   private write(change: Change): void {
