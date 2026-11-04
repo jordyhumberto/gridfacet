@@ -112,6 +112,52 @@ export function splitEdge(piece: Piece, a: Vec3, b: Vec3, t: number): { piece: P
   return found && result ? { piece: result, vertex } : null;
 }
 
+/**
+ * Pone un vértice nuevo dentro de una cara, en el punto dado (se proyecta sobre su plano). La cara se parte en triángulos que salen del vértice,
+ * cada uno con el color, las propiedades y los píxeles de la cara original. Devuelve null si el punto cae sobre una arista o un vértice
+ * (ahí sale una cara sin superficie) o la cara no tiene plano.
+ */
+export function addVertexOnFace(piece: Piece, faceIndex: number, point: Vec3): { piece: Piece; vertex: Vec3 } | null {
+  const face = piece.faces[faceIndex];
+  if (!face) return null;
+  const n = faceNormal(face);
+  const length = Math.hypot(...n);
+  if (length < 1e-12) return null;
+  const unit: Vec3 = [n[0] / length, n[1] / length, n[2] / length];
+  const off = (point[0] - face[0][0]) * unit[0] + (point[1] - face[0][1]) * unit[1] + (point[2] - face[0][2]) * unit[2];
+  const vertex: Vec3 = [point[0] - unit[0] * off, point[1] - unit[1] * off, point[2] - unit[2] * off];
+  // Cada triángulo del abanico tiene que tener superficie: el punto no puede estar casi sobre ninguna arista de la cara.
+  for (let i = 0; i < face.length; i++) {
+    const a = face[i];
+    const b = face[(i + 1) % face.length];
+    const e: Vec3 = [b[0] - a[0], b[1] - a[1], b[2] - a[2]];
+    const w: Vec3 = [vertex[0] - a[0], vertex[1] - a[1], vertex[2] - a[2]];
+    const cross: Vec3 = [e[1] * w[2] - e[2] * w[1], e[2] * w[0] - e[0] * w[2], e[0] * w[1] - e[1] * w[0]];
+    const distance = Math.hypot(...cross) / (Math.hypot(...e) || 1);
+    // Dentro de la cara, el punto queda a la izquierda de cada arista (mismo sentido que la normal).
+    if (distance < 0.02 || cross[0] * unit[0] + cross[1] * unit[1] + cross[2] * unit[2] <= 0) return null;
+  }
+  const faces: Vec3[][] = [];
+  const colors: number[] = [];
+  const textures: (FaceTexture | null)[] = [];
+  const flags: number[] = [];
+  piece.faces.forEach((original, i) => {
+    const pieces = i === faceIndex ? original.map((p, k) => [p, original[(k + 1) % original.length], vertex] as Vec3[]) : [original];
+    for (const next of pieces) {
+      faces.push(next);
+      colors.push(piece.faceColors?.[i] ?? piece.color);
+      flags.push(piece.faceFlags?.[i] ?? 0);
+      const texture = piece.faceTextures?.[i] ?? null;
+      textures.push(texture ? (i === faceIndex ? remapTexture(texture, original, next, (p) => p) : texture) : null);
+    }
+  });
+  const result = makePiece(faces, piece.color, colors, piece.faceTextures ? textures : undefined, flags);
+  if (piece.group !== undefined) result.group = piece.group;
+  if (piece.groupName) result.groupName = piece.groupName;
+  if (piece.layer !== undefined) result.layer = piece.layer;
+  return { piece: result, vertex };
+}
+
 const centreOf = (points: Vec3[]): Vec3 => [0, 1, 2].map((k) => points.reduce((sum, p) => sum + p[k], 0) / points.length) as Vec3;
 
 /** Los vértices elegidos puestos en orden alrededor de su centro, en un plano que se ajusta a ellos. */

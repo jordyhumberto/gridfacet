@@ -1970,6 +1970,7 @@ function syncMeshActions(): void {
   meshActionsEl.hidden = mode !== 'mesh';
   const count = meshTool.count;
   meshInfoEl.textContent = count === 0 ? 'Ningún vértice elegido' : `${count} vértice(s) elegidos`;
+  document.getElementById('meshAdd')!.classList.toggle('active', meshTool.addMode);
   meshActionsEl.querySelectorAll<HTMLButtonElement>('button[data-meshaxis]').forEach((button) => {
     const axis = button.dataset.meshaxis === 'free' ? null : Number(button.dataset.meshaxis);
     button.classList.toggle('active', axis === meshTool.axis);
@@ -1988,6 +1989,10 @@ function syncMeshActions(): void {
 for (const [input, flag] of [[meshDoubleEl, FACE_DOUBLE], [meshUnlitEl, FACE_UNLIT], [meshBehindEl, FACE_BEHIND]] as const) {
   input.addEventListener('change', () => meshTool.setFaceFlag(flag, input.checked));
 }
+document.getElementById('meshAdd')!.addEventListener('click', (event) => {
+  (event.currentTarget as HTMLButtonElement).blur();
+  meshTool.setAddMode(!meshTool.addMode);
+});
 meshActionsEl.querySelectorAll<HTMLButtonElement>('button[data-meshaxis]').forEach((button) =>
   button.addEventListener('click', () => {
     button.blur();
@@ -3541,7 +3546,8 @@ const GUIDE: Record<Mode, [string, string][]> = {
     ['R / T', 'girar / escalar los vértices elegidos alrededor de su centro: mueve el ratón, X/Y/Z fija el eje, clic confirma, Esc cancela (Ctrl: sin imán)'],
     ['Shift+clic en una cara', 'elegir todos sus vértices (se suman a los elegidos)'],
     ['Doble cara · Sin sombra · Al fondo', 'casillas del panel: afectan a las caras cuyos vértices están todos elegidos'],
-    ['Alt+clic en una arista', 'ponerle un vértice nuevo (en cuartos; Ctrl: donde hagas clic)'],
+    ['+ Vértice (panel)', 'activa el modo añadir: clic en una arista (en cuartos; Ctrl: donde pulses) o dentro de una cara le pone un vértice nuevo, que queda elegido para moverlo. Arrastrar sigue girando la cámara'],
+    ['Alt+clic en una arista', 'ponerle un vértice nuevo sin activar el modo (en cuartos; Ctrl: donde hagas clic)'],
     ['Panel', 'Todos · Fusionar (junta los elegidos en uno) · Borrar · A la rejilla'],
     ['Panel (caras)', 'Crear cara con tres o más vértices · Borrar / Invertir / Extruir las caras cuyos vértices están todos elegidos'],
     ['Clic en una pieza', 'elegirla: solo se muestran sus vértices; en vacío suelta todo'],
