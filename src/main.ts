@@ -1289,8 +1289,12 @@ function cameraAxes(): { forward: [number, number]; right: [number, number] } {
   return { forward, right: [-forward[1], forward[0]] };
 }
 
+/** Eje al que se limita el arrastre de piezas con la herramienta Elegir (sin valor: libre). */
+let pieceAxis: number | null = null;
+
 interface Drag {
   id: number;
+  axis: number | null;
   wasSelected: boolean;
   vertical: boolean;
   plane: THREE.Plane;
@@ -1946,6 +1950,22 @@ renderer.domElement.addEventListener('dblclick', (e) => {
 
 // Malla: elegir y mover los vértices de las piezas. Una pieza con un vértice hundido deja de ser convexa y pasa a ser malla libre.
 const meshActionsEl = document.getElementById('meshActions')!;
+const selectAxisEl = document.getElementById('selectAxis')!;
+function syncSelectAxis(): void {
+  selectAxisEl.querySelectorAll<HTMLButtonElement>('button[data-selaxis]').forEach((button) => {
+    const axis = button.dataset.selaxis === 'free' ? null : Number(button.dataset.selaxis);
+    button.classList.toggle('active', axis === pieceAxis);
+  });
+}
+selectAxisEl.querySelectorAll<HTMLButtonElement>('button[data-selaxis]').forEach((button) =>
+  button.addEventListener('click', () => {
+    button.blur();
+    pieceAxis = button.dataset.selaxis === 'free' ? null : Number(button.dataset.selaxis);
+    syncSelectAxis();
+    statusEl.textContent = pieceAxis === null ? 'Arrastre libre' : `Las piezas solo se mueven en ${'XYZ'[pieceAxis]}`;
+  }),
+);
+syncSelectAxis();
 const meshInfoEl = document.getElementById('meshInfo')!;
 const meshDoubleEl = document.getElementById('meshDouble') as HTMLInputElement;
 const meshUnlitEl = document.getElementById('meshUnlit') as HTMLInputElement;
@@ -2254,7 +2274,7 @@ function startDrag(event: PointerEvent): void {
   }
 
   const plane = new THREE.Plane();
-  let vertical = event.altKey;
+  let vertical = event.altKey || pieceAxis === 1;
   if (vertical) {
     const facing = camera.getWorldDirection(new THREE.Vector3());
     facing.y = 0;
@@ -2271,6 +2291,7 @@ function startDrag(event: PointerEvent): void {
   }
   drag = {
     id,
+    axis: pieceAxis,
     wasSelected,
     vertical,
     plane,
@@ -2325,7 +2346,7 @@ function updateDrag(event: PointerEvent): void {
     drag.offset.set(0, snapTo(delta.y, withCtrl(event) ? 2 * STEP_Y : STEP_Y), 0);
   } else {
     const step = withCtrl(event) ? 2 * STEP_XZ : STEP_XZ;
-    drag.offset.set(snapTo(delta.x, step), 0, snapTo(delta.z, step));
+    drag.offset.set(drag.axis === 2 ? 0 : snapTo(delta.x, step), 0, drag.axis === 0 ? 0 : snapTo(delta.z, step));
   }
   drag.offset.set(...clampToGrid(drag.offset.x, drag.offset.y, drag.offset.z));
   for (const object of selectedObjects()) object.position.copy(drag.offset);
@@ -2800,6 +2821,7 @@ function syncButtons(): void {
   pieceButtons.forEach((b, i) => b.classList.toggle('active', mode === 'place' && i === selected));
   cutButton.classList.toggle('active', mode === 'cut');
   selectButton.classList.toggle('active', mode === 'select');
+  selectAxisEl.hidden = mode !== 'select';
   eraseButton.classList.toggle('active', mode === 'erase');
   growButton.classList.toggle('active', mode === 'grow');
   sinkButton.classList.toggle('active', mode === 'sink');
@@ -3492,7 +3514,7 @@ const GUIDE: Record<Mode, [string, string][]> = {
     ['Ctrl+clic', 'sumar o quitar una pieza de la selección'],
     ['Ctrl+arrastrar', 'desde un hueco: recuadro que suma lo de dentro'],
     ['Ctrl+A · K · Esc', 'elegir todo · sumar conectadas · quitar selección'],
-    ['Arrastrar pieza', 'mover la selección (Alt: en vertical · Ctrl: paso doble · Esc cancela)'],
+    ['Arrastrar pieza', 'mover la selección (Alt: en vertical · Ctrl: paso doble · Esc cancela). Los botones «Mover en» limitan el movimiento a X, Y o Z'],
     ['Flechas', 'mover un cuarto de celda (Ctrl: media celda)'],
     ['E / Q · Re Pág / Av Pág', 'subir / bajar un cuarto de celda (Ctrl: media celda)'],
     ['R · Alt+R', 'girar 90° · girar al revés'],
