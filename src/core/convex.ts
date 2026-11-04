@@ -41,11 +41,17 @@ export function splitConvex(pieces: Piece[]): { convex: Piece[]; free: Piece[] }
   return { convex, free };
 }
 
-const triangleArea = (a: Vec3, b: Vec3, c: Vec3): number => {
+/** Área de un triángulo y hacia dónde mira respecto a la normal de su cara (negativo: está dado la vuelta y no se vería desde fuera). */
+const triangleFacing = (a: Vec3, b: Vec3, c: Vec3, normal: Vec3): { area: number; facing: number } => {
   const u = [b[0] - a[0], b[1] - a[1], b[2] - a[2]];
   const v = [c[0] - a[0], c[1] - a[1], c[2] - a[2]];
-  return 0.5 * Math.hypot(u[1] * v[2] - u[2] * v[1], u[2] * v[0] - u[0] * v[2], u[0] * v[1] - u[1] * v[0]);
+  const cross = [u[1] * v[2] - u[2] * v[1], u[2] * v[0] - u[0] * v[2], u[0] * v[1] - u[1] * v[0]];
+  const length = Math.hypot(...normal) || 1;
+  return { area: 0.5 * Math.hypot(...cross), facing: (cross[0] * normal[0] + cross[1] * normal[1] + cross[2] * normal[2]) / length };
 };
+
+/** Lo que cuesta un triángulo dado la vuelta: más que cualquier área posible, para que solo salga si no hay otra forma de partir la cara. */
+const FLIPPED_PENALTY = 1e6;
 
 /** ¿Algún vértice se sale del plano de la cara? (una cara alabeada, con puntas o pliegues). */
 function isWarped(face: Vec3[], normal: Vec3): boolean {
@@ -56,10 +62,11 @@ function isWarped(face: Vec3[], normal: Vec3): boolean {
 }
 
 /**
- * Triangulación de área total mínima de una cara (programación dinámica sobre su anillo). No depende de por qué vértice se empiece a contar,
+ * Triangulación de área total mínima de una cara (programación dinámica sobre su anillo), evitando los triángulos dados la vuelta (que dejarían un hueco
+ * al verse desde fuera) siempre que haya otra forma de partirla. No depende de por qué vértice se empiece a contar,
  * así una cara alabeada sale igual de un lado que de su imagen en espejo: cada punta queda con su triángulo en vez de colgar de un abanico.
  */
-function minimumAreaTriangles(face: Vec3[]): [number, number, number][] {
+function minimumAreaTriangles(face: Vec3[], normal: Vec3): [number, number, number][] {
   const n = face.length;
   const cost: number[][] = Array.from({ length: n }, () => new Array<number>(n).fill(0));
   const split: number[][] = Array.from({ length: n }, () => new Array<number>(n).fill(-1));
@@ -68,7 +75,8 @@ function minimumAreaTriangles(face: Vec3[]): [number, number, number][] {
       const j = i + span;
       cost[i][j] = Infinity;
       for (let k = i + 1; k < j; k++) {
-        const total = cost[i][k] + cost[k][j] + triangleArea(face[i], face[k], face[j]);
+        const { area, facing } = triangleFacing(face[i], face[k], face[j], normal);
+        const total = cost[i][k] + cost[k][j] + area + (facing < -1e-9 ? FLIPPED_PENALTY : 0);
         if (total < cost[i][j] - 1e-9) {
           cost[i][j] = total;
           split[i][j] = k;
@@ -88,11 +96,15 @@ function minimumAreaTriangles(face: Vec3[]): [number, number, number][] {
   return out;
 }
 
-/** Triángulos de una cara como índices de sus vértices; en abanico si es convexa y plana, de área mínima si es convexa pero alabeada y por recorte de orejas si no. */
+/** Triángulos de una cara como índices de sus vértices; de área mínima si está alabeada, en abanico si es convexa y plana y por recorte de orejas si es plana y no convexa. */
 export function triangulateFace(face: Vec3[]): [number, number, number][] {
   const count = face.length;
   if (count < 3) return [];
   if (count === 3) return [[0, 1, 2]];
+
+  // Una cara alabeada no tiene un plano al que proyectarla sin errores (al subir una punta, el contorno proyectado puede dejar de ser convexo y el recorte
+  // de orejas deja triángulos dados la vuelta): se parte por área mínima, sin triángulos invertidos si se puede evitar.
+  if (count <= 16 && isWarped(face, faceNormal(face))) return minimumAreaTriangles(face, faceNormal(face));
 
   // Se proyecta al plano de la cara dejando fuera el eje en el que la normal pesa más.
   const n = faceNormal(face);
@@ -105,7 +117,7 @@ export function triangulateFace(face: Vec3[]): [number, number, number][] {
 
   const ring = face.map((_, i) => i);
   const isConvexRing = ring.every((i) => turn(ring[(i + count - 1) % count], i, ring[(i + 1) % count]) >= -1e-12);
-  if (isConvexRing) return count <= 16 && isWarped(face, n) ? minimumAreaTriangles(face) : Array.from({ length: count - 2 }, (_, i) => [0, i + 1, i + 2] as [number, number, number]);
+  if (isConvexRing) return Array.from({ length: count - 2 }, (_, i) => [0, i + 1, i + 2] as [number, number, number]);
 
   const inside = (p: number, a: number, b: number, c: number): boolean =>
     turn(a, b, p) >= -1e-12 && turn(b, c, p) >= -1e-12 && turn(c, a, p) >= -1e-12;

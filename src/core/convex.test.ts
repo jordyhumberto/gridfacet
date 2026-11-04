@@ -62,6 +62,29 @@ describe('triangulateFace', () => {
     expect(reflected.filter((t) => t.includes('4,0'))).toHaveLength(2);
   });
 
+  it('al subir una punta más que la otra no queda ningún triángulo dado la vuelta', () => {
+    // La cara de arriba de un cubo con un vértice a media arista en cada lado; una punta sube mucho más que la otra.
+    const facing = (face: Vec3[]): number[] => {
+      const normal: Vec3 = [0, 0, 0];
+      face.forEach((a, i) => {
+        const b = face[(i + 1) % face.length];
+        normal[0] += (a[1] - b[1]) * (a[2] + b[2]);
+        normal[1] += (a[2] - b[2]) * (a[0] + b[0]);
+        normal[2] += (a[0] - b[0]) * (a[1] + b[1]);
+      });
+      return triangulateFace(face).map(([i, j, k]) => {
+        const u = face[j].map((v, n) => v - face[i][n]);
+        const w = face[k].map((v, n) => v - face[i][n]);
+        const cross = [u[1] * w[2] - u[2] * w[1], u[2] * w[0] - u[0] * w[2], u[0] * w[1] - u[1] * w[0]];
+        return cross[0] * normal[0] + cross[1] * normal[1] + cross[2] * normal[2];
+      });
+    };
+    for (const [left, right] of [[1.75, 1.75], [3.75, 1.75], [1.75, 4], [6, 1.25]]) {
+      const ring: Vec3[] = [[-0.5, 1, -0.5], [-0.5, left, 0], [-0.5, 1, 0.5], [0.5, 1, 0.5], [0.5, right, 0], [0.5, 1, -0.5]];
+      expect(facing(ring).filter((value) => value < -1e-9)).toEqual([]);
+    }
+  });
+
   it('una cara en L cubre exactamente su área, sin tapar el hueco', () => {
     // L de área 3: cuadrado de 2×2 sin el cuadrante superior derecho.
     const l: Vec3[] = [[0, 0, 0], [2, 0, 0], [2, 1, 0], [1, 1, 0], [1, 2, 0], [0, 2, 0]];
