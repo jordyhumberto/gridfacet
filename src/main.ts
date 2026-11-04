@@ -21,8 +21,9 @@ import { downloadBlob, exportGlb } from './render/glb';
 import { framesToPngs, framesToSheet, renderSprites } from './render/sprites';
 import { TextureLayer, atlasToPng } from './render/textures';
 import { buildObj } from './core/obj';
-import { paintCell, texelAt, textureOfFace, visibleColor, withFaceTexture } from './core/pixels';
-import type { FaceTexture } from './core/texture';
+import type { Rect } from './core/pixels';
+import { copyRegion, paintCell, pasteRegion, pixelClipboard, rectBetween, texelAt, textureOfFace, visibleColor, withFaceTexture } from './core/pixels';
+import { pointOf, type FaceTexture } from './core/texture';
 import { spriteFileName, type SpriteCamera } from './core/sprites';
 import { PieceBatches } from './render/batches';
 import { createPieceObject, disposeObject, isWireframeView, setHighlight, setSmoothShading, setWireframeView } from './render/meshes';
@@ -1839,6 +1840,9 @@ interface StrokeTarget {
   last: { x: number; y: number } | null;
   start: { x: number; y: number } | null;
   base: FaceTexture | null;
+  selection?: Rect | null;
+  copy?: boolean;
+  shift?: { x: number; y: number };
 }
 /** Trazo en curso: se pinta en copias de las texturas y solo al soltar pasan al modelo, como un único cambio. */
 let pixelStroke: { piece: Piece; faceIndex: number; targets: StrokeTarget[]; changed: boolean } | null = null;
@@ -1857,10 +1861,6 @@ function previewStroke(stroke: NonNullable<typeof pixelStroke>): void {
 function applyPixelTool(stroke: NonNullable<typeof pixelStroke>, point: Vec3): void {
   const tool = pixelToolEl.value;
   const size = Number(pixelSizeEl.value);
-  if (tool === 'select') {
-    statusEl.textContent = 'Seleccionar solo se usa en Plano (botón Plano o doble clic en una cara); aquí, Mover desplaza todo el dibujo de la cara';
-    return;
-  }
   let changed = 0;
   for (const target of stroke.targets) {
     const cell = texelAt(target.piece.faces[target.faceIndex], target.texture, target.reflect ? target.reflect(point) : point);
@@ -1871,6 +1871,69 @@ function applyPixelTool(stroke: NonNullable<typeof pixelStroke>, point: Vec3): v
   if (changed === 0) return;
   stroke.changed = true;
   previewStroke(stroke);
+}
+
+/** Región elegida en la vista 3D con la herramienta Seleccionar: sobre qué cara y qué casillas. La sigue un recuadro amarillo. */
+let pixelSelection: { pieceId: number; faceIndex: number; rect: Rect } | null = null;
+let pixelSelecting: { piece: Piece; faceIndex: number; start: { x: number; y: number }; moved: boolean } | null = null;
+const pixelSelectionBox = new THREE.LineLoop(new THREE.BufferGeometry(), new THREE.LineBasicMaterial({ color: 0xffd24a, depthTest: false }));
+pixelSelectionBox.renderOrder = 999;
+pixelSelectionBox.frustumCulled = false;
+pixelSelectionBox.visible = false;
+scene3d.add(pixelSelectionBox);
+
+/** Pone o quita el recuadro según la selección (y que su pieza siga en el modelo). */
+function syncPixelSelection(): void {
+  const sel = pixelSelection;
+  const piece = sel && model.get(sel.pieceId);
+  if (!sel || !piece || !piece.faces[sel.faceIndex]) {
+    if (sel && !piece) pixelSelection = null;
+    pixelSelectionBox.visible = false;
+    return;
+  }
+  const face = piece.faces[sel.faceIndex];
+  const { w, h } = textureOfFace(piece, sel.faceIndex);
+  const { x0, y0, x1, y1 } = sel.rect;
+  const corners = [pointOf(face, x0 / w, y0 / h), pointOf(face, (x1 + 1) / w, y0 / h), pointOf(face, (x1 + 1) / w, (y1 + 1) / h), pointOf(face, x0 / w, (y1 + 1) / h)];
+  pixelSelectionBox.geometry.dispose();
+  pixelSelectionBox.geometry = new THREE.BufferGeometry().setFromPoints(corners.map((p) => new THREE.Vector3(p[0], p[1], p[2])));
+  pixelSelectionBox.visible = true;
+}
+const modelChangedForSelection = model.onChange;
+model.onChange = (change) => {
+  modelChangedForSelection?.(change);
+  syncPixelSelection();
+};
+
+/** Ctrl+C en modo píxeles: copia la región elegida o, sin ella, toda la última cara tocada. */
+function copyPixels(): void {
+  const sel = pixelSelection && model.get(pixelSelection.pieceId) ? pixelSelection : null;
+  const piece = sel ? model.get(sel.pieceId)! : lastPixelFace && model.get(lastPixelFace.piece.id);
+  const faceIndex = sel ? sel.faceIndex : lastPixelFace?.faceIndex;
+  if (!piece || faceIndex === undefined) {
+    statusEl.textContent = 'Pasa el cursor por una cara en modo píxeles para copiarla';
+    return;
+  }
+  pixelClipboard.value = copyRegion(textureOfFace(piece, faceIndex), sel?.rect ?? null);
+  statusEl.textContent = 'Píxeles copiados';
+}
+
+/** Ctrl+V en modo píxeles: pega en la cara elegida (con su esquina en la de la selección) o en la última tocada. */
+function pastePixels(): void {
+  const clip = pixelClipboard.value;
+  const sel = pixelSelection && model.get(pixelSelection.pieceId) ? pixelSelection : null;
+  const piece = sel ? model.get(sel.pieceId)! : lastPixelFace && model.get(lastPixelFace.piece.id);
+  const faceIndex = sel ? sel.faceIndex : lastPixelFace?.faceIndex;
+  if (!clip || !piece || faceIndex === undefined) {
+    statusEl.textContent = clip ? 'Pasa el cursor por una cara en modo píxeles para pegar' : 'No hay píxeles copiados';
+    return;
+  }
+  const pasted = pasteRegion(textureOfFace(piece, faceIndex), clip, sel?.rect.x0 ?? 0, sel?.rect.y0 ?? 0);
+  const next = withFaceTexture(piece, faceIndex, pasted.texture);
+  model.apply({ added: [next], removed: [piece] });
+  lastPixelFace = { piece: next, faceIndex };
+  pixelSelection = { pieceId: next.id, faceIndex, rect: pasted.rect };
+  syncPixelSelection();
 }
 
 function startPixelStroke(event: PointerEvent): void {
@@ -1891,6 +1954,15 @@ function startPixelStroke(event: PointerEvent): void {
   } catch {
     // Sin captura el trazo sigue mientras el puntero esté sobre el lienzo.
   }
+  lastPixelFace = { piece: found.piece, faceIndex };
+  if (pixelToolEl.value === 'select') {
+    const cell = texelAt(found.face, texture, [found.point.x, found.point.y, found.point.z]);
+    if (!cell) return;
+    pixelSelecting = { piece: found.piece, faceIndex, start: cell, moved: false };
+    pixelSelection = { pieceId: found.piece.id, faceIndex, rect: rectBetween(cell, cell) };
+    syncPixelSelection();
+    return;
+  }
   const targets: StrokeTarget[] = [{ piece: found.piece, faceIndex, texture, reflect: null, last: null, start: null, base: null }];
   // Con simetría el trazo se repite en los reflejos de la cara, cada uno sobre su propia copia de la textura.
   const centre = faceCentre(found.face);
@@ -1900,11 +1972,31 @@ function startPixelStroke(event: PointerEvent): void {
       targets.push({ piece: image.piece, faceIndex: image.index, texture: textureOfFace(image.piece, image.index), reflect: reflection.point, last: null, start: null, base: null });
     }
   }
+  if (pixelToolEl.value === 'move') {
+    const sel = pixelSelection && pixelSelection.pieceId === found.piece.id && pixelSelection.faceIndex === faceIndex ? pixelSelection.rect : null;
+    // Con una región elegida solo se mueve esa cara: los reflejos no tienen la misma región.
+    if (sel) targets.splice(1);
+    for (const t of targets) {
+      t.selection = sel;
+      t.copy = event.ctrlKey || event.metaKey;
+    }
+  }
   pixelStroke = { piece: found.piece, faceIndex, targets, changed: false };
   applyPixelTool(pixelStroke, [found.point.x, found.point.y, found.point.z]);
 }
 
 function movePixelStroke(event: PointerEvent): void {
+  if (pixelSelecting) {
+    const hit = castRay(event, false);
+    const found = hit ? findFace(hit) : undefined;
+    if (!found || found.piece.id !== pixelSelecting.piece.id || found.face !== pixelSelecting.piece.faces[pixelSelecting.faceIndex]) return;
+    const cell = texelAt(found.face, textureOfFace(found.piece, pixelSelecting.faceIndex), [found.point.x, found.point.y, found.point.z]);
+    if (!cell) return;
+    pixelSelecting.moved = pixelSelecting.moved || cell.x !== pixelSelecting.start.x || cell.y !== pixelSelecting.start.y;
+    pixelSelection = { pieceId: pixelSelecting.piece.id, faceIndex: pixelSelecting.faceIndex, rect: rectBetween(pixelSelecting.start, cell) };
+    syncPixelSelection();
+    return;
+  }
   if (!pixelStroke) return;
   const hit = castRay(event, false);
   const found = hit ? findFace(hit) : undefined;
@@ -2041,6 +2133,14 @@ meshActionsEl.querySelectorAll<HTMLButtonElement>('button[data-mesh]').forEach((
 );
 
 function finishPixelStroke(commit: boolean): boolean {
+  if (pixelSelecting) {
+    // Un clic sin arrastrar quita la selección.
+    if (!pixelSelecting.moved) pixelSelection = null;
+    pixelSelecting = null;
+    controls.enabled = true;
+    syncPixelSelection();
+    return true;
+  }
   const stroke = pixelStroke;
   if (!stroke) return false;
   pixelStroke = null;
@@ -2051,7 +2151,17 @@ function finishPixelStroke(commit: boolean): boolean {
     for (const target of stroke.targets) {
       latest.set(target.piece.id, withFaceTexture(latest.get(target.piece.id) ?? target.piece, target.faceIndex, target.texture));
     }
+    const primary = stroke.targets[0];
+    const moved = pixelSelection && pixelSelection.pieceId === primary.piece.id && pixelSelection.faceIndex === primary.faceIndex && primary.shift ? primary.shift : null;
     model.apply({ added: [...latest.values()], removed: stroke.targets.filter((t, i, all) => all.findIndex((o) => o.piece.id === t.piece.id) === i).map((t) => t.piece) });
+    // La selección sigue al contenido movido y a la pieza nueva que lo lleva.
+    if (pixelSelection && pixelSelection.pieceId === primary.piece.id) {
+      const next = latest.get(primary.piece.id)!;
+      const r = pixelSelection.rect;
+      const shifted = moved && pixelToolEl.value === 'move' ? { x0: r.x0 + moved.x, y0: r.y0 + moved.y, x1: r.x1 + moved.x, y1: r.y1 + moved.y } : r;
+      pixelSelection = { pieceId: next.id, faceIndex: pixelSelection.faceIndex, rect: shifted };
+      syncPixelSelection();
+    }
     useColor(color);
   } else {
     // Sin cambios o cancelado: vuelve a dibujarse la pieza tal como está en el modelo.
@@ -3369,7 +3479,7 @@ const commands: Command[] = [
   { name: 'Paleta: guardar colores recientes', keywords: 'colores', run: () => document.getElementById('paletteSave')!.click() },
   { name: 'Paleta: importar .hex', keywords: 'colores lospec abrir', run: () => document.getElementById('paletteImport')!.click() },
   { name: 'Paleta: exportar .hex', keywords: 'colores lospec descargar', run: () => document.getElementById('paletteExport')!.click() },
-  ...([['pencil', 'Lápiz'], ['eraser', 'Borrador'], ['fill', 'Relleno'], ['line', 'Línea'], ['rect', 'Rectángulo'], ['rectfill', 'Rectángulo lleno'], ['ellipse', 'Elipse'], ['ellipsefill', 'Elipse llena'], ['replace', 'Reemplazar color'], ['dither', 'Tramado'], ['select', 'Seleccionar (en Plano)'], ['move', 'Mover']] as const).map(([tool, label]): Command => ({
+  ...([['pencil', 'Lápiz'], ['eraser', 'Borrador'], ['fill', 'Relleno'], ['line', 'Línea'], ['rect', 'Rectángulo'], ['rectfill', 'Rectángulo lleno'], ['ellipse', 'Elipse'], ['ellipsefill', 'Elipse llena'], ['replace', 'Reemplazar color'], ['dither', 'Tramado'], ['select', 'Seleccionar'], ['move', 'Mover']] as const).map(([tool, label]): Command => ({
     name: `Píxeles: ${label}`,
     keywords: 'pintar textura cara',
     run: () => {
@@ -3957,6 +4067,12 @@ window.addEventListener('keydown', (e) => {
   if ((e.ctrlKey || e.metaKey) && key === 'a') {
     e.preventDefault();
     selection.set(model.all().filter((piece) => !hidden.has(piece.id)).map((piece) => piece.id));
+    return;
+  }
+  if ((e.ctrlKey || e.metaKey) && (key === 'c' || key === 'v') && pixelPainting()) {
+    e.preventDefault();
+    if (key === 'c') copyPixels();
+    else pastePixels();
     return;
   }
   if ((e.ctrlKey || e.metaKey) && key === 'c') {

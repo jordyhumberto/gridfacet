@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { CATALOG, buildPiece } from './catalog';
-import { drawShape, moveRegion, paintCell, rectBetween, replaceColor, floodFill, stamp, stampLine, texelAt, textureOfFace, visibleColor, withFaceTexture } from './pixels';
+import { copyRegion, drawShape, moveRegion, pasteRegion, paintCell, rectBetween, replaceColor, floodFill, stamp, stampLine, texelAt, textureOfFace, visibleColor, withFaceTexture } from './pixels';
 import { CLEAR, blankTexture, pointOf } from './texture';
 
 const cube = () => buildPiece(CATALOG[0], 0, 0, 0, 0, 0x336699);
@@ -182,5 +182,29 @@ describe('seleccionar y mover', () => {
     paintCell(t, state, 'move', { x: 1, y: 0 }, 1, 5);
     expect(t.pixels).toEqual([CLEAR, 1, CLEAR, CLEAR]);
     expect(state.shift).toEqual({ x: 1, y: 0 });
+  });
+});
+
+describe('copiar y pegar píxeles', () => {
+  const tex = (w: number, h: number, pixels: number[]) => ({ w, h, pixels });
+
+  it('copiar con la región da un trozo con su tamaño', () => {
+    const t = tex(3, 2, [1, 2, 3, 4, 5, 6]);
+    expect(copyRegion(t, { x0: 1, y0: 0, x1: 2, y1: 1 })).toEqual(tex(2, 2, [2, 3, 5, 6]));
+    expect(copyRegion(t, null)).toEqual(t);
+  });
+
+  it('pegar pone el trozo en su esquina, sin borrar lo de debajo con lo sin pintar y cortando lo que sale', () => {
+    const base = tex(4, 1, [7, 7, 7, 7]);
+    const clip = tex(3, 1, [1, CLEAR, 2]);
+    const pasted = pasteRegion(base, clip, 2, 0);
+    expect(pasted.texture.pixels).toEqual([7, 7, 1, 7]);
+    expect(pasted.rect).toEqual({ x0: 2, y0: 0, x1: 4, y1: 0 });
+    expect(base.pixels).toEqual([7, 7, 7, 7]);
+  });
+
+  it('mover con copia deja el original y no borra con lo sin pintar', () => {
+    const t = tex(4, 1, [1, CLEAR, 9, CLEAR]);
+    expect(moveRegion(t, { x0: 0, y0: 0, x1: 1, y1: 0 }, 2, 0, true).pixels).toEqual([1, CLEAR, 1, CLEAR]);
   });
 });

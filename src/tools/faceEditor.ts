@@ -1,6 +1,6 @@
 import { CLEAR, uvOf, type FaceTexture } from '../core/texture';
 import { faceColorOf, type Piece } from '../core/piece';
-import { paintCell, rectBetween, textureOfFace, visibleColor, type Rect, type StrokeState } from '../core/pixels';
+import { copyRegion, paintCell, pasteRegion, pixelClipboard, rectBetween, textureOfFace, visibleColor, type Rect, type StrokeState } from '../core/pixels';
 
 /** Lo que el editor necesita de la aplicación: las herramientas elegidas y cómo llevar el resultado al modelo. */
 export interface FaceEditorHost {
@@ -39,6 +39,20 @@ export class FaceEditor {
     canvas.addEventListener('pointermove', (e) => this.move(e));
     canvas.addEventListener('pointerup', () => this.up());
     canvas.addEventListener('pointercancel', () => this.up());
+    // Con el editor abierto, Ctrl+C y Ctrl+V copian y pegan píxeles en vez de piezas.
+    document.addEventListener(
+      'keydown',
+      (e) => {
+        if (!this.isOpen || !(e.ctrlKey || e.metaKey)) return;
+        const key = e.key.toLowerCase();
+        if (key !== 'c' && key !== 'v') return;
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        if (key === 'c') this.copy();
+        else this.paste();
+      },
+      { capture: true },
+    );
     root.addEventListener('pointerdown', (e) => {
       if (e.target === root) this.close();
     });
@@ -158,7 +172,7 @@ export class FaceEditor {
     } catch {
       // Sin captura el trazo sigue mientras el puntero esté sobre el lienzo.
     }
-    this.stroke = { texture: { w: this.texture.w, h: this.texture.h, pixels: [...this.texture.pixels] }, changed: false, state: { start: null, last: null, base: null, selection: this.selection } };
+    this.stroke = { texture: { w: this.texture.w, h: this.texture.h, pixels: [...this.texture.pixels] }, changed: false, state: { start: null, last: null, base: null, selection: this.selection, copy: e.ctrlKey || e.metaKey } };
     this.paint(cell);
   }
 
@@ -182,6 +196,23 @@ export class FaceEditor {
     stroke.changed = true;
     this.draw(stroke.texture);
     this.host.preview(this.piece, this.faceIndex, stroke.texture);
+  }
+
+  /** Copia la región elegida (o toda la cara) al portapapeles de píxeles. */
+  private copy(): void {
+    pixelClipboard.value = copyRegion(this.texture, this.selection);
+  }
+
+  /** Pega el portapapeles con su esquina en la de la selección (o en la de la cara) y lo deja elegido para moverlo. */
+  private paste(): void {
+    const clip = pixelClipboard.value;
+    if (!clip || !this.piece || !this.host.stillThere(this.piece)) return;
+    const at = this.selection ?? { x0: 0, y0: 0, x1: 0, y1: 0 };
+    const pasted = pasteRegion(this.texture, clip, at.x0, at.y0);
+    this.selection = pasted.rect;
+    this.piece = this.host.commit(this.piece, this.faceIndex, pasted.texture);
+    this.texture = pasted.texture;
+    this.draw(this.texture);
   }
 
   private up(): void {
