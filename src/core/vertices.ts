@@ -1,4 +1,4 @@
-import { faceNormal, makePiece, type Piece, type Vec3 } from './piece';
+import { FACE_DOUBLE, faceNormal, makePiece, type Piece, type Vec3 } from './piece';
 import { remapTexture, type FaceTexture } from './texture';
 
 /** Clave de un vértice por su posición: los de varias caras que coinciden son el mismo vértice de la pieza. */
@@ -357,4 +357,42 @@ export function bendPoint(p: Vec3, pivot: Vec3, axis: number, half: number, amou
   out[axis] = pivot[axis] + rho * Math.sin(phi);
   out[side] = pivot[side] + radius - rho * Math.cos(phi);
   return out;
+}
+
+/**
+ * Los vértices nuevos (que no estaban en `before`) que tocan solo dos caras y quedan fuera del plano de las dos: un punto sacado de una arista.
+ * Las dos caras acaban incluyendo el mismo triángulo y quedan como una aleta plana sin volumen; se pasan a «Doble cara» para que se vea por los dos lados.
+ */
+export function flagFins(piece: Piece, before: Piece): { piece: Piece; count: number } {
+  const known = new Set(uniqueVertices(before).map(vertexKey));
+  const touching = new Map<string, number[]>();
+  piece.faces.forEach((face, i) => {
+    for (const p of face) {
+      const key = vertexKey(p);
+      if (known.has(key)) continue;
+      const list = touching.get(key) ?? [];
+      if (!list.includes(i)) list.push(i);
+      touching.set(key, list);
+    }
+  });
+  const flagged = new Set<number>();
+  let count = 0;
+  for (const [key, faces] of touching) {
+    if (faces.length !== 2) continue;
+    const off = faces.every((i) => {
+      const face = piece.faces[i];
+      const rest = face.filter((p) => vertexKey(p) !== key);
+      if (rest.length < 3) return false;
+      const n = faceNormal(rest);
+      const length = Math.hypot(n[0], n[1], n[2]);
+      if (length < 1e-9) return false;
+      const p = face.find((q) => vertexKey(q) === key)!;
+      return Math.abs(n[0] * (p[0] - rest[0][0]) + n[1] * (p[1] - rest[0][1]) + n[2] * (p[2] - rest[0][2])) / length > 0.02;
+    });
+    if (!off) continue;
+    count++;
+    for (const i of faces) flagged.add(i);
+  }
+  if (count === 0) return { piece, count: 0 };
+  return { piece: setFaceFlags(piece, flagged, FACE_DOUBLE, true) ?? piece, count };
 }
