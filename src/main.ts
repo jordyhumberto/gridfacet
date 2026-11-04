@@ -1991,6 +1991,7 @@ meshActionsEl.querySelectorAll<HTMLButtonElement>('button[data-mesh]').forEach((
     else if (action === 'scale') meshTool.beginTransform('scale');
     else if (action === 'taper') meshTool.beginTransform('taper');
     else if (action === 'twist') meshTool.beginTransform('twist');
+    else if (action === 'bend') meshTool.beginTransform('bend');
     else if (action === 'face') meshTool.createFace();
     else if (action === 'delface') meshTool.deleteFacesSelected();
     else if (action === 'flip') meshTool.flipSelected();
@@ -3442,7 +3443,7 @@ const GUIDE: Record<Mode, [string, string][]> = {
     ['Flechas', 'empujar los vértices elegidos un paso en la dirección de pantalla (Ctrl: paso fino)'],
     ['Supr', 'quitar los vértices elegidos'],
     ['Teclado numérico', '1 frente · 3 derecha · 7 arriba (con Ctrl, la opuesta) · 5 alterna vista ortográfica o con perspectiva'],
-    ['Panel (deformar)', 'Afinar o Torcer los vértices elegidos a lo largo de un eje (Y por defecto): mueve el ratón a los lados, X/Y/Z cambia el eje, clic confirma'],
+    ['Panel (deformar)', 'Afinar, Torcer o Curvar los vértices elegidos a lo largo de un eje (Y por defecto): mueve el ratón a los lados, X/Y/Z cambia el eje, clic confirma'],
     ['R / T', 'girar / escalar los vértices elegidos alrededor de su centro: mueve el ratón, X/Y/Z fija el eje, clic confirma, Esc cancela (Ctrl: sin imán)'],
     ['Shift+clic en una cara', 'elegir todos sus vértices (se suman a los elegidos)'],
     ['Doble cara · Sin sombra', 'casillas del panel: afectan a las caras cuyos vértices están todos elegidos'],
