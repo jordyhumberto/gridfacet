@@ -360,10 +360,10 @@ export function bendPoint(p: Vec3, pivot: Vec3, axis: number, half: number, amou
 }
 
 /**
- * Los vértices nuevos (que no estaban en `before`) que tocan solo dos caras y quedan fuera del plano de las dos: un punto sacado de una arista.
- * Las dos caras acaban incluyendo el mismo triángulo y quedan como una aleta plana sin volumen; se pasan a «Doble cara» para que se vea por los dos lados.
+ * Las caras (por su posición en `piece`) de los vértices nuevos (que no estaban en `before`) que tocan solo dos caras y quedan fuera del plano de las dos:
+ * un punto sacado de una arista. Esas dos caras acaban incluyendo el mismo triángulo y quedan como una aleta plana sin volumen.
  */
-export function flagFins(piece: Piece, before: Piece): { piece: Piece; count: number } {
+export function finFaces(piece: Piece, before: Piece): { faces: Set<number>; count: number } {
   const known = new Set(uniqueVertices(before).map(vertexKey));
   const touching = new Map<string, number[]>();
   piece.faces.forEach((face, i) => {
@@ -393,6 +393,32 @@ export function flagFins(piece: Piece, before: Piece): { piece: Piece; count: nu
     count++;
     for (const i of faces) flagged.add(i);
   }
+  return { faces: flagged, count };
+}
+
+/** Las caras de un punto de arista sacado fuera de sus planos pasan a «Doble cara» (se ven por los dos lados). */
+export function flagFins(piece: Piece, before: Piece): { piece: Piece; count: number } {
+  const { faces, count } = finFaces(piece, before);
   if (count === 0) return { piece, count: 0 };
-  return { piece: setFaceFlags(piece, flagged, FACE_DOUBLE, true) ?? piece, count };
+  return { piece: setFaceFlags(piece, faces, FACE_DOUBLE, true) ?? piece, count };
+}
+
+/**
+ * Pone un vértice en el centro de cada una de las caras indicadas (por su posición en `piece`), que se parten en triángulos que salen de él.
+ * Así un punto de arista que se saque levanta las dos caras como una tienda de campaña y entre ellas queda volumen. Null si no cabe ninguno.
+ */
+export function splitFacesAtCenter(piece: Piece, faces: ReadonlySet<number>): Piece | null {
+  let current = piece;
+  let any = false;
+  // De la última a la primera: partir una cara solo desplaza a las que van detrás.
+  for (const i of [...faces].sort((a, b) => b - a)) {
+    const face = piece.faces[i];
+    if (!face) continue;
+    const centre: Vec3 = [0, 1, 2].map((k) => face.reduce((sum, p) => sum + p[k], 0) / face.length) as Vec3;
+    const result = addVertexOnFace(current, i, centre);
+    if (!result) continue;
+    current = { ...result.piece, id: piece.id };
+    any = true;
+  }
+  return any ? current : null;
 }

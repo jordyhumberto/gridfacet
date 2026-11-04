@@ -1,10 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { CATALOG, buildPiece } from './catalog';
 import { isConvex } from './convex';
+import { collapses } from './selfIntersect';
 import { floodFill, textureOfFace, withFaceTexture } from './pixels';
 import { FACE_DOUBLE, FACE_UNLIT, faceNormal, volume, type Vec3 } from './piece';
 import { sampleTexture, pointOf, uvOf } from './texture';
-import { flagFins, addFace, deleteFaces, deleteVertices, extrudeFaces, facesWithin, flipFaces, mergeVertices, moveVertices, placeVertices, rotateAbout, scaleAbout, setFaceFlags, splitEdge, addVertexOnFace, taperPoint, twistPoint, bendPoint, uniqueVertices, vertexKey } from './vertices';
+import { finFaces, flagFins, splitFacesAtCenter, addFace, deleteFaces, deleteVertices, extrudeFaces, facesWithin, flipFaces, mergeVertices, moveVertices, placeVertices, rotateAbout, scaleAbout, setFaceFlags, splitEdge, addVertexOnFace, taperPoint, twistPoint, bendPoint, uniqueVertices, vertexKey } from './vertices';
 
 const cube = () => buildPiece(CATALOG[0], 0, 0, 0, 0, 0x336699);
 const topCorner = (piece = cube()): Vec3 => {
@@ -318,5 +319,31 @@ describe('flagFins', () => {
   it('un punto que no se mueve no cuenta', () => {
     const split = topEdge();
     expect(flagFins(split.piece, split.piece).count).toBe(0);
+  });
+});
+
+describe('splitFacesAtCenter', () => {
+  it('un punto de arista sacado de sus planos, con un vértice en el centro de sus dos caras, deja un cuerpo con volumen', () => {
+    const base = cube();
+    const edge = base.faces.flatMap((f) => f.map((p, k) => [p, f[(k + 1) % f.length]] as const)).find(([a, b]) => a[1] === 1 && b[1] === 1 && a[0] === b[0])!;
+    const split = splitEdge(base, edge[0], edge[1], 0.5)!;
+    const pts = base.faces.flat();
+    const mid = (k: number): number => (Math.min(...pts.map((p) => p[k])) + Math.max(...pts.map((p) => p[k]))) / 2;
+    const out = Math.sign(split.vertex[0] - mid(0));
+    const to = (p: Vec3): Vec3 => (vertexKey(p) === vertexKey(split.vertex) ? [p[0] + out * 0.5, p[1] + 1, p[2]] : p);
+    const keys = new Set([vertexKey(split.vertex)]);
+    const moved = placeVertices(split.piece, keys, to, false)!;
+    const { faces, count } = finFaces(moved, split.piece);
+    expect(count).toBe(1);
+    const prepared = splitFacesAtCenter(split.piece, faces)!;
+    expect(prepared.faces.length).toBeGreaterThan(split.piece.faces.length);
+    const tent = placeVertices(prepared, keys, to, false)!;
+    expect(finFaces(tent, prepared).count).toBe(0);
+    expect(collapses(tent)).toBe(false);
+    expect(volume(tent)).toBeGreaterThan(volume(split.piece) + 1e-6);
+  });
+
+  it('sin caras que partir no hace nada', () => {
+    expect(splitFacesAtCenter(cube(), new Set())).toBeNull();
   });
 });
