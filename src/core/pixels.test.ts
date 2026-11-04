@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { CATALOG, buildPiece } from './catalog';
-import { floodFill, stamp, stampLine, texelAt, textureOfFace, visibleColor, withFaceTexture } from './pixels';
+import { drawShape, paintCell, replaceColor, floodFill, stamp, stampLine, texelAt, textureOfFace, visibleColor, withFaceTexture } from './pixels';
 import { CLEAR, blankTexture, pointOf } from './texture';
 
 const cube = () => buildPiece(CATALOG[0], 0, 0, 0, 0, 0x336699);
@@ -95,5 +95,62 @@ describe('stampLine', () => {
     expect(stampLine(one, 2, 2, 2, 2, 1, 0x00ff00)).toBe(1);
     const back = blankTexture(8, 1);
     expect(stampLine(back, 6, 0, 1, 0, 1, 0x00ff00)).toBe(6);
+  });
+});
+
+describe('formas, reemplazar color y tramado', () => {
+  const grid = (w = 9, h = 9) => blankTexture(w, h);
+  const at = (t: ReturnType<typeof blankTexture>, x: number, y: number) => t.pixels[y * t.w + x];
+  const count = (t: ReturnType<typeof blankTexture>, v: number) => t.pixels.filter((p) => p === v).length;
+
+  it('el rectángulo vacío deja solo el borde', () => {
+    const t = grid();
+    drawShape(t, 'rect', { x: 1, y: 1 }, { x: 5, y: 4 }, 1, 7);
+    expect(at(t, 1, 1)).toBe(7);
+    expect(at(t, 5, 4)).toBe(7);
+    expect(at(t, 3, 2)).toBe(CLEAR);
+    expect(count(t, 7)).toBe(2 * 5 + 2 * 2);
+  });
+
+  it('el rectángulo lleno cubre todo el área, también si se arrastra hacia atrás', () => {
+    const t = grid();
+    drawShape(t, 'rectfill', { x: 5, y: 4 }, { x: 1, y: 1 }, 1, 7);
+    expect(count(t, 7)).toBe(5 * 4);
+  });
+
+  it('la elipse llena es simétrica y no sale de su rectángulo; la vacía tiene hueco', () => {
+    const full = grid();
+    drawShape(full, 'ellipsefill', { x: 0, y: 0 }, { x: 8, y: 8 }, 1, 3);
+    expect(at(full, 0, 0)).toBe(CLEAR);
+    expect(at(full, 4, 4)).toBe(3);
+    for (let y = 0; y < 9; y++) for (let x = 0; x < 9; x++) expect(at(full, x, y)).toBe(at(full, 8 - x, y));
+    const ring = grid();
+    drawShape(ring, 'ellipse', { x: 0, y: 0 }, { x: 8, y: 8 }, 1, 3);
+    expect(at(ring, 4, 4)).toBe(CLEAR);
+    expect(at(ring, 4, 0)).toBe(3);
+  });
+
+  it('reemplazar color cambia todas las casillas de ese color y solo esas', () => {
+    const t = grid(4, 1);
+    t.pixels = [1, 2, 1, CLEAR];
+    expect(replaceColor(t, 0, 0, 9)).toBe(2);
+    expect(t.pixels).toEqual([9, 2, 9, CLEAR]);
+    expect(replaceColor(t, 3, 0, 5)).toBe(1);
+  });
+
+  it('la forma sigue al puntero sin dejar rastro de las posiciones anteriores', () => {
+    const t = grid();
+    const state = { start: null, last: null, base: null };
+    paintCell(t, state, 'rectfill', { x: 1, y: 1 }, 1, 7);
+    paintCell(t, state, 'rectfill', { x: 6, y: 6 }, 1, 7);
+    paintCell(t, state, 'rectfill', { x: 2, y: 2 }, 1, 7);
+    expect(count(t, 7)).toBe(4);
+  });
+
+  it('el tramado pinta casillas alternas', () => {
+    const t = grid(6, 1);
+    paintCell(t, { start: null, last: null, base: null }, 'dither', { x: 0, y: 0 }, 1, 4);
+    paintCell(t, { start: null, last: { x: 0, y: 0 }, base: null }, 'dither', { x: 5, y: 0 }, 1, 4);
+    expect(t.pixels).toEqual([4, CLEAR, 4, CLEAR, 4, CLEAR]);
   });
 });

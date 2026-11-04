@@ -21,8 +21,8 @@ import { downloadBlob, exportGlb } from './render/glb';
 import { framesToPngs, framesToSheet, renderSprites } from './render/sprites';
 import { TextureLayer, atlasToPng } from './render/textures';
 import { buildObj } from './core/obj';
-import { floodFill, stampLine, texelAt, textureOfFace, visibleColor, withFaceTexture } from './core/pixels';
-import { CLEAR, type FaceTexture } from './core/texture';
+import { paintCell, texelAt, textureOfFace, visibleColor, withFaceTexture } from './core/pixels';
+import type { FaceTexture } from './core/texture';
 import { spriteFileName, type SpriteCamera } from './core/sprites';
 import { PieceBatches } from './render/batches';
 import { createPieceObject, disposeObject, isWireframeView, setHighlight, setSmoothShading, setWireframeView } from './render/meshes';
@@ -1837,6 +1837,8 @@ interface StrokeTarget {
   texture: FaceTexture;
   reflect: ((p: Vec3) => Vec3) | null;
   last: { x: number; y: number } | null;
+  start: { x: number; y: number } | null;
+  base: FaceTexture | null;
 }
 /** Trazo en curso: se pinta en copias de las texturas y solo al soltar pasan al modelo, como un único cambio. */
 let pixelStroke: { piece: Piece; faceIndex: number; targets: StrokeTarget[]; changed: boolean } | null = null;
@@ -1860,12 +1862,7 @@ function applyPixelTool(stroke: NonNullable<typeof pixelStroke>, point: Vec3): v
     const cell = texelAt(target.piece.faces[target.faceIndex], target.texture, target.reflect ? target.reflect(point) : point);
     if (!cell) continue;
     // Entre dos movimientos se pinta la recta de casillas, para que un arrastre rápido no deje huecos.
-    const from = target.last ?? cell;
-    target.last = cell;
-    changed +=
-      tool === 'fill'
-        ? floodFill(target.texture, cell.x, cell.y, color)
-        : stampLine(target.texture, from.x, from.y, cell.x, cell.y, size, tool === 'eraser' ? CLEAR : color);
+    changed += paintCell(target.texture, target, tool, cell, size, color);
   }
   if (changed === 0) return;
   stroke.changed = true;
@@ -1890,13 +1887,13 @@ function startPixelStroke(event: PointerEvent): void {
   } catch {
     // Sin captura el trazo sigue mientras el puntero esté sobre el lienzo.
   }
-  const targets: StrokeTarget[] = [{ piece: found.piece, faceIndex, texture, reflect: null, last: null }];
+  const targets: StrokeTarget[] = [{ piece: found.piece, faceIndex, texture, reflect: null, last: null, start: null, base: null }];
   // Con simetría el trazo se repite en los reflejos de la cara, cada uno sobre su propia copia de la textura.
   const centre = faceCentre(found.face);
   for (const reflection of reflections(symmetry)) {
     for (const image of facesAt(model.all(), reflection.point(centre), reflection.dir(found.normal))) {
       if (targets.some((t) => t.piece.id === image.piece.id && t.faceIndex === image.index)) continue;
-      targets.push({ piece: image.piece, faceIndex: image.index, texture: textureOfFace(image.piece, image.index), reflect: reflection.point, last: null });
+      targets.push({ piece: image.piece, faceIndex: image.index, texture: textureOfFace(image.piece, image.index), reflect: reflection.point, last: null, start: null, base: null });
     }
   }
   pixelStroke = { piece: found.piece, faceIndex, targets, changed: false };
@@ -3368,7 +3365,7 @@ const commands: Command[] = [
   { name: 'Paleta: guardar colores recientes', keywords: 'colores', run: () => document.getElementById('paletteSave')!.click() },
   { name: 'Paleta: importar .hex', keywords: 'colores lospec abrir', run: () => document.getElementById('paletteImport')!.click() },
   { name: 'Paleta: exportar .hex', keywords: 'colores lospec descargar', run: () => document.getElementById('paletteExport')!.click() },
-  ...([['pencil', 'Lápiz'], ['eraser', 'Borrador'], ['fill', 'Relleno']] as const).map(([tool, label]): Command => ({
+  ...([['pencil', 'Lápiz'], ['eraser', 'Borrador'], ['fill', 'Relleno'], ['line', 'Línea'], ['rect', 'Rectángulo'], ['rectfill', 'Rectángulo lleno'], ['ellipse', 'Elipse'], ['ellipsefill', 'Elipse llena'], ['replace', 'Reemplazar color'], ['dither', 'Tramado']] as const).map(([tool, label]): Command => ({
     name: `Píxeles: ${label}`,
     keywords: 'pintar textura cara',
     run: () => {
