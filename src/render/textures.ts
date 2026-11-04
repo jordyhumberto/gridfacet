@@ -51,7 +51,7 @@ export function faceMesh(face: [number, number, number][], texture: FaceTexture,
   geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
   geometry.setAttribute('normal', new THREE.Float32BufferAttribute(normals, 3));
   geometry.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
-  const shared = { map: canvasTexture(texture), transparent: true, alphaTest: 0.5, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 };
+  const shared = { map: canvasTexture(texture), alphaTest: 0.5, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 };
   const material = flat ? new THREE.MeshBasicMaterial(shared) : new THREE.MeshStandardMaterial({ ...shared, roughness: 0.7, metalness: 0 });
   return new THREE.Mesh(geometry, material);
 }
