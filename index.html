@@ -105,6 +105,7 @@
       #hud button:hover:not(.active) { background: #343b49; }
       #hud label { display: flex; align-items: center; gap: 3px; }
       #exportMode { flex: 1; min-width: 0; }
+      #axisCompass { position: fixed; right: 12px; bottom: 12px; z-index: 6; width: 96px; height: 96px; border-radius: 50%; background: rgba(20, 22, 28, 0.55); border: 1px solid #343944; cursor: pointer; }
       #hint { position: fixed; left: calc(50% + 170px); bottom: 14px; transform: translateX(-50%); z-index: 6; display: flex; flex-direction: column; gap: 8px; max-width: min(900px, calc(100vw - 400px)); min-width: 260px; max-height: 55vh; overflow: hidden; padding: 9px 14px; box-sizing: border-box; background: rgba(20, 22, 28, 0.92); border: 1px solid #343944; border-left: 5px solid var(--mode, #3b6fd4); border-radius: 8px; font-size: 14px; line-height: 1.35; pointer-events: none; }
       #hint b { flex: none; padding: 2px 8px; border-radius: 5px; background: var(--mode, #3b6fd4); color: #101216; font-size: 12px; letter-spacing: 0.04em; text-transform: uppercase; }
       #hint[hidden] { display: none; }
@@ -148,6 +149,7 @@
       </div>
     </div>
     <div id="hint"></div>
+    <canvas id="axisCompass" width="96" height="96" title="Hacia dónde apunta cada eje desde tu vista (X rojo, Y verde, Z azul). Clic en una letra: mirar desde ese eje"></canvas>
     <button id="helpFloat" title="Ayuda y atajos (?)">?</button>
     <div id="hud">
       <div class="row" id="hudHead">
