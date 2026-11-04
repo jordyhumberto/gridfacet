@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { triangulateFace } from '../core/convex';
-import { FACE_DOUBLE, FACE_UNLIT, faceColorOf, type Piece } from '../core/piece';
+import { FACE_BEHIND, FACE_DOUBLE, FACE_UNLIT, faceColorOf, type Piece } from '../core/piece';
 import { allowUnlit, edgeKey, faceVertexNormals, smoothEdges } from './shading';
 import { wireColor } from './meshes';
 
@@ -11,6 +11,9 @@ const OUTLINE = new THREE.Color(0x14161b);
 interface Chunk {
   pieces: Map<number, Piece>;
   mesh: THREE.Mesh;
+  /** Las caras al fondo: se dibujan antes que todo y sin escribir profundidad. */
+  behind: THREE.Mesh;
+  behindOwners: Int32Array;
   outline: THREE.LineSegments;
   points: THREE.Points;
   /** Para cada triángulo de la malla, la pieza a la que pertenece. */
@@ -29,12 +32,14 @@ export class PieceBatches {
   private chunks = new Map<string, Chunk>();
   private chunkOf = new Map<number, string>();
   private material = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.7, metalness: 0 });
+  private behindMaterial = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.7, metalness: 0, depthWrite: false });
   private lineMaterial = new THREE.LineBasicMaterial({ vertexColors: true });
   private pointMaterial = new THREE.PointsMaterial({ color: 0xe6e8ee, size: 5, sizeAttenuation: false });
   private wireframe = false;
 
   constructor() {
     allowUnlit(this.material);
+    allowUnlit(this.behindMaterial);
   }
 
   /** Vista de solo líneas y vértices: se ocultan las caras (siguen siendo apuntables) y las aristas toman el color de cada pieza. */
@@ -79,13 +84,14 @@ export class PieceBatches {
 
   /** Mallas que conviene usar al apuntar con el ratón. */
   meshes(): THREE.Mesh[] {
-    return [...this.chunks.values()].map((chunk) => chunk.mesh);
+    return [...this.chunks.values()].flatMap((chunk) => [chunk.mesh, chunk.behind]);
   }
 
   /** Pieza a la que pertenece un impacto sobre una de las mallas de lotes. */
   pieceIdAt(hit: THREE.Intersection): number | undefined {
-    const chunk = [...this.chunks.values()].find((c) => c.mesh === hit.object);
-    return chunk && hit.faceIndex != null ? chunk.owners[hit.faceIndex] : undefined;
+    const chunk = [...this.chunks.values()].find((c) => c.mesh === hit.object || c.behind === hit.object);
+    if (!chunk || hit.faceIndex == null) return undefined;
+    return (chunk.mesh === hit.object ? chunk.owners : chunk.behindOwners)[hit.faceIndex];
   }
 
   /** Reconstruye las zonas que cambiaron desde la última vez. */
@@ -94,8 +100,9 @@ export class PieceBatches {
       if (!chunk.dirty) continue;
       chunk.dirty = false;
       if (chunk.pieces.size === 0) {
-        this.group.remove(chunk.mesh, chunk.outline, chunk.points);
+        this.group.remove(chunk.mesh, chunk.behind, chunk.outline, chunk.points);
         chunk.mesh.geometry.dispose();
+        chunk.behind.geometry.dispose();
         chunk.outline.geometry.dispose();
         chunk.points.geometry.dispose();
         this.chunks.delete(key);
@@ -109,8 +116,10 @@ export class PieceBatches {
     const mesh = new THREE.Mesh(new THREE.BufferGeometry(), this.material);
     const outline = new THREE.LineSegments(new THREE.BufferGeometry(), this.lineMaterial);
     const points = new THREE.Points(new THREE.BufferGeometry(), this.pointMaterial);
-    this.group.add(mesh, outline, points);
-    return { pieces: new Map(), mesh, outline, points, owners: new Int32Array(0), dirty: true };
+    const behind = new THREE.Mesh(new THREE.BufferGeometry(), this.behindMaterial);
+    behind.renderOrder = -1;
+    this.group.add(mesh, behind, outline, points);
+    return { pieces: new Map(), mesh, behind, behindOwners: new Int32Array(0), outline, points, owners: new Int32Array(0), dirty: true };
   }
 
   private rebuild(chunk: Chunk): void {
@@ -119,6 +128,11 @@ export class PieceBatches {
     const colors: number[] = [];
     const unlit: number[] = [];
     const owners: number[] = [];
+    const behindPositions: number[] = [];
+    const behindNormals: number[] = [];
+    const behindColors: number[] = [];
+    const behindUnlit: number[] = [];
+    const behindOwners: number[] = [];
     const linePositions: number[] = [];
     const lineColors: number[] = [];
     const vertexPositions: number[] = [];
@@ -133,17 +147,19 @@ export class PieceBatches {
       for (const [faceIndex, face] of piece.faces.entries()) {
         color.set(faceColorOf(piece, faceIndex));
         const flags = piece.faceFlags?.[faceIndex] ?? 0;
+        const toBehind = (flags & FACE_BEHIND) !== 0;
+        const [P, N, C, U, O] = toBehind ? [behindPositions, behindNormals, behindColors, behindUnlit, behindOwners] : [positions, normals, colors, unlit, owners];
         for (const triangle of triangulateFace(face)) {
           for (const back of flags & FACE_DOUBLE ? [false, true] : [false]) {
             for (const v of back ? [...triangle].reverse() : triangle) {
               const p = face[v];
               const n = vertexNormals[faceIndex][v];
-              positions.push(p[0], p[1], p[2]);
-              normals.push(back ? -n[0] : n[0], back ? -n[1] : n[1], back ? -n[2] : n[2]);
-              colors.push(color.r, color.g, color.b);
-              unlit.push(flags & FACE_UNLIT ? 1 : 0);
+              P.push(p[0], p[1], p[2]);
+              N.push(back ? -n[0] : n[0], back ? -n[1] : n[1], back ? -n[2] : n[2]);
+              C.push(color.r, color.g, color.b);
+              U.push(flags & FACE_UNLIT ? 1 : 0);
             }
-            owners.push(piece.id);
+            O.push(piece.id);
           }
         }
         for (let i = 0; i < face.length; i++) {
@@ -166,9 +182,12 @@ export class PieceBatches {
 
     chunk.owners = Int32Array.from(owners);
     replaceGeometry(chunk.mesh, { position: positions, normal: normals, color: colors }, { unlit });
+    chunk.behindOwners = Int32Array.from(behindOwners);
+    replaceGeometry(chunk.behind, { position: behindPositions, normal: behindNormals, color: behindColors }, { unlit: behindUnlit });
     replaceGeometry(chunk.outline, { position: linePositions, color: lineColors });
     replaceGeometry(chunk.points, { position: vertexPositions });
     chunk.mesh.visible = !this.wireframe;
+    chunk.behind.visible = !this.wireframe;
     chunk.points.visible = this.wireframe;
   }
 }

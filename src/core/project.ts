@@ -87,7 +87,7 @@ export function parseProjectFull(text: string): { pieces: Piece[]; marks: Vec3[]
     const painted = Array.isArray(faceColors) && faceColors.length === faces.length && faceColors.every(validColor) ? faceColors : undefined;
     // Las texturas dañadas se descartan sin tirar el proyecto: la cara conserva su color.
     const textures = Array.isArray(faceTextures) && faceTextures.length === faces.length ? faceTextures.map((t) => unpackTexture(t)) : undefined;
-    const flags = Array.isArray(faceFlags) && faceFlags.length === faces.length && faceFlags.every((f) => Number.isInteger(f) && f >= 0 && f <= 3) ? faceFlags : undefined;
+    const flags = Array.isArray(faceFlags) && faceFlags.length === faces.length && faceFlags.every((f) => Number.isInteger(f) && f >= 0 && f <= 7) ? faceFlags : undefined;
     const piece = makePiece(faces, color, painted, textures, flags);
     if (Number.isInteger(group) && (group as number) > 0) {
       piece.group = group as number;

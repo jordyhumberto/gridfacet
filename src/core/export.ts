@@ -1,5 +1,5 @@
 import { splitConvex, triangulateFace } from './convex';
-import { FACE_DOUBLE, FACE_UNLIT, faceColorOf, type Piece, type Vec3 } from './piece';
+import { FACE_DOUBLE, FACE_UNLIT, exportFlags, faceColorOf, hasExportFlags, type Piece, type Vec3 } from './piece';
 import { layerOf } from './layers';
 import { mergeCoplanar } from './merge';
 import { unionSurface } from './union';
@@ -80,10 +80,10 @@ export function buildExportMeshes(pieces: Piece[], mode: ExportMode, layerName: 
     return pieces.flatMap((piece) => {
       // Un grupo con nombre da nombre a sus objetos: útil para reconocer las partes al hacer el rigging en Blender.
       const base = piece.groupName ? `${safeName(piece.groupName)}_${piece.id}` : `Pieza_${piece.id}`;
-      if (!piece.faceColors && !piece.faceFlags) return [{ name: base, color: piece.color, ...weld(piece.faces) }];
+      if (!piece.faceColors && !hasExportFlags(piece)) return [{ name: base, color: piece.color, ...weld(piece.faces) }];
       // Una pieza con caras pintadas o con propiedades se reparte en una malla por color y propiedades, todas bajo el mismo nombre de pieza.
       const buckets = new FaceBuckets();
-      piece.faces.forEach((face, i) => buckets.add(faceColorOf(piece, i), piece.faceFlags?.[i] ?? 0, face));
+      piece.faces.forEach((face, i) => buckets.add(faceColorOf(piece, i), exportFlags(piece, i), face));
       return buckets.meshes(base);
     });
   }
@@ -106,9 +106,9 @@ export function buildExportMeshes(pieces: Piece[], mode: ExportMode, layerName: 
  * o sin sombra entran con sus caras tal cual (la unión perdería esas propiedades).
  */
 function mergedMeshes(pieces: Piece[], prefix: string): ExportMesh[] {
-  const { convex, free } = splitConvex(pieces.filter((piece) => !piece.faceFlags));
+  const { convex, free } = splitConvex(pieces.filter((piece) => !hasExportFlags(piece)));
   const buckets = new FaceBuckets();
   for (const { face, color } of mergeCoplanar(unionSurface(convex))) buckets.add(color, 0, face);
-  for (const piece of [...free, ...pieces.filter((p) => p.faceFlags)]) piece.faces.forEach((face, i) => buckets.add(faceColorOf(piece, i), piece.faceFlags?.[i] ?? 0, face));
+  for (const piece of [...free, ...pieces.filter((p) => hasExportFlags(p))]) piece.faces.forEach((face, i) => buckets.add(faceColorOf(piece, i), exportFlags(piece, i), face));
   return buckets.meshes(prefix);
 }

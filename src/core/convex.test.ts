@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { CATALOG, buildPiece } from './catalog';
 import { isConvex, splitConvex, triangulateFace } from './convex';
 import { buildExportMeshes } from './export';
-import { makePiece, type Piece, type Vec3 } from './piece';
+import { FACE_BEHIND, makePiece, type Piece, type Vec3 } from './piece';
 
 const cube = (x = 0) => buildPiece(CATALOG[0], x, 0, 0, 0, 0x336699);
 
@@ -87,5 +87,16 @@ describe('exportar propiedades de cara', () => {
   it('la unión por color no pierde las propiedades', () => {
     const meshes = buildExportMeshes([flagged(2), cube(5)], 'merged');
     expect(meshes.some((m) => m.flags === 2)).toBe(true);
+  });
+});
+
+describe('al fondo no viaja a los archivos', () => {
+  it('una cara solo «al fondo» no parte la malla ni evita la unión', () => {
+    const base = cube();
+    const behind = makePiece(base.faces, base.color, undefined, undefined, base.faces.map((_, i) => (i === 0 ? FACE_BEHIND : 0)));
+    const meshes = buildExportMeshes([behind], 'perPiece');
+    expect(meshes).toHaveLength(1);
+    expect(meshes[0].flags).toBeUndefined();
+    expect(buildExportMeshes([behind, cube(5)], 'merged')).toHaveLength(1);
   });
 });

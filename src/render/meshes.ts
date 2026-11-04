@@ -1,10 +1,10 @@
 import * as THREE from 'three';
 import { triangulateFace } from '../core/convex';
-import { FACE_DOUBLE, FACE_UNLIT, faceColorOf, type Piece } from '../core/piece';
+import { FACE_BEHIND, FACE_DOUBLE, FACE_UNLIT, faceColorOf, type Piece } from '../core/piece';
 import { allowUnlit, edgeKey, faceVertexNormals, smoothEdges } from './shading';
 
 /** Geometría sin indexar con normales planas; cada cara se triangula (en abanico si es convexa). */
-export function pieceGeometry(piece: Piece): THREE.BufferGeometry {
+export function pieceGeometry(piece: Piece, behind = false): THREE.BufferGeometry {
   const positions: number[] = [];
   const normals: number[] = [];
   const colors: number[] = [];
@@ -14,6 +14,8 @@ export function pieceGeometry(piece: Piece): THREE.BufferGeometry {
   for (const [faceIndex, face] of piece.faces.entries()) {
     paint.set(faceColorOf(piece, faceIndex));
     const flags = piece.faceFlags?.[faceIndex] ?? 0;
+    // Las caras al fondo van en su propia malla (ver createPieceObject).
+    if (!!(flags & FACE_BEHIND) !== behind) continue;
     for (const triangle of triangulateFace(face)) {
       // Con doble cara, el mismo triángulo se repite del revés (y con la normal invertida) para verse por detrás.
       for (const back of flags & FACE_DOUBLE ? [false, true] : [false]) {
@@ -113,9 +115,23 @@ export function createPieceObject(piece: Piece, ghost = false): THREE.Group {
   allowUnlit(material);
   const mesh = new THREE.Mesh(pieceGeometry(piece), material);
   mesh.userData.pieceId = piece.id;
+  // Las caras al fondo se dibujan primero y sin escribir profundidad, así quedan siempre debajo de lo demás.
+  let behindMesh: THREE.Mesh | null = null;
+  if (piece.faceFlags?.some((f) => f & FACE_BEHIND)) {
+    const behindMaterial = material.clone();
+    behindMaterial.depthWrite = false;
+    allowUnlit(behindMaterial);
+    behindMesh = new THREE.Mesh(pieceGeometry(piece, true), behindMaterial);
+    behindMesh.renderOrder = -1;
+    behindMesh.userData.pieceId = piece.id;
+  }
   // Los fantasmas y avisos (vistas previas) conservan sus caras translúcidas incluso en la vista de líneas.
   const wire = wireframe && !ghost;
   mesh.visible = !wire;
+  if (behindMesh) {
+    behindMesh.visible = !wire;
+    group.add(behindMesh);
+  }
   group.add(mesh, pieceOutline(piece, wire ? wireColor(piece.color) : OUTLINE_COLOR));
   if (wire) group.add(pieceVertices(piece));
   group.userData.pieceId = piece.id;

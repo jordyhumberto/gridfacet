@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { CATALOG, buildPiece } from './catalog';
-import { clipPiece, planeFromPoints, volume } from './piece';
+import { clipPiece, makePiece, planeFromPoints, volume } from './piece';
 import { parseProject, parseProjectFull, serializeProject } from './project';
 
 describe('proyecto', () => {
@@ -65,5 +65,14 @@ describe('animación en el proyecto', () => {
     expect(parseProjectFull(serializeProject([])).animation).toBeUndefined();
     const text = JSON.stringify({ format: JSON.parse(serializeProject([])).format, version: 1, pieces: [], animation: { frames: 'x' } });
     expect(parseProjectFull(text).animation).toBeUndefined();
+  });
+});
+
+describe('propiedades de cara en el proyecto', () => {
+  it('guarda y recupera «al fondo» junto con las demás propiedades', () => {
+    const cube = buildPiece(CATALOG[0], 0, 0, 0, 0, 0x336699);
+    const flagged = makePiece(cube.faces, cube.color, undefined, undefined, cube.faces.map((_, i) => (i === 0 ? 7 : 0)));
+    const back = parseProject(serializeProject([flagged]));
+    expect(back[0].faceFlags?.[0]).toBe(7);
   });
 });
