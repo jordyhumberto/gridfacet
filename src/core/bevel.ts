@@ -1,3 +1,4 @@
+import { isConvex } from './convex';
 import type { Change } from './cut';
 import { clipPiece, faceNormal, planeFromPoints, type Piece, type Plane, type Vec3 } from './piece';
 
@@ -85,7 +86,7 @@ export function bevelPlane(edge: PieceEdge, size: number): Plane | null {
 /** Corta la arista en chaflán: la pieza se reemplaza por otra sin esa esquina. */
 export function bevelChange(piece: Piece, edge: PieceEdge, size: number): Change {
   const plane = bevelPlane(edge, size);
-  if (!plane || !(size > EPS)) return { added: [], removed: [] };
+  if (!plane || !(size > EPS) || !isConvex(piece)) return { added: [], removed: [] };
   const result = clipPiece(piece, plane);
   if (!result) return { added: [], removed: [] };
   if (piece.group !== undefined) result.group = piece.group;

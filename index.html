@@ -285,6 +285,14 @@
             <button id="pixelFlat" title="Abre la última cara que tocaste en plano, ampliada (también con doble clic sobre una cara)">Plano</button>
             <small>Arrastra para pintar · Alt: tomar el color · Ctrl+Z deshace el trazo</small>
           </div>
+          <div class="row" id="meshActions" hidden>
+            <button data-mesh="all" title="Elige todos los vértices que se ven">Todos</button>
+            <button data-mesh="merge" title="Junta los vértices elegidos de cada pieza en uno solo, en su centro">Fusionar</button>
+            <button data-mesh="delete" title="Quita los vértices elegidos (Supr)">Borrar</button>
+            <button data-mesh="snap" title="Lleva los vértices elegidos a la rejilla de ¼ de celda">A la rejilla</button>
+            <small id="meshInfo"></small>
+            <small>Arrastra un vértice · X/Y/Z fija el eje · flechas empujan (Ctrl: fino) · Ctrl+arrastrar en vacío: recuadro · Ctrl al arrastrar: sin imán</small>
+          </div>
           <div class="row" id="bevelActions" hidden>
             <label title="Distancia de la arista a cada lado del chaflán, en celdas">Tamaño <input type="number" id="bevelSize" min="0.02" step="0.05" value="0.25" /></label>
             <small>Clic en una arista la corta en chaflán</small>

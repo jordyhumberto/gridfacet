@@ -39,6 +39,8 @@ import { facesAt, paintChange, type FaceRef } from './core/paint';
 import { faceColorOf, faceNormal, newGroupId, withGroup, withLayer } from './core/piece';
 import { VertexTool } from './tools/vertexTool';
 import { FaceEditor } from './tools/faceEditor';
+import { MeshTool } from './tools/meshTool';
+import { isConvex } from './core/convex';
 import { excavateChange, extrudeFaceChange, findSlivers, mergeChange, repeatChange, sinkCutters, sinkFacesChange, splitFaceChange, triangleCount } from './core/modeling';
 
 const DEFAULT_GRID_SIZE = 24;
@@ -196,7 +198,18 @@ model.onChange = ({ added, removed, marksAdded, marksRemoved }) => {
   dirty = true;
   scheduleAutosave();
   syncFileName();
-  selection.remove(removed.map((piece) => piece.id));
+  // Una pieza que vuelve con el mismo id (vértices movidos) sigue elegida y se resalta de nuevo.
+  const returned = new Set(added.map((piece) => piece.id));
+  selection.remove(removed.map((piece) => piece.id).filter((id) => !returned.has(id)));
+  for (const piece of added) {
+    if (!selection.has(piece.id) || objects.has(piece.id)) continue;
+    batches.remove(piece.id);
+    const object = createPieceObject(piece);
+    setHighlight(object, true);
+    objects.set(piece.id, object);
+    scene3d.add(object);
+  }
+  meshTool.refresh();
   syncInspector();
   refreshGroups();
   refreshLayers();
@@ -266,7 +279,7 @@ if (import.meta.env.DEV) {
   };
 }
 
-type Mode = 'place' | 'cut' | 'select' | 'erase' | 'grow' | 'sink' | 'fill' | 'outline' | 'vertex' | 'paint' | 'shape' | 'bevel' | 'face';
+type Mode = 'place' | 'cut' | 'select' | 'erase' | 'grow' | 'sink' | 'fill' | 'outline' | 'vertex' | 'paint' | 'shape' | 'bevel' | 'face' | 'mesh';
 let mode: Mode = 'place';
 let selected = 0;
 let rotation = 0;
@@ -518,6 +531,8 @@ function withCtrl(event: { ctrlKey: boolean; metaKey: boolean }): boolean {
 }
 
 function updateHover(event: PointerEvent): void {
+  // La herramienta de malla lleva su propio ratón.
+  if (mode === 'mesh') return;
   if (mode === 'vertex' && !marquee && !drag && !growDrag) {
     const rect = renderer.domElement.getBoundingClientRect();
     pointer.set(((event.clientX - rect.left) / rect.width) * 2 - 1, -((event.clientY - rect.top) / rect.height) * 2 + 1);
@@ -1241,7 +1256,7 @@ function mirrorCopySelected(axis: 'x' | 'z'): void {
 
 const selActionsEl = document.getElementById('selActions')!;
 function syncSelectionActions(): void {
-  selActionsEl.hidden = mode === 'cut' || mode === 'fill' || mode === 'vertex' || (selection.size === 0 && clipboard.length === 0);
+  selActionsEl.hidden = mode === 'cut' || mode === 'fill' || mode === 'vertex' || mode === 'mesh' || (selection.size === 0 && clipboard.length === 0);
   for (const button of selActionsEl.querySelectorAll<HTMLButtonElement>('button')) {
     button.disabled = button.dataset.sel === 'paste' ? clipboard.length === 0 : selection.size === 0;
   }
@@ -1565,6 +1580,10 @@ function faceToolAt(event: PointerEvent): void {
   const found = hit ? findFace(hit) : undefined;
   if (!found) return;
   const index = found.piece.faces.indexOf(found.face);
+  if (!isConvex(found.piece) && (faceOpEl.value === 'split' || Number(faceDistEl.value) < 0)) {
+    statusEl.textContent = 'Es una malla libre: se puede sacar un cuerpo hacia fuera, pero no cavar ni dividir';
+    return;
+  }
   const change =
     faceOpEl.value === 'split'
       ? splitFaceChange(found.piece, index, Number(faceFractionEl.value))
@@ -1920,6 +1939,43 @@ renderer.domElement.addEventListener('dblclick', (e) => {
   lastPixelFace = { piece: found.piece, faceIndex: found.piece.faces.indexOf(found.face) };
   openFaceEditor();
 });
+
+// Malla: elegir y mover los vértices de las piezas. Una pieza con un vértice hundido deja de ser convexa y pasa a ser malla libre.
+const meshActionsEl = document.getElementById('meshActions')!;
+const meshInfoEl = document.getElementById('meshInfo')!;
+const meshTool = new MeshTool({
+  scene: scene3d,
+  camera,
+  domElement: renderer.domElement,
+  setOrbit: (on) => {
+    controls.enabled = on;
+  },
+  model,
+  selectedPieces: () => selectedPieces(),
+  isHidden: (piece) => hidden.has(piece.id) || layers.isHidden(piece),
+  symmetry: () => symmetry,
+  status: (message) => (statusEl.textContent = message),
+  onSelectionChange: () => syncMeshActions(),
+});
+if (import.meta.env.DEV) (window as unknown as Record<string, unknown>).__mesh = meshTool;
+function syncMeshActions(): void {
+  meshActionsEl.hidden = mode !== 'mesh';
+  const count = meshTool.count;
+  meshInfoEl.textContent = count === 0 ? 'Ningún vértice elegido' : `${count} vértice(s) elegidos`;
+  meshActionsEl.querySelectorAll<HTMLButtonElement>('button[data-mesh]').forEach((button) => {
+    button.disabled = button.dataset.mesh !== 'all' && count === 0;
+  });
+}
+meshActionsEl.querySelectorAll<HTMLButtonElement>('button[data-mesh]').forEach((button) =>
+  button.addEventListener('click', () => {
+    button.blur();
+    const action = button.dataset.mesh;
+    if (action === 'all') meshTool.selectAll();
+    else if (action === 'merge') meshTool.mergeSelected();
+    else if (action === 'delete') meshTool.deleteSelected();
+    else if (action === 'snap') meshTool.snapToGrid();
+  }),
+);
 
 function finishPixelStroke(commit: boolean): boolean {
   const stroke = pixelStroke;
@@ -2351,6 +2407,14 @@ renderer.domElement.addEventListener('pointerup', (e) => {
     faceToolAt(e);
     return;
   }
+  if (mode === 'mesh') {
+    // Clic en una pieza la elige (sus vértices son los que se muestran); en vacío suelta todo.
+    const id = pieceIdOf(castRay(e, false));
+    meshTool.clearSelection();
+    if (id !== undefined) selection.set(groupIds(id));
+    else selection.clear();
+    return;
+  }
   if (mode === 'grow' || mode === 'sink') return;
   if (withCtrl(e)) removeAt(e);
   else placePiece();
@@ -2429,6 +2493,11 @@ vertexButton.textContent = 'V Vértice';
 vertexButton.title = 'Añade un vértice de referencia a la pieza elegida';
 vertexButton.addEventListener('click', () => setMode(mode === 'vertex' ? 'place' : 'vertex'));
 toolsEl.appendChild(vertexButton);
+const meshButton = document.createElement('button');
+meshButton.textContent = 'E Malla';
+meshButton.title = 'Elige y mueve los vértices de las piezas: estira, tuerce y modela formas libres';
+meshButton.addEventListener('click', () => setMode(mode === 'mesh' ? 'place' : 'mesh'));
+toolsEl.appendChild(meshButton);
 const bevelButton = document.createElement('button');
 bevelButton.textContent = 'J Chaflán';
 bevelButton.title = 'Corta una arista en chaflán';
@@ -2540,6 +2609,7 @@ function setMode(next: Mode): void {
   if (mode === 'fill') fillTool.deactivate();
   if (mode === 'outline') outlineTool.deactivate();
   if (mode === 'vertex') vertexTool.deactivate();
+  if (mode === 'mesh') meshTool.deactivate();
   if (mode === 'erase') setEraseHover(undefined);
   if (mode === 'grow' || mode === 'sink') {
     finishGrow(false);
@@ -2556,6 +2626,7 @@ function setMode(next: Mode): void {
   if (mode === 'fill') fillTool.activate();
   if (mode === 'outline') outlineTool.activate();
   if (mode === 'vertex') vertexTool.activate();
+  if (mode === 'mesh') meshTool.activate();
   hasTarget = false;
   refreshGhost();
   syncButtons();
@@ -2563,6 +2634,7 @@ function setMode(next: Mode): void {
   syncFillActions();
   syncOutlineActions();
   syncVertexActions();
+  syncMeshActions();
   syncShapeActions();
   syncBevelActions();
   syncPixelActions();
@@ -2603,6 +2675,7 @@ function syncButtons(): void {
   fillButton.classList.toggle('active', mode === 'fill');
   outlineButton.classList.toggle('active', mode === 'outline');
   vertexButton.classList.toggle('active', mode === 'vertex');
+  meshButton.classList.toggle('active', mode === 'mesh');
 }
 syncButtons();
 
@@ -3045,6 +3118,7 @@ const MODE_INFO: Record<Mode, { name: string; color: string }> = {
   shape: { name: 'Forma', color: '#7ad1ff' },
   bevel: { name: 'Chaflán', color: '#ffb36b' },
   face: { name: 'Cara', color: '#8ce08c' },
+  mesh: { name: 'Malla', color: '#ffd34d' },
 };
 
 // Paleta de comandos (Ctrl+K): busca cualquier acción por nombre y la ejecuta.
@@ -3210,6 +3284,8 @@ function hintText(): string {
       return `Clic: apoyar ${SHAPES.find((s) => s.kind === shapeSpec.kind)?.name.toLowerCase()} sobre lo que apuntas`;
     case 'paint':
       return 'Clic en una cara para pintarla con el color elegido';
+    case 'mesh':
+      return meshTool.count === 0 ? 'Clic en un vértice para elegirlo y arrástralo para moverlo (Ctrl+arrastrar en vacío: recuadro)' : `${meshTool.count} vértice(s): arrastra, usa las flechas o Supr`;
     case 'vertex':
       return 'Clic en un punto amarillo para crear un punto de referencia';
     case 'fill': {
@@ -3313,6 +3389,19 @@ const GUIDE: Record<Mode, [string, string][]> = {
     ['Alt', 'puntos libres sobre la arista'],
     ['+ / − puntos', 'densidad de puntos sobre cada arista (panel)'],
     ['B', 'borrar puntos de referencia'],
+    ['Esc', 'volver a Colocar'],
+    ...VIEW_GUIDE.slice(0, 2),
+  ],
+  mesh: [
+    ['Clic en un vértice', 'elegirlo (Shift: sumar a los elegidos)'],
+    ['Arrastrar un vértice', 'moverlo con imán a ¼ de celda; Ctrl lo suelta; X / Y / Z fija el eje'],
+    ['Ctrl+arrastrar en vacío', 'recuadro: elige todos los vértices dentro, también los de detrás'],
+    ['Flechas', 'empujar los vértices elegidos un paso en la dirección de pantalla (Ctrl: paso fino)'],
+    ['Supr', 'quitar los vértices elegidos'],
+    ['Panel', 'Todos · Fusionar (junta los elegidos en uno) · Borrar · A la rejilla'],
+    ['Clic en una pieza', 'elegirla: solo se muestran sus vértices; en vacío suelta todo'],
+    ['Simetría', 'con X / Y / Z activos el movimiento se refleja en las piezas espejo'],
+    ['Malla libre', 'una pieza con un vértice hundido deja de ser convexa: se puede mover, extruir y pintar, pero no cortar, restar ni unir'],
     ['Esc', 'volver a Colocar'],
     ...VIEW_GUIDE.slice(0, 2),
   ],
@@ -3613,6 +3702,10 @@ window.addEventListener('keydown', (e) => {
   if (e.target instanceof HTMLSelectElement || e.target instanceof HTMLTextAreaElement) return;
   if (e.target instanceof HTMLInputElement && (e.target.type === 'number' || e.target.type === 'text' || e.target.type === 'search')) return;
   const key = e.key.toLowerCase();
+  if (mode === 'mesh' && meshTool.handleKey(e)) {
+    e.preventDefault();
+    return;
+  }
   if ((e.ctrlKey || e.metaKey) && key === 'enter' && mode === 'cut') {
     e.preventDefault();
     cutTool.applyNow();
@@ -3753,6 +3846,7 @@ window.addEventListener('keydown', (e) => {
   if (key === 'l') setMode(mode === 'fill' ? 'place' : 'fill');
   if (key === 'f' && mode !== 'cut') setMode(mode === 'face' ? 'place' : 'face');
   if (key === 'v') setMode(mode === 'vertex' ? 'place' : 'vertex');
+  if (key === 'e') setMode(mode === 'mesh' ? 'place' : 'mesh');
   if (key === 'h') toggleHud();
   if (key === 'a') setHintHidden(!hintHidden);
   if (key === 'w') setWireframe(!isWireframeView());
@@ -3771,7 +3865,7 @@ window.addEventListener('keydown', (e) => {
     }
     if (key === 'f') cutTool.flip();
     if (key === 'escape') cutTool.cancel();
-  } else if (mode === 'vertex' || mode === 'paint' || mode === 'erase' || mode === 'shape' || mode === 'bevel' || mode === 'face') {
+  } else if (mode === 'vertex' || mode === 'mesh' || mode === 'paint' || mode === 'erase' || mode === 'shape' || mode === 'bevel' || mode === 'face') {
     if (key === 'escape') setMode('place');
     if (key === 'r' && mode === 'shape') turnShape();
   } else if (mode === 'fill') {

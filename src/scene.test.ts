@@ -29,3 +29,29 @@ describe('puntos de referencia', () => {
     expect(model.points()).toHaveLength(2);
   });
 });
+
+describe('vista previa de un arrastre', () => {
+  it('varios cambios en vivo se anotan como un solo paso de deshacer', async () => {
+    const { CATALOG, buildPiece } = await import('./core/catalog');
+    const { moveVertices, uniqueVertices, vertexKey } = await import('./core/vertices');
+    const model = new ModelScene();
+    const original = buildPiece(CATALOG[0], 0, 0, 0, 0, 0x336699);
+    model.apply({ added: [original], removed: [] });
+    const corner = uniqueVertices(original)[0];
+    const keys = new Set([vertexKey(corner)]);
+    let current = original;
+    for (const dy of [0.25, 0.5, 0.75]) {
+      const moved = moveVertices(original, keys, [0, dy, 0], true)!;
+      model.preview({ added: [moved], removed: [current] });
+      current = moved;
+    }
+    // Las piezas conservan el id durante la vista previa.
+    expect(model.all().map((p) => p.id)).toEqual([original.id]);
+    model.commitPreview({ added: [current], removed: [original] });
+    expect(model.get(original.id)).toBe(current);
+    model.undo();
+    expect(model.get(original.id)).toBe(original);
+    model.redo();
+    expect(model.get(original.id)).toBe(current);
+  });
+});

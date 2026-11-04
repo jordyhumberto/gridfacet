@@ -1,3 +1,4 @@
+import { splitConvex, triangulateFace } from './convex';
 import { faceColorOf, type Piece, type Vec3 } from './piece';
 import { layerOf } from './layers';
 import { mergeCoplanar } from './merge';
@@ -33,7 +34,7 @@ function weld(faces: Vec3[][]): { positions: number[]; indices: number[] } {
   };
   for (const face of faces) {
     const ids = face.map(indexOf);
-    for (let i = 1; i < ids.length - 1; i++) indices.push(ids[0], ids[i], ids[i + 1]);
+    for (const [a, b, c] of triangulateFace(face)) indices.push(ids[a], ids[b], ids[c]);
   }
   return { positions, indices };
 }
@@ -80,13 +81,19 @@ export function buildExportMeshes(pieces: Piece[], mode: ExportMode, layerName: 
   return mergedMeshes(pieces, 'Gridfacet');
 }
 
-/** Una malla por color con la unión de las piezas dadas; el nombre empieza por `prefix`. */
+/**
+ * Una malla por color con la unión de las piezas dadas; el nombre empieza por `prefix`.
+ * La unión solo vale para poliedros convexos: las mallas libres entran con sus caras tal cual.
+ */
 function mergedMeshes(pieces: Piece[], prefix: string): ExportMesh[] {
+  const { convex, free } = splitConvex(pieces);
   const byColor = new Map<number, Vec3[][]>();
-  for (const { face, color } of mergeCoplanar(unionSurface(pieces))) {
+  const add = (color: number, face: Vec3[]): void => {
     const group = byColor.get(color);
     if (group) group.push(face);
     else byColor.set(color, [face]);
-  }
+  };
+  for (const { face, color } of mergeCoplanar(unionSurface(convex))) add(color, face);
+  for (const piece of free) piece.faces.forEach((face, i) => add(faceColorOf(piece, i), face));
   return [...byColor].map(([color, faces]) => ({ name: `${prefix}_${hex(color)}`, color, ...weld(faces) }));
 }

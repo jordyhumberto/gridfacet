@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { triangulateFace } from '../core/convex';
 import { faceColorOf, type Piece } from '../core/piece';
 import { edgeKey, faceVertexNormals, smoothEdges } from './shading';
 import { wireColor } from './meshes';
@@ -126,8 +127,8 @@ export class PieceBatches {
       const seen = new Set<string>();
       for (const [faceIndex, face] of piece.faces.entries()) {
         color.set(faceColorOf(piece, faceIndex));
-        for (let i = 1; i < face.length - 1; i++) {
-          for (const v of [0, i, i + 1]) {
+        for (const triangle of triangulateFace(face)) {
+          for (const v of triangle) {
             const p = face[v];
             const n = vertexNormals[faceIndex][v];
             positions.push(p[0], p[1], p[2]);

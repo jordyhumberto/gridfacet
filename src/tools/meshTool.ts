@@ -1,0 +1,554 @@
+import * as THREE from 'three';
+import type { Piece, Vec3 } from '../core/piece';
+import { reflections, type Symmetry } from '../core/symmetry';
+import { deleteVertices, mergeVertices, moveVertices, placeVertices, uniqueVertices, vertexKey } from '../core/vertices';
+import type { ModelScene } from '../scene';
+
+/** Paso de la rejilla de imán, en celdas. */
+export const SNAP_STEP = 0.25;
+/** Con Ctrl se empuja con pasos más finos. */
+const FINE_STEP = 1 / 16;
+/** Distancia en pantalla (px) a la que el cursor "agarra" un vértice. */
+const PICK_RADIUS = 12;
+/** Con más vértices que estos no se dibujan todos (solo los de la selección). */
+const MAX_VISIBLE = 4000;
+/** Lo que hay que mover el cursor antes de que un clic pase a ser un arrastre. */
+const DRAG_THRESHOLD = 3;
+
+const NORMAL_COLOR = 0xe6e8ee;
+const SELECTED_COLOR = 0xffd34d;
+const HOVER_COLOR = 0x40e0ff;
+
+export interface MeshToolHost {
+  scene: THREE.Scene;
+  camera: THREE.Camera;
+  domElement: HTMLElement;
+  /** Órbita de la cámara: se apaga mientras se arrastra un vértice. */
+  setOrbit: (enabled: boolean) => void;
+  model: ModelScene;
+  /** Piezas elegidas como objetos (no vértices): si hay alguna, solo se muestran sus vértices. */
+  selectedPieces: () => Piece[];
+  /** Una pieza oculta no ofrece vértices. */
+  isHidden: (piece: Piece) => boolean;
+  symmetry: () => Symmetry;
+  status: (message: string) => void;
+  /** Se llama cuando cambia la selección de vértices (para refrescar el panel). */
+  onSelectionChange: () => void;
+}
+
+/** Vértices elegidos por pieza, con las claves de posición. */
+type VertexSelection = Map<number, Set<string>>;
+
+/** Una pieza que se mueve en el arrastre: su estado inicial, qué vértices lleva y cómo se transforma el desplazamiento. */
+interface Target {
+  original: Piece;
+  keys: Set<string>;
+  /** Dirección del desplazamiento para esta pieza: la identidad, o el reflejo si es la imagen en espejo de la elegida. */
+  dir: (v: Vec3) => Vec3;
+}
+
+const sameId = (made: Piece, old: Piece): Piece => ({ ...made, id: old.id });
+
+export class MeshTool {
+  private selection: VertexSelection = new Map();
+  private overlay = new THREE.Group();
+  private points = new THREE.Points(new THREE.BufferGeometry(), new THREE.PointsMaterial({ size: 9, sizeAttenuation: false, vertexColors: true, depthTest: false, transparent: true }));
+  private shown: { piece: Piece; position: Vec3; key: string }[] = [];
+  private hover: { piece: Piece; key: string } | null = null;
+  private active = false;
+  private marqueeEl: HTMLDivElement | null = null;
+  private marquee: { x: number; y: number; add: boolean } | null = null;
+
+  private drag: {
+    targets: Target[];
+    anchor: Vec3;
+    plane: THREE.Plane;
+    grab: THREE.Vector3;
+    startX: number;
+    startY: number;
+    moved: boolean;
+    delta: Vec3;
+  } | null = null;
+  private axisLock: number | null = null;
+
+  constructor(private readonly host: MeshToolHost) {
+    this.points.renderOrder = 999;
+    this.points.frustumCulled = false;
+    this.overlay.add(this.points);
+    this.overlay.visible = false;
+    host.scene.add(this.overlay);
+    const el = host.domElement;
+    el.addEventListener('pointerdown', (e) => this.down(e), { capture: true });
+    el.addEventListener('pointermove', (e) => this.move(e));
+    el.addEventListener('pointerup', (e) => this.up(e), { capture: true });
+    el.addEventListener('pointercancel', () => this.cancel());
+    el.addEventListener('pointerleave', () => {
+      if (!this.drag && this.hover) {
+        this.hover = null;
+        this.paint();
+      }
+    });
+  }
+
+  get isDragging(): boolean {
+    return this.drag !== null || this.marquee !== null;
+  }
+
+  get count(): number {
+    let total = 0;
+    for (const keys of this.selection.values()) total += keys.size;
+    return total;
+  }
+
+  activate(): void {
+    this.active = true;
+    this.overlay.visible = true;
+    this.refresh();
+  }
+
+  deactivate(): void {
+    this.cancel();
+    this.active = false;
+    this.overlay.visible = false;
+    this.selection.clear();
+    this.hover = null;
+    this.host.onSelectionChange();
+  }
+
+  /** Vuelve a dibujar los vértices (tras un cambio del modelo o de la selección de piezas). */
+  refresh(): void {
+    if (!this.active) return;
+    // Se descartan las elecciones de piezas que ya no existen o de vértices que ya no están.
+    for (const [id, keys] of [...this.selection]) {
+      const piece = this.host.model.get(id);
+      if (!piece) {
+        this.selection.delete(id);
+        continue;
+      }
+      const present = new Set(uniqueVertices(piece).map(vertexKey));
+      for (const key of [...keys]) if (!present.has(key)) keys.delete(key);
+      if (keys.size === 0) this.selection.delete(id);
+    }
+    const chosen = this.host.selectedPieces();
+    let pieces = (chosen.length > 0 ? chosen : this.host.model.editable()).filter((piece) => !this.host.isHidden(piece));
+    pieces = pieces.filter((piece) => !this.host.model.isLocked(piece));
+    const shown: typeof this.shown = [];
+    for (const piece of pieces) {
+      for (const position of uniqueVertices(piece)) shown.push({ piece, position, key: vertexKey(position) });
+      if (shown.length > MAX_VISIBLE) break;
+    }
+    if (shown.length > MAX_VISIBLE) {
+      this.host.status('Hay demasiados vértices para mostrarlos todos: elige una pieza con la herramienta Elegir');
+      shown.length = 0;
+      for (const piece of chosen) for (const position of uniqueVertices(piece)) shown.push({ piece, position, key: vertexKey(position) });
+    }
+    this.shown = shown;
+    this.paint();
+    this.host.onSelectionChange();
+  }
+
+  private paint(): void {
+    const positions: number[] = [];
+    const colors: number[] = [];
+    const color = new THREE.Color();
+    for (const { piece, position, key } of this.shown) {
+      positions.push(position[0], position[1], position[2]);
+      const selected = this.selection.get(piece.id)?.has(key) ?? false;
+      const hovered = this.hover?.piece.id === piece.id && this.hover.key === key;
+      color.set(hovered ? HOVER_COLOR : selected ? SELECTED_COLOR : NORMAL_COLOR);
+      colors.push(color.r, color.g, color.b);
+    }
+    const geometry = this.points.geometry;
+    geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+    geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+    geometry.computeBoundingSphere();
+  }
+
+  private rect(): DOMRect {
+    return this.host.domElement.getBoundingClientRect();
+  }
+
+  private screenOf(p: Vec3): { x: number; y: number; behind: boolean } {
+    const rect = this.rect();
+    const v = new THREE.Vector3(p[0], p[1], p[2]).project(this.host.camera);
+    return { x: rect.left + ((v.x + 1) / 2) * rect.width, y: rect.top + ((1 - v.y) / 2) * rect.height, behind: v.z > 1 };
+  }
+
+  private vertexAt(x: number, y: number): { piece: Piece; key: string; position: Vec3 } | null {
+    let best: { piece: Piece; key: string; position: Vec3 } | null = null;
+    let bestDistance = PICK_RADIUS;
+    for (const entry of this.shown) {
+      const s = this.screenOf(entry.position);
+      if (s.behind) continue;
+      const d = Math.hypot(s.x - x, s.y - y);
+      if (d < bestDistance) {
+        bestDistance = d;
+        best = entry;
+      }
+    }
+    return best;
+  }
+
+  private isSelected(piece: Piece, key: string): boolean {
+    return this.selection.get(piece.id)?.has(key) ?? false;
+  }
+
+  private select(piece: Piece, key: string, additive: boolean): void {
+    if (!additive) this.selection.clear();
+    const keys = this.selection.get(piece.id) ?? new Set<string>();
+    keys.add(key);
+    this.selection.set(piece.id, keys);
+  }
+
+  /** Todos los vértices mostrados. */
+  selectAll(): void {
+    this.selection.clear();
+    for (const { piece, key } of this.shown) {
+      const keys = this.selection.get(piece.id) ?? new Set<string>();
+      keys.add(key);
+      this.selection.set(piece.id, keys);
+    }
+    this.paint();
+    this.host.onSelectionChange();
+  }
+
+  clearSelection(): void {
+    if (this.selection.size === 0) return;
+    this.selection.clear();
+    this.paint();
+    this.host.onSelectionChange();
+  }
+
+  // ——— Ratón ———
+
+  private down(e: PointerEvent): void {
+    if (!this.active || e.button !== 0) return;
+    const hit = this.vertexAt(e.clientX, e.clientY);
+    if (hit) {
+      e.stopImmediatePropagation();
+      if (!this.isSelected(hit.piece, hit.key)) this.select(hit.piece, hit.key, e.shiftKey);
+      else if (e.shiftKey && this.count > 1) this.selection.get(hit.piece.id)?.delete(hit.key);
+      this.paint();
+      this.host.onSelectionChange();
+      this.beginDrag(e, hit.position);
+      return;
+    }
+    if (e.ctrlKey || e.metaKey) {
+      // Ctrl y arrastrar en vacío dibuja un recuadro que elige todos los vértices que caen dentro, también los de detrás.
+      e.stopImmediatePropagation();
+      this.marquee = { x: e.clientX, y: e.clientY, add: e.shiftKey };
+      this.host.setOrbit(false);
+      this.host.domElement.setPointerCapture(e.pointerId);
+    }
+  }
+
+  private beginDrag(e: PointerEvent, anchor: Vec3): void {
+    const targets = this.buildTargets();
+    if (targets.length === 0) return;
+    const camera = this.host.camera;
+    const normal = camera.getWorldDirection(new THREE.Vector3());
+    const plane = new THREE.Plane().setFromNormalAndCoplanarPoint(normal, new THREE.Vector3(...anchor));
+    const grab = this.pointOnPlane(e, plane) ?? new THREE.Vector3(...anchor);
+    this.drag = { targets, anchor, plane, grab, startX: e.clientX, startY: e.clientY, moved: false, delta: [0, 0, 0] };
+    this.host.setOrbit(false);
+    this.host.domElement.setPointerCapture(e.pointerId);
+  }
+
+  /** Las piezas y vértices que se mueven: los elegidos y, con simetría, sus imágenes en espejo con el desplazamiento reflejado. */
+  private buildTargets(): Target[] {
+    const identity = (v: Vec3): Vec3 => v;
+    const targets: Target[] = [];
+    const taken = new Map<number, Set<string>>();
+    const add = (piece: Piece, keys: Set<string>, dir: (v: Vec3) => Vec3): void => {
+      const already = taken.get(piece.id) ?? new Set<string>();
+      const fresh = new Set([...keys].filter((key) => !already.has(key)));
+      if (fresh.size === 0) return;
+      for (const key of fresh) already.add(key);
+      taken.set(piece.id, already);
+      targets.push({ original: piece, keys: fresh, dir });
+    };
+    for (const [id, keys] of this.selection) {
+      const piece = this.host.model.get(id);
+      if (piece) add(piece, new Set(keys), identity);
+    }
+    const mirrors = reflections(this.host.symmetry());
+    if (mirrors.length > 0) {
+      const chosen = [...targets];
+      for (const reflection of mirrors) {
+        const images = new Set<string>();
+        for (const target of chosen) {
+          for (const position of uniqueVertices(target.original)) if (target.keys.has(vertexKey(position))) images.add(vertexKey(reflection.point(position)));
+        }
+        for (const piece of this.host.model.editable()) {
+          const found = new Set(uniqueVertices(piece).map(vertexKey).filter((key) => images.has(key)));
+          if (found.size > 0) add(piece, found, reflection.dir);
+        }
+      }
+    }
+    return targets;
+  }
+
+  private pointOnPlane(e: PointerEvent, plane: THREE.Plane): THREE.Vector3 | null {
+    const rect = this.rect();
+    const ndc = new THREE.Vector2(((e.clientX - rect.left) / rect.width) * 2 - 1, -((e.clientY - rect.top) / rect.height) * 2 + 1);
+    const ray = new THREE.Raycaster();
+    ray.setFromCamera(ndc, this.host.camera);
+    return ray.ray.intersectPlane(plane, new THREE.Vector3());
+  }
+
+  private move(e: PointerEvent): void {
+    if (!this.active) return;
+    if (this.marquee) {
+      this.drawMarquee(e);
+      return;
+    }
+    if (!this.drag) {
+      const hit = this.vertexAt(e.clientX, e.clientY);
+      const same = hit?.piece.id === this.hover?.piece.id && hit?.key === this.hover?.key;
+      if (!same) {
+        this.hover = hit ? { piece: hit.piece, key: hit.key } : null;
+        this.paint();
+        this.host.domElement.style.cursor = hit ? 'move' : 'default';
+      }
+      return;
+    }
+    const drag = this.drag;
+    if (!drag.moved && Math.hypot(e.clientX - drag.startX, e.clientY - drag.startY) < DRAG_THRESHOLD) return;
+    drag.moved = true;
+    const point = this.pointOnPlane(e, drag.plane);
+    if (!point) return;
+    let delta: Vec3 = [point.x - drag.grab.x, point.y - drag.grab.y, point.z - drag.grab.z];
+    if (this.axisLock !== null) delta = delta.map((v, i) => (i === this.axisLock ? v : 0)) as Vec3;
+    // Con imán la posición final del vértice agarrado cae en la rejilla; Ctrl lo suelta.
+    if (!(e.ctrlKey || e.metaKey)) {
+      delta = delta.map((v, i) => {
+        if (this.axisLock !== null && i !== this.axisLock) return 0;
+        return Math.round((drag.anchor[i] + v) / SNAP_STEP) * SNAP_STEP - drag.anchor[i];
+      }) as Vec3;
+    }
+    if (delta.every((v, i) => Math.abs(v - drag.delta[i]) < 1e-9)) return;
+    drag.delta = delta;
+    this.preview(delta);
+  }
+
+  /** Coloca las piezas en su estado inicial más el desplazamiento, sin pasar por el historial. */
+  private preview(delta: Vec3): void {
+    const drag = this.drag!;
+    // La selección sigue a los vértices movidos (cambian de clave al cambiar de sitio) antes de avisar al modelo, que la revisa.
+    for (const target of drag.targets) {
+      if (!this.selection.has(target.original.id)) continue;
+      const d = target.dir(delta);
+      const moved = new Set<string>();
+      for (const position of uniqueVertices(target.original)) {
+        if (target.keys.has(vertexKey(position))) moved.add(vertexKey([position[0] + d[0], position[1] + d[1], position[2] + d[2]]));
+      }
+      this.selection.set(target.original.id, moved);
+    }
+    const removed: Piece[] = [];
+    const added: Piece[] = [];
+    for (const target of drag.targets) {
+      const current = this.host.model.get(target.original.id);
+      const moved = moveVertices(target.original, target.keys, target.dir(delta), true);
+      if (current) removed.push(current);
+      if (moved) added.push(moved);
+    }
+    this.host.model.preview({ added, removed });
+  }
+
+  private up(e: PointerEvent): void {
+    if (!this.active) return;
+    if (this.marquee) {
+      e.stopImmediatePropagation();
+      this.finishMarquee(e);
+      return;
+    }
+    if (!this.drag) return;
+    e.stopImmediatePropagation();
+    this.finishDrag(true);
+  }
+
+  private finishDrag(commit: boolean): void {
+    const drag = this.drag;
+    if (!drag) return;
+    this.drag = null;
+    this.axisLock = null;
+    this.host.setOrbit(true);
+    if (!drag.moved) return;
+    if (!commit) {
+      this.restore(drag.targets);
+      return;
+    }
+    const finals: Piece[] = [];
+    const originals: Piece[] = [];
+    for (const target of drag.targets) {
+      const current = this.host.model.get(target.original.id);
+      if (current) finals.push(current);
+      originals.push(target.original);
+    }
+    this.host.model.commitPreview({ added: finals, removed: originals });
+    this.refresh();
+  }
+
+  private restore(targets: Target[]): void {
+    const removed: Piece[] = [];
+    const added: Piece[] = [];
+    for (const target of targets) {
+      const current = this.host.model.get(target.original.id);
+      if (current) removed.push(current);
+      added.push(target.original);
+      if (this.selection.has(target.original.id)) this.selection.set(target.original.id, new Set(target.keys));
+    }
+    this.host.model.preview({ added, removed });
+    this.refresh();
+  }
+
+  cancel(): void {
+    if (this.drag) this.finishDrag(false);
+    if (this.marquee) {
+      this.marquee = null;
+      this.marqueeEl?.remove();
+      this.marqueeEl = null;
+      this.host.setOrbit(true);
+    }
+  }
+
+  private drawMarquee(e: PointerEvent): void {
+    const m = this.marquee!;
+    if (!this.marqueeEl) {
+      this.marqueeEl = document.createElement('div');
+      this.marqueeEl.style.cssText = 'position:fixed;border:1px solid #ffd34d;background:rgba(255,211,77,0.12);pointer-events:none;z-index:20';
+      document.body.append(this.marqueeEl);
+    }
+    const x = Math.min(m.x, e.clientX);
+    const y = Math.min(m.y, e.clientY);
+    Object.assign(this.marqueeEl.style, { left: `${x}px`, top: `${y}px`, width: `${Math.abs(e.clientX - m.x)}px`, height: `${Math.abs(e.clientY - m.y)}px` });
+  }
+
+  private finishMarquee(e: PointerEvent): void {
+    const m = this.marquee!;
+    this.marquee = null;
+    this.marqueeEl?.remove();
+    this.marqueeEl = null;
+    this.host.setOrbit(true);
+    const x0 = Math.min(m.x, e.clientX);
+    const x1 = Math.max(m.x, e.clientX);
+    const y0 = Math.min(m.y, e.clientY);
+    const y1 = Math.max(m.y, e.clientY);
+    if (x1 - x0 < DRAG_THRESHOLD && y1 - y0 < DRAG_THRESHOLD) return;
+    if (!m.add) this.selection.clear();
+    for (const { piece, position, key } of this.shown) {
+      const s = this.screenOf(position);
+      if (s.behind || s.x < x0 || s.x > x1 || s.y < y0 || s.y > y1) continue;
+      const keys = this.selection.get(piece.id) ?? new Set<string>();
+      keys.add(key);
+      this.selection.set(piece.id, keys);
+    }
+    this.paint();
+    this.host.onSelectionChange();
+  }
+
+  // ——— Teclado y acciones ———
+
+  /** Devuelve true si la tecla se usó aquí y no debe seguir (flechas con selección, Supr, ejes durante el arrastre). */
+  handleKey(e: KeyboardEvent): boolean {
+    if (!this.active) return false;
+    const key = e.key.toLowerCase();
+    if (this.drag && (key === 'x' || key === 'y' || key === 'z')) {
+      const axis = 'xyz'.indexOf(key);
+      this.axisLock = this.axisLock === axis ? null : axis;
+      this.host.status(this.axisLock === null ? 'Arrastrando libre' : `Arrastrando solo en ${key.toUpperCase()}`);
+      return true;
+    }
+    if (this.drag && key === 'escape') {
+      this.finishDrag(false);
+      return true;
+    }
+    if (this.count === 0) return false;
+    if (key === 'delete' || key === 'backspace') {
+      this.deleteSelected();
+      return true;
+    }
+    const arrows: Record<string, [number, number]> = { arrowleft: [-1, 0], arrowright: [1, 0], arrowup: [0, 1], arrowdown: [0, -1] };
+    if (key in arrows) {
+      this.nudge(arrows[key], e.ctrlKey || e.metaKey ? FINE_STEP : SNAP_STEP);
+      return true;
+    }
+    return false;
+  }
+
+  /** Eje del mundo que más se parece a una dirección de pantalla. */
+  private worldAxis(direction: THREE.Vector3): Vec3 {
+    const abs = [Math.abs(direction.x), Math.abs(direction.y), Math.abs(direction.z)];
+    const axis = abs.indexOf(Math.max(...abs));
+    const out: Vec3 = [0, 0, 0];
+    out[axis] = Math.sign([direction.x, direction.y, direction.z][axis]) || 1;
+    return out;
+  }
+
+  /** Empuja los vértices elegidos un paso en la dirección de pantalla dada (derecha/arriba), alineada con un eje del mundo. */
+  private nudge([sx, sy]: [number, number], step: number): void {
+    const camera = this.host.camera;
+    const right = new THREE.Vector3().setFromMatrixColumn(camera.matrixWorld, 0);
+    const up = new THREE.Vector3().setFromMatrixColumn(camera.matrixWorld, 1);
+    // Desde arriba o abajo la "pantalla arriba" es horizontal; si no, se mueve en altura.
+    const vertical = Math.abs(up.y) > 0.5 ? new THREE.Vector3(0, Math.sign(up.y), 0) : up;
+    const a = this.worldAxis(right);
+    const b = this.worldAxis(vertical);
+    const delta: Vec3 = [(a[0] * sx + b[0] * sy) * step, (a[1] * sx + b[1] * sy) * step, (a[2] * sx + b[2] * sy) * step];
+    this.change(
+      (piece, keys, dir) => moveVertices(piece, keys, dir(delta), true),
+      (p, dir) => {
+        const d = dir(delta);
+        return [p[0] + d[0], p[1] + d[1], p[2] + d[2]];
+      },
+    );
+  }
+
+  /** Lleva los vértices elegidos a la rejilla. */
+  snapToGrid(): void {
+    const onGrid = (p: Vec3): Vec3 => p.map((v) => Math.round(v / SNAP_STEP) * SNAP_STEP) as Vec3;
+    this.change((piece, keys) => placeVertices(piece, keys, onGrid, true), onGrid);
+  }
+
+  mergeSelected(): void {
+    if (this.count < 2) {
+      this.host.status('Elige al menos dos vértices de la misma pieza para fusionarlos');
+      return;
+    }
+    this.change((piece, keys) => {
+      const merged = mergeVertices(piece, keys);
+      return merged ? sameId(merged, piece) : null;
+    });
+  }
+
+  deleteSelected(): void {
+    this.change((piece, keys) => {
+      const result = deleteVertices(piece, keys);
+      return result ? sameId(result, piece) : null;
+    });
+  }
+
+  /**
+   * Aplica una operación sobre cada pieza con vértices elegidos (y sus imágenes en espejo) como un único paso de deshacer.
+   * Con `after` la selección sigue a los vértices a su posición nueva; sin él se vacía (fusionar, borrar).
+   */
+  private change(operation: (piece: Piece, keys: Set<string>, dir: (v: Vec3) => Vec3) => Piece | null, after?: (position: Vec3, dir: (v: Vec3) => Vec3) => Vec3): void {
+    const targets = this.buildTargets();
+    if (targets.length === 0) return;
+    const removed: Piece[] = [];
+    const added: Piece[] = [];
+    const next: VertexSelection = new Map();
+    for (const target of targets) {
+      const result = operation(target.original, target.keys, target.dir);
+      removed.push(target.original);
+      if (!result) continue;
+      added.push(result);
+      if (after && this.selection.has(target.original.id)) {
+        next.set(target.original.id, new Set(uniqueVertices(target.original).filter((p) => target.keys.has(vertexKey(p))).map((p) => vertexKey(after(p, target.dir)))));
+      }
+    }
+    this.host.model.apply({ added, removed });
+    this.selection = next;
+    this.refresh();
+  }
+}
