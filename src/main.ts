@@ -41,7 +41,7 @@ import { facesAt, paintChange, type FaceRef } from './core/paint';
 import { FACE_BEHIND, FACE_DOUBLE, FACE_UNLIT, faceColorOf, faceNormal, newGroupId, withGroup, withLayer } from './core/piece';
 import { VertexTool } from './tools/vertexTool';
 import { FaceEditor } from './tools/faceEditor';
-import { MeshTool } from './tools/meshTool';
+import { AXIS_COLORS, MeshTool } from './tools/meshTool';
 import { isConvex } from './core/convex';
 import { excavateChange, extrudeFaceChange, findSlivers, mergeChange, repeatChange, sinkCutters, sinkFacesChange, splitFaceChange, triangleCount } from './core/modeling';
 
@@ -2485,6 +2485,77 @@ document.querySelectorAll<HTMLButtonElement>('#views button').forEach((button) =
   button.addEventListener('click', () => viewFrom(button.dataset.view!)),
 );
 
+// Brújula de ejes: en una esquina, gira con la cámara y marca hacia dónde apuntan X (rojo), Y (verde) y Z (azul) desde tu vista.
+// Con la herramienta Malla, el eje bloqueado se resalta y los otros se atenúan. Un clic en una letra mira desde ese eje.
+const compassEl = document.getElementById('axisCompass') as HTMLCanvasElement;
+const compassContext = compassEl.getContext('2d')!;
+const compassArrows: { axis: number; sign: number; x: number; y: number }[] = [];
+let compassKey = '';
+function drawCompass(): void {
+  const locked = mode === 'mesh' ? meshTool.axis : null;
+  const q = camera.quaternion;
+  const key = `${q.x.toFixed(4)},${q.y.toFixed(4)},${q.z.toFixed(4)},${q.w.toFixed(4)},${locked}`;
+  if (key === compassKey) return;
+  compassKey = key;
+  const size = compassEl.width;
+  const centre = size / 2;
+  const reach = size * 0.34;
+  const inverse = q.clone().invert();
+  const ctx = compassContext;
+  ctx.clearRect(0, 0, size, size);
+  const arrows: { axis: number; sign: number; x: number; y: number; depth: number }[] = [];
+  for (let axis = 0; axis < 3; axis++) {
+    for (const sign of [1, -1]) {
+      const v = new THREE.Vector3(0, 0, 0);
+      v.setComponent(axis, sign);
+      v.applyQuaternion(inverse);
+      arrows.push({ axis, sign, x: centre + v.x * reach, y: centre - v.y * reach, depth: v.z });
+    }
+  }
+  // Lo más lejano se dibuja primero.
+  arrows.sort((a, b) => a.depth - b.depth);
+  compassArrows.length = 0;
+  ctx.lineCap = 'round';
+  ctx.font = 'bold 13px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  for (const a of arrows) {
+    const color = '#' + AXIS_COLORS[a.axis].toString(16).padStart(6, '0');
+    const dim = locked !== null && locked !== a.axis;
+    ctx.globalAlpha = (dim ? 0.3 : 1) * (a.depth < -0.2 ? 0.6 : 1);
+    ctx.strokeStyle = color;
+    ctx.fillStyle = color;
+    ctx.lineWidth = locked === a.axis ? 4 : 2.5;
+    ctx.beginPath();
+    ctx.moveTo(centre, centre);
+    ctx.lineTo(a.x, a.y);
+    ctx.stroke();
+    if (a.sign > 0) {
+      ctx.beginPath();
+      ctx.arc(a.x, a.y, 9, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = '#10121a';
+      ctx.fillText('XYZ'[a.axis], a.x, a.y + 0.5);
+      compassArrows.push({ axis: a.axis, sign: 1, x: a.x, y: a.y });
+    } else {
+      ctx.beginPath();
+      ctx.arc(a.x, a.y, 4, 0, Math.PI * 2);
+      ctx.fill();
+      compassArrows.push({ axis: a.axis, sign: -1, x: a.x, y: a.y });
+    }
+  }
+  ctx.globalAlpha = 1;
+}
+compassEl.addEventListener('click', (e) => {
+  const rect = compassEl.getBoundingClientRect();
+  const x = ((e.clientX - rect.left) / rect.width) * compassEl.width;
+  const y = ((e.clientY - rect.top) / rect.height) * compassEl.height;
+  const hit = compassArrows.filter((a) => Math.hypot(a.x - x, a.y - y) < 11).sort((a, b) => Math.hypot(a.x - x, a.y - y) - Math.hypot(b.x - x, b.y - y))[0];
+  if (!hit) return;
+  viewFrom(`${hit.sign > 0 ? '+' : '-'}${'xyz'[hit.axis]}`);
+  setOrthographic(true);
+});
+
 // Vista ortográfica: sin perspectiva, como las vistas de frente, lado y arriba de un programa de modelado. Se hace con la misma cámara
 // y un ángulo de visión mínimo, alejándola lo justo para que el modelo conserve su tamaño en pantalla; así no cambia nada más.
 const PERSPECTIVE_FOV = 50;
@@ -4404,4 +4475,5 @@ renderer.setAnimationLoop((now) => {
   controls.update();
   batches.flush();
   renderer.render(scene3d, camera);
+  drawCompass();
 });

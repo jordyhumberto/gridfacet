@@ -66,10 +66,17 @@ const cloneSelection = (selection: VertexSelection): VertexSelection => new Map(
 /** Los vértices no se mueven: la selección se queda donde está. */
 const keepPosition = (p: Vec3): Vec3 => p;
 
+/** Colores de los ejes X, Y y Z (los de Blender), también en la brújula del visor. */
+export const AXIS_COLORS = [0xff4d4d, 0x6fdc4a, 0x4d8dff];
+/** Cuánto sobresalen las líneas guía a cada lado del vértice agarrado, en celdas. */
+const GUIDE_REACH = 3;
+
 export class MeshTool {
   private selection: VertexSelection = new Map();
   private overlay = new THREE.Group();
   private points = new THREE.Points(new THREE.BufferGeometry(), new THREE.PointsMaterial({ size: 9, sizeAttenuation: false, vertexColors: true, depthTest: false, transparent: true }));
+  /** Tres líneas (X rojo, Y verde, Z azul) que cruzan el vértice agarrado mientras se arrastra; la del eje bloqueado se ve más fuerte. */
+  private guide = new THREE.LineSegments(new THREE.BufferGeometry(), new THREE.LineBasicMaterial({ vertexColors: true, depthTest: false, transparent: true }));
   private shown: { piece: Piece; position: Vec3; key: string }[] = [];
   private hover: { piece: Piece; key: string } | null = null;
   private active = false;
@@ -115,6 +122,10 @@ export class MeshTool {
     this.points.renderOrder = 999;
     this.points.frustumCulled = false;
     this.overlay.add(this.points);
+    this.guide.renderOrder = 998;
+    this.guide.frustumCulled = false;
+    this.guide.visible = false;
+    this.overlay.add(this.guide);
     this.overlay.visible = false;
     host.scene.add(this.overlay);
     const el = host.domElement;
@@ -147,6 +158,7 @@ export class MeshTool {
   /** Limita el movimiento a un eje (o lo suelta con `null`); lo usan los botones del panel y las teclas X/Y/Z. */
   setAxis(axis: number | null): void {
     this.axisLock = axis;
+    if (this.drag?.moved) this.showGuide([this.drag.anchor[0] + this.drag.delta[0], this.drag.anchor[1] + this.drag.delta[1], this.drag.anchor[2] + this.drag.delta[2]]);
     this.host.status(axis === null ? 'Movimiento libre' : `Movimiento solo en ${'XYZ'[axis]}`);
     this.host.onSelectionChange();
   }
@@ -215,6 +227,25 @@ export class MeshTool {
     this.shown = shown;
     this.paint();
     this.host.onSelectionChange();
+  }
+
+  private showGuide(at: Vec3): void {
+    const reach = GUIDE_REACH;
+    const positions: number[] = [];
+    const colors: number[] = [];
+    const color = new THREE.Color();
+    for (let axis = 0; axis < 3; axis++) {
+      const to: Vec3 = [at[0], at[1], at[2]];
+      const from: Vec3 = [at[0], at[1], at[2]];
+      to[axis] += reach;
+      from[axis] -= reach;
+      positions.push(...from, ...to);
+      color.set(AXIS_COLORS[axis]).multiplyScalar(this.axisLock === null ? 0.8 : this.axisLock === axis ? 1 : 0.3);
+      colors.push(color.r, color.g, color.b, color.r, color.g, color.b);
+    }
+    this.guide.geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+    this.guide.geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+    this.guide.visible = true;
   }
 
   private paint(): void {
@@ -436,6 +467,7 @@ export class MeshTool {
   /** Coloca las piezas en su estado inicial más el desplazamiento, sin pasar por el historial. */
   private preview(delta: Vec3): void {
     const drag = this.drag!;
+    this.showGuide([drag.anchor[0] + delta[0], drag.anchor[1] + delta[1], drag.anchor[2] + delta[2]]);
     // La selección sigue a los vértices movidos (cambian de clave al cambiar de sitio) antes de avisar al modelo, que la revisa.
     for (const target of drag.targets) {
       if (!this.selection.has(target.original.id)) continue;
@@ -473,6 +505,7 @@ export class MeshTool {
     const drag = this.drag;
     if (!drag) return;
     this.drag = null;
+    this.guide.visible = false;
     this.host.setOrbit(true);
     if (!drag.moved) return;
     if (!commit) {
