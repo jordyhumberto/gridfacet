@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { CATALOG, buildPiece } from './catalog';
-import { copyRegion, drawShape, roundMask, moveRegion, pasteRegion, paintCell, rectBetween, replaceColor, floodFill, stamp, stampLine, texelAt, textureOfFace, visibleColor, withFaceTexture } from './pixels';
+import { editRegion, shadeColor, copyRegion, drawShape, roundMask, moveRegion, pasteRegion, paintCell, rectBetween, replaceColor, floodFill, stamp, stampLine, texelAt, textureOfFace, visibleColor, withFaceTexture } from './pixels';
 import { CLEAR, blankTexture, pointOf } from './texture';
 
 const cube = () => buildPiece(CATALOG[0], 0, 0, 0, 0, 0x336699);
@@ -250,5 +250,43 @@ describe('pincel redondo y espejo en la cara', () => {
     paintCell(r, st, 'rectfill', { x: 2, y: 1 }, 1, 3, { mirrorX: true });
     expect(count(r)).toBe(12);
     for (let y = 0; y < 8; y++) for (let x = 0; x < 8; x++) expect(r.pixels[y * 8 + x]).toBe(r.pixels[y * 8 + (7 - x)]);
+  });
+});
+
+describe('voltear, girar, contorno y tono', () => {
+  const tex = (w: number, h: number, pixels: number[]) => ({ w, h, pixels });
+
+  it('voltear cambia el orden dentro de la región y deja lo de fuera', () => {
+    const t = tex(4, 1, [1, 2, 3, 4]);
+    expect(editRegion(t, { x0: 0, y0: 0, x1: 2, y1: 0 }, 'flipH', 0)!.pixels).toEqual([3, 2, 1, 4]);
+    const v = tex(1, 3, [1, 2, 3]);
+    expect(editRegion(v, null, 'flipV', 0)!.pixels).toEqual([3, 2, 1]);
+  });
+
+  it('girar un cuarto de vuelta a la derecha y pide una región cuadrada', () => {
+    const t = tex(2, 2, [1, 2, 3, 4]);
+    expect(editRegion(t, null, 'rotate', 0)!.pixels).toEqual([3, 1, 4, 2]);
+    expect(editRegion(tex(3, 2, [1, 2, 3, 4, 5, 6]), null, 'rotate', 0)).toBeNull();
+    // Cuatro giros dejan la textura como estaba.
+    let r = t;
+    for (let i = 0; i < 4; i++) r = editRegion(r, null, 'rotate', 0)!;
+    expect(r.pixels).toEqual(t.pixels);
+  });
+
+  it('el contorno pinta las casillas sin pintar pegadas a lo pintado, sin tocar las diagonales', () => {
+    const t = tex(3, 3, [CLEAR, CLEAR, CLEAR, CLEAR, 5, CLEAR, CLEAR, CLEAR, CLEAR]);
+    expect(editRegion(t, null, 'outline', 9)!.pixels).toEqual([CLEAR, 9, CLEAR, 9, 5, 9, CLEAR, 9, CLEAR]);
+  });
+
+  it('aclarar y oscurecer cambian lo pintado y no lo sin pintar; sin cambios devuelve null', () => {
+    const t = tex(2, 1, [0x808080, CLEAR]);
+    const light = editRegion(t, null, 'lighten', 0)!;
+    const dark = editRegion(t, null, 'darken', 0)!;
+    expect(light.pixels[0]).toBeGreaterThan(0x808080);
+    expect(dark.pixels[0]).toBeLessThan(0x808080);
+    expect(light.pixels[1]).toBe(CLEAR);
+    expect(editRegion(tex(1, 1, [CLEAR]), null, 'lighten', 0)).toBeNull();
+    expect(shadeColor(0xffffff, true)).toBe(0xffffff);
+    expect(shadeColor(0x000000, false)).toBe(0);
   });
 });
