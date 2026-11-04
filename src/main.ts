@@ -3427,7 +3427,7 @@ function hintText(): string {
     case 'paint':
       return 'Clic en una cara para pintarla con el color elegido';
     case 'mesh':
-      return meshTool.count === 0 ? 'Clic en un vértice para elegirlo y arrástralo para moverlo (Ctrl+arrastrar en vacío: recuadro)' : `${meshTool.count} vértice(s): arrastra, usa las flechas o Supr`;
+      return meshTool.count === 0 ? 'Clic en un vértice para elegirlo y arrástralo para moverlo (Ctrl+arrastrar en vacío: recuadro)' : `${meshTool.count} vértice(s): arrastra o usa Supr (las flechas mueven la cámara)`;
     case 'vertex':
       return 'Clic en un punto amarillo para crear un punto de referencia';
     case 'fill': {
@@ -3539,7 +3539,7 @@ const GUIDE: Record<Mode, [string, string][]> = {
     ['Arrastrar un vértice', 'moverlo con imán a ¼ de celda; Ctrl lo suelta'],
     ['Mover en: Libre · X · Y · Z', 'botones del panel (o teclas X / Y / Z, que en Malla no cambian la simetría): limitan el movimiento a un eje y se mantienen hasta que los cambies; R, T y las deformaciones empiezan con ese eje'],
     ['Ctrl+arrastrar en vacío', 'recuadro: elige todos los vértices dentro, también los de detrás'],
-    ['Flechas', 'empujar los vértices elegidos un paso en la dirección de pantalla (Ctrl: paso fino)'],
+    ['Flechas', 'mover la cámara (Ctrl: más rápido); los vértices se mueven solo con el ratón'],
     ['Supr', 'quitar los vértices elegidos'],
     ['Teclado numérico', '1 frente · 3 derecha · 7 arriba (con Ctrl, la opuesta) · 5 alterna vista ortográfica o con perspectiva'],
     ['Panel (deformar)', 'Afinar, Torcer o Curvar los vértices elegidos a lo largo de un eje (Y por defecto): mueve el ratón a los lados, X/Y/Z cambia el eje, clic confirma'],
@@ -3954,15 +3954,15 @@ window.addEventListener('keydown', (e) => {
     return;
   }
 
-  // Sin selección (o cortando) las flechas desplazan la cámara en pantalla; con selección mueven las piezas.
-  if (key in PAN_KEYS && (mode === 'cut' || mode === 'fill' || mode === 'vertex' || selection.size === 0)) {
+  // Sin selección (o cortando, o en Malla) las flechas desplazan la cámara en pantalla; con selección mueven las piezas.
+  if (key in PAN_KEYS && (mode === 'cut' || mode === 'fill' || mode === 'vertex' || mode === 'mesh' || selection.size === 0)) {
     e.preventDefault();
     panKeys.add(key);
     panFast = fast;
     return;
   }
 
-  if (mode !== 'cut' && mode !== 'fill' && mode !== 'vertex' && selection.size > 0) {
+  if (mode !== 'cut' && mode !== 'fill' && mode !== 'vertex' && mode !== 'mesh' && selection.size > 0) {
     // Ctrl duplica el paso: de un cuarto a media celda.
     const stepXZ = fast ? 2 * STEP_XZ : STEP_XZ;
     const stepY = fast ? 2 * STEP_Y : STEP_Y;
