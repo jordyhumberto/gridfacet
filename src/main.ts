@@ -36,7 +36,7 @@ import { connectedPieces, sizeOf } from './core/connected';
 import { bevelChange, edgeBetween, nearestEdge, type PieceEdge } from './core/bevel';
 import { buildShape, MAX_RINGS, MAX_SIDES, MIN_RINGS, MIN_SIDES, SECTIONS, SHAPES, type ShapeKind, type ShapeSpec, type SphereSection } from './core/shapes';
 import { facesAt, paintChange, type FaceRef } from './core/paint';
-import { faceColorOf, faceNormal, newGroupId, withGroup, withLayer } from './core/piece';
+import { FACE_DOUBLE, FACE_UNLIT, faceColorOf, faceNormal, newGroupId, withGroup, withLayer } from './core/piece';
 import { VertexTool } from './tools/vertexTool';
 import { FaceEditor } from './tools/faceEditor';
 import { MeshTool } from './tools/meshTool';
@@ -244,6 +244,7 @@ selection.onChange = () => {
 
 if (import.meta.env.DEV) {
   const dev = window as unknown as Record<string, unknown>;
+  dev.__scene = scene3d;
   dev.__model = model;
   dev.__cut = cutTool;
   dev.__fill = fillTool;
@@ -1943,6 +1944,8 @@ renderer.domElement.addEventListener('dblclick', (e) => {
 // Malla: elegir y mover los vértices de las piezas. Una pieza con un vértice hundido deja de ser convexa y pasa a ser malla libre.
 const meshActionsEl = document.getElementById('meshActions')!;
 const meshInfoEl = document.getElementById('meshInfo')!;
+const meshDoubleEl = document.getElementById('meshDouble') as HTMLInputElement;
+const meshUnlitEl = document.getElementById('meshUnlit') as HTMLInputElement;
 const meshTool = new MeshTool({
   scene: scene3d,
   camera,
@@ -1965,6 +1968,16 @@ function syncMeshActions(): void {
   meshActionsEl.querySelectorAll<HTMLButtonElement>('button[data-mesh]').forEach((button) => {
     button.disabled = button.dataset.mesh !== 'all' && count === 0;
   });
+  // Las casillas reflejan las caras elegidas (todos sus vértices): marcadas si todas la tienen, a medias si solo algunas.
+  for (const [input, flag] of [[meshDoubleEl, FACE_DOUBLE], [meshUnlitEl, FACE_UNLIT]] as const) {
+    const { total, on } = meshTool.faceFlagCount(flag);
+    input.disabled = total === 0;
+    input.checked = total > 0 && on === total;
+    input.indeterminate = on > 0 && on < total;
+  }
+}
+for (const [input, flag] of [[meshDoubleEl, FACE_DOUBLE], [meshUnlitEl, FACE_UNLIT]] as const) {
+  input.addEventListener('change', () => meshTool.setFaceFlag(flag, input.checked));
 }
 meshActionsEl.querySelectorAll<HTMLButtonElement>('button[data-mesh]').forEach((button) =>
   button.addEventListener('click', () => {
@@ -3402,6 +3415,8 @@ const GUIDE: Record<Mode, [string, string][]> = {
     ['Ctrl+arrastrar en vacío', 'recuadro: elige todos los vértices dentro, también los de detrás'],
     ['Flechas', 'empujar los vértices elegidos un paso en la dirección de pantalla (Ctrl: paso fino)'],
     ['Supr', 'quitar los vértices elegidos'],
+    ['Shift+clic en una cara', 'elegir todos sus vértices (se suman a los elegidos)'],
+    ['Doble cara · Sin sombra', 'casillas del panel: afectan a las caras cuyos vértices están todos elegidos'],
     ['Alt+clic en una arista', 'ponerle un vértice nuevo (en cuartos; Ctrl: donde hagas clic)'],
     ['Panel', 'Todos · Fusionar (junta los elegidos en uno) · Borrar · A la rejilla'],
     ['Panel (caras)', 'Crear cara con tres o más vértices · Borrar / Invertir / Extruir las caras cuyos vértices están todos elegidos'],

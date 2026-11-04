@@ -70,3 +70,22 @@ describe('exportar mallas libres', () => {
     expect(triangles).toBeGreaterThan(12);
   });
 });
+
+describe('exportar propiedades de cara', () => {
+  const flagged = (flags: number): Piece => {
+    const base = cube();
+    return makePiece(base.faces, base.color, undefined, undefined, base.faces.map((_, i) => (i === 0 ? flags : 0)));
+  };
+
+  it('las caras con propiedades salen en su propia malla con las propiedades', () => {
+    const meshes = buildExportMeshes([flagged(1)], 'perPiece');
+    expect(meshes).toHaveLength(2);
+    expect(meshes.find((m) => m.flags === 1)?.indices.length).toBe(6);
+    expect(meshes.find((m) => !m.flags)).toBeDefined();
+  });
+
+  it('la unión por color no pierde las propiedades', () => {
+    const meshes = buildExportMeshes([flagged(2), cube(5)], 'merged');
+    expect(meshes.some((m) => m.flags === 2)).toBe(true);
+  });
+});

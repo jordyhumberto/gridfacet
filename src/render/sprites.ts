@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { buildExportMeshes } from '../core/export';
 import { textureMeshes } from './textures';
-import type { Piece } from '../core/piece';
+import { FACE_DOUBLE, FACE_UNLIT, type Piece } from '../core/piece';
 import { CAMERA_ELEVATION, addOutline, flipRows, sheetLayout, viewYaws, type SpriteCamera } from '../core/sprites';
 
 export interface SpriteOptions {
@@ -24,12 +24,15 @@ export interface SpriteFrame {
 function buildSpriteScene(pieces: Piece[], shading: SpriteOptions['shading']): { scene: THREE.Scene; center: THREE.Vector3; radius: number } {
   const scene = new THREE.Scene();
   const root = new THREE.Group();
-  const materials = new Map<number, THREE.Material>();
+  const materials = new Map<string, THREE.Material>();
   for (const mesh of buildExportMeshes(pieces, 'perPiece')) {
-    let material = materials.get(mesh.color);
+    const flags = mesh.flags ?? 0;
+    const key = `${mesh.color}:${flags}`;
+    let material = materials.get(key);
     if (!material) {
-      material = shading === 'flat' ? new THREE.MeshBasicMaterial({ color: mesh.color }) : new THREE.MeshStandardMaterial({ color: mesh.color, roughness: 0.8, metalness: 0 });
-      materials.set(mesh.color, material);
+      const side = flags & FACE_DOUBLE ? THREE.DoubleSide : THREE.FrontSide;
+      material = shading === 'flat' || flags & FACE_UNLIT ? new THREE.MeshBasicMaterial({ color: mesh.color, side }) : new THREE.MeshStandardMaterial({ color: mesh.color, roughness: 0.8, metalness: 0, side });
+      materials.set(key, material);
     }
     let geometry = new THREE.BufferGeometry();
     geometry.setAttribute('position', new THREE.Float32BufferAttribute(mesh.positions, 3));

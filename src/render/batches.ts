@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { triangulateFace } from '../core/convex';
-import { faceColorOf, type Piece } from '../core/piece';
-import { edgeKey, faceVertexNormals, smoothEdges } from './shading';
+import { FACE_DOUBLE, FACE_UNLIT, faceColorOf, type Piece } from '../core/piece';
+import { allowUnlit, edgeKey, faceVertexNormals, smoothEdges } from './shading';
 import { wireColor } from './meshes';
 
 /** Lado de cada zona, en celdas. Cambiar una pieza solo reconstruye la malla de su zona. */
@@ -32,6 +32,10 @@ export class PieceBatches {
   private lineMaterial = new THREE.LineBasicMaterial({ vertexColors: true });
   private pointMaterial = new THREE.PointsMaterial({ color: 0xe6e8ee, size: 5, sizeAttenuation: false });
   private wireframe = false;
+
+  constructor() {
+    allowUnlit(this.material);
+  }
 
   /** Vista de solo líneas y vértices: se ocultan las caras (siguen siendo apuntables) y las aristas toman el color de cada pieza. */
   private smooth = false;
@@ -113,6 +117,7 @@ export class PieceBatches {
     const positions: number[] = [];
     const normals: number[] = [];
     const colors: number[] = [];
+    const unlit: number[] = [];
     const owners: number[] = [];
     const linePositions: number[] = [];
     const lineColors: number[] = [];
@@ -127,15 +132,19 @@ export class PieceBatches {
       const seen = new Set<string>();
       for (const [faceIndex, face] of piece.faces.entries()) {
         color.set(faceColorOf(piece, faceIndex));
+        const flags = piece.faceFlags?.[faceIndex] ?? 0;
         for (const triangle of triangulateFace(face)) {
-          for (const v of triangle) {
-            const p = face[v];
-            const n = vertexNormals[faceIndex][v];
-            positions.push(p[0], p[1], p[2]);
-            normals.push(n[0], n[1], n[2]);
-            colors.push(color.r, color.g, color.b);
+          for (const back of flags & FACE_DOUBLE ? [false, true] : [false]) {
+            for (const v of back ? [...triangle].reverse() : triangle) {
+              const p = face[v];
+              const n = vertexNormals[faceIndex][v];
+              positions.push(p[0], p[1], p[2]);
+              normals.push(back ? -n[0] : n[0], back ? -n[1] : n[1], back ? -n[2] : n[2]);
+              colors.push(color.r, color.g, color.b);
+              unlit.push(flags & FACE_UNLIT ? 1 : 0);
+            }
+            owners.push(piece.id);
           }
-          owners.push(piece.id);
         }
         for (let i = 0; i < face.length; i++) {
           const a = face[i];
@@ -156,7 +165,7 @@ export class PieceBatches {
     }
 
     chunk.owners = Int32Array.from(owners);
-    replaceGeometry(chunk.mesh, { position: positions, normal: normals, color: colors });
+    replaceGeometry(chunk.mesh, { position: positions, normal: normals, color: colors }, { unlit });
     replaceGeometry(chunk.outline, { position: linePositions, color: lineColors });
     replaceGeometry(chunk.points, { position: vertexPositions });
     chunk.mesh.visible = !this.wireframe;
@@ -164,10 +173,13 @@ export class PieceBatches {
   }
 }
 
-function replaceGeometry(object: THREE.Mesh | THREE.LineSegments | THREE.Points, attributes: Record<string, number[]>): void {
+function replaceGeometry(object: THREE.Mesh | THREE.LineSegments | THREE.Points, attributes: Record<string, number[]>, scalars: Record<string, number[]> = {}): void {
   const geometry = new THREE.BufferGeometry();
   for (const [name, values] of Object.entries(attributes)) {
     geometry.setAttribute(name, new THREE.Float32BufferAttribute(values, 3));
+  }
+  for (const [name, values] of Object.entries(scalars)) {
+    geometry.setAttribute(name, new THREE.Float32BufferAttribute(values, 1));
   }
   geometry.computeBoundingSphere();
   object.geometry.dispose();

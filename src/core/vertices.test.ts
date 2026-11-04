@@ -2,9 +2,9 @@ import { describe, expect, it } from 'vitest';
 import { CATALOG, buildPiece } from './catalog';
 import { isConvex } from './convex';
 import { floodFill, textureOfFace, withFaceTexture } from './pixels';
-import { faceNormal, volume, type Vec3 } from './piece';
+import { FACE_DOUBLE, FACE_UNLIT, faceNormal, volume, type Vec3 } from './piece';
 import { sampleTexture, pointOf, uvOf } from './texture';
-import { addFace, deleteFaces, deleteVertices, extrudeFaces, facesWithin, flipFaces, mergeVertices, moveVertices, placeVertices, splitEdge, uniqueVertices, vertexKey } from './vertices';
+import { addFace, deleteFaces, deleteVertices, extrudeFaces, facesWithin, flipFaces, mergeVertices, moveVertices, placeVertices, setFaceFlags, splitEdge, uniqueVertices, vertexKey } from './vertices';
 
 const cube = () => buildPiece(CATALOG[0], 0, 0, 0, 0, 0x336699);
 const topCorner = (piece = cube()): Vec3 => {
@@ -163,5 +163,34 @@ describe('caras', () => {
     const piece = cube();
     const result = extrudeFaces(piece, new Set([topFace(piece)]), -0.3)!;
     expect(volume(result.piece)).toBeCloseTo(volume(piece) - 0.3, 9);
+  });
+});
+
+describe('propiedades de cara', () => {
+  const top = (piece: ReturnType<typeof cube>) => piece.faces.findIndex((f) => f.every((p) => p[1] === topCorner(piece)[1]));
+
+  it('setFaceFlags pone y quita un bit solo en las caras indicadas', () => {
+    const piece = cube();
+    const on = setFaceFlags(piece, new Set([top(piece)]), FACE_DOUBLE, true)!;
+    expect(on.faceFlags!.filter((f) => f === FACE_DOUBLE)).toHaveLength(1);
+    expect(on.faceFlags![top(piece)]).toBe(FACE_DOUBLE);
+    expect(setFaceFlags(on, new Set([top(piece)]), FACE_DOUBLE, true)).toBeNull();
+    const off = setFaceFlags(on, new Set([top(piece)]), FACE_DOUBLE, false)!;
+    expect(off.faceFlags).toBeUndefined();
+  });
+
+  it('los bits se suman y no se pisan', () => {
+    const piece = cube();
+    const both = setFaceFlags(setFaceFlags(piece, new Set([0]), FACE_DOUBLE, true)!, new Set([0]), FACE_UNLIT, true)!;
+    expect(both.faceFlags![0]).toBe(FACE_DOUBLE | FACE_UNLIT);
+  });
+
+  it('las propiedades siguen a su cara al mover vértices y al extruir', () => {
+    const piece = setFaceFlags(cube(), new Set([top(cube())]), FACE_UNLIT, true)!;
+    const index = top(piece);
+    const moved = moveVertices(piece, keysOf(topCorner(piece)), [0, 0.2, 0])!;
+    expect(moved.faceFlags![index]).toBe(FACE_UNLIT);
+    const extruded = extrudeFaces(piece, new Set([index]), 0.5)!;
+    expect(extruded.piece.faceFlags!.filter((f) => f === FACE_UNLIT).length).toBe(5);
   });
 });

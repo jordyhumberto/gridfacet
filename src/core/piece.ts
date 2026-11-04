@@ -11,6 +11,8 @@ export interface Piece {
   faceColors?: number[];
   /** Píxeles pintados en cada cara (mismo orden que `faces`, `null` donde no hay). Sobre el color de la cara. */
   faceTextures?: (FaceTexture | null)[];
+  /** Propiedades de cada cara (bits de `FACE_DOUBLE` y `FACE_UNLIT`); mismo orden que `faces`. Sin valor, todas normales. */
+  faceFlags?: number[];
   /** Número de grupo: las piezas con el mismo se eligen y mueven juntas. */
   group?: number;
   /** Nombre del grupo (el mismo en todas sus piezas); sirve para nombrar los objetos del GLB. */
@@ -19,12 +21,17 @@ export interface Piece {
   layer?: number;
 }
 
+/** La cara se ve también por detrás. */
+export const FACE_DOUBLE = 1;
+/** La cara no recibe luz ni sombra: se ve con su color tal cual. */
+export const FACE_UNLIT = 2;
+
 let nextGroup = 1;
 export const newGroupId = (): number => nextGroup++;
 
 /** Copia de `piece` con otro grupo (o sin grupo si `group` es undefined) y un id nuevo. */
 export function withGroup(piece: Piece, group: number | undefined, groupName?: string): Piece {
-  const copy = makePiece(piece.faces, piece.color, piece.faceColors, piece.faceTextures);
+  const copy = makePiece(piece.faces, piece.color, piece.faceColors, piece.faceTextures, piece.faceFlags);
   if (piece.layer !== undefined) copy.layer = piece.layer;
   if (group !== undefined) {
     copy.group = group;
@@ -43,7 +50,7 @@ export function keepGroup(to: Piece, from: Piece): Piece {
 
 /** Copia de la pieza en otra capa (la primera no se anota en la pieza), con el mismo grupo. */
 export function withLayer(piece: Piece, layer: number): Piece {
-  const copy = keepGroup(makePiece(piece.faces, piece.color, piece.faceColors, piece.faceTextures), piece);
+  const copy = keepGroup(makePiece(piece.faces, piece.color, piece.faceColors, piece.faceTextures, piece.faceFlags), piece);
   if (layer === 1) delete copy.layer;
   else copy.layer = layer;
   return copy;
@@ -69,12 +76,13 @@ const WELD = 1e-7;
 
 let nextId = 1;
 
-export function makePiece(faces: Vec3[][], color: number, faceColors?: number[], faceTextures?: (FaceTexture | null | undefined)[]): Piece {
+export function makePiece(faces: Vec3[][], color: number, faceColors?: number[], faceTextures?: (FaceTexture | null | undefined)[], faceFlags?: (number | undefined)[]): Piece {
   const piece: Piece = { id: nextId++, faces, color };
   const painted = normalizeFaceColors(color, faceColors);
   if (painted) piece.faceColors = painted;
   const textures = normalizeTextures(faceTextures);
   if (textures && textures.length === faces.length) piece.faceTextures = textures;
+  if (faceFlags && faceFlags.length === faces.length && faceFlags.some((f) => f)) piece.faceFlags = faceFlags.map((f) => f ?? 0);
   return piece;
 }
 
@@ -188,7 +196,8 @@ export function clipPiece(piece: Piece, plane: Plane): Piece | null {
         return sameRing(face, original) ? texture : remapTexture(texture, original, face, (q) => q);
       })
     : undefined;
-  const result = keepGroup(makePiece(faces, piece.color, colors, textures), piece);
+  const flags = piece.faceFlags ? faces.map((_, i) => (sources[i] >= 0 ? piece.faceFlags![sources[i]] : 0)) : undefined;
+  const result = keepGroup(makePiece(faces, piece.color, colors, textures, flags), piece);
   return volume(result) > 1e-9 ? result : null;
 }
 

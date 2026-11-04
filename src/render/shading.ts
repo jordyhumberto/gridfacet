@@ -1,3 +1,4 @@
+import * as THREE from 'three';
 import { faceNormal, type Piece, type Vec3 } from '../core/piece';
 
 /** Ángulo máximo entre dos caras vecinas para que se suavice el borde que comparten; por encima queda arista viva. */
@@ -68,4 +69,20 @@ export function smoothEdges(piece: Piece): Set<string> {
     }
   });
   return smooth;
+}
+
+/**
+ * Hace que las caras con el atributo `unlit` en 1 se vean con su color tal cual, sin luz ni sombra
+ * (conservan el tinte de selección, que entra por la emisión).
+ */
+export function allowUnlit(material: THREE.MeshStandardMaterial): void {
+  material.onBeforeCompile = (shader) => {
+    shader.vertexShader = shader.vertexShader
+      .replace('#include <common>', '#include <common>\nattribute float unlit;\nvarying float vUnlit;')
+      .replace('#include <begin_vertex>', '#include <begin_vertex>\nvUnlit = unlit;');
+    shader.fragmentShader = shader.fragmentShader
+      .replace('#include <common>', '#include <common>\nvarying float vUnlit;')
+      .replace('#include <opaque_fragment>', 'outgoingLight = mix(outgoingLight, diffuseColor.rgb + totalEmissiveRadiance, vUnlit);\n#include <opaque_fragment>');
+  };
+  material.customProgramCacheKey = () => 'gridfacet-unlit';
 }

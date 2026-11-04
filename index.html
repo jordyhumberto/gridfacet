@@ -294,8 +294,10 @@
             <button data-mesh="delface" title="Quita las caras cuyos vértices están todos elegidos: la pieza queda abierta">Borrar cara</button>
             <button data-mesh="flip" title="Da la vuelta a las caras cuyos vértices están todos elegidos">Invertir cara</button>
             <button data-mesh="extrude" title="Extruye las caras cuyos vértices están todos elegidos y deja elegidos los vértices de arriba para moverlos">Extruir cara</button>
+            <label title="Las caras cuyos vértices están todos elegidos se ven también por detrás (hojas, cartulinas, ropa)"><input type="checkbox" id="meshDouble" /> Doble cara</label>
+            <label title="Las caras cuyos vértices están todos elegidos no reciben luz ni sombra: se ven con su color tal cual"><input type="checkbox" id="meshUnlit" /> Sin sombra</label>
             <small id="meshInfo"></small>
-            <small>Alt+clic en una arista: vértice nuevo · Arrastra un vértice · X/Y/Z fija el eje · flechas empujan (Ctrl: fino) · Ctrl+arrastrar en vacío: recuadro · Ctrl al arrastrar: sin imán</small>
+            <small>Shift+clic en una cara: elige sus vértices · Alt+clic en una arista: vértice nuevo · Arrastra un vértice · X/Y/Z fija el eje · flechas empujan (Ctrl: fino) · Ctrl+arrastrar en vacío: recuadro · Ctrl al arrastrar: sin imán</small>
           </div>
           <div class="row" id="bevelActions" hidden>
             <label title="Distancia de la arista a cada lado del chaflán, en celdas">Tamaño <input type="number" id="bevelSize" min="0.02" step="0.05" value="0.25" /></label>

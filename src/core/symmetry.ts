@@ -48,7 +48,7 @@ export function reflectPiece(piece: Piece, reflection: Reflection): Piece {
   });
   // Un reflejo con giro invierte el orden de los vértices: las texturas se remuestrean al marco nuevo.
   const textures = piece.faceTextures?.map((texture, i) => (texture ? remapTexture(texture, piece.faces[i], faces[i], reflection.point) : null));
-  return makePiece(faces, piece.color, piece.faceColors, textures);
+  return makePiece(faces, piece.color, piece.faceColors, textures, piece.faceFlags);
 }
 
 /** Clave geométrica de una pieza: sus vértices ordenados, para reconocer piezas iguales. */

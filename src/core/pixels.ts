@@ -59,7 +59,7 @@ export function visibleColor(texture: FaceTexture, x: number, y: number, faceCol
 /** Copia de la pieza con la textura de una cara cambiada (id nuevo, mismo grupo y capa). */
 export function withFaceTexture(piece: Piece, faceIndex: number, texture: FaceTexture): Piece {
   const textures = piece.faces.map((_, i) => (i === faceIndex ? texture : (piece.faceTextures?.[i] ?? null)));
-  return keepGroup(makePiece(piece.faces, piece.color, piece.faceColors, textures), piece);
+  return keepGroup(makePiece(piece.faces, piece.color, piece.faceColors, textures, piece.faceFlags), piece);
 }
 
 /** Pinta con `stamp` a lo largo de la recta de casilla a casilla (Bresenham), para que un arrastre rápido no deje huecos. */

@@ -1,21 +1,25 @@
 import * as THREE from 'three';
 import { GLTFExporter } from 'three/addons/exporters/GLTFExporter.js';
 import { buildExportMeshes, type ExportMode } from '../core/export';
-import type { Piece } from '../core/piece';
+import { FACE_DOUBLE, FACE_UNLIT, type Piece } from '../core/piece';
 import { textureMeshes } from './textures';
 
 /** Genera un GLB. Sin normales, glTF se interpreta como sombreado plano, que es lo que pide una pieza facetada. */
 export async function exportGlb(pieces: Piece[], mode: ExportMode, layerName?: (layer: number) => string): Promise<ArrayBuffer> {
   const root = new THREE.Group();
   root.name = 'Gridfacet';
-  const materials = new Map<number, THREE.MeshStandardMaterial>();
+  const materials = new Map<string, THREE.MeshStandardMaterial | THREE.MeshBasicMaterial>();
 
   for (const mesh of buildExportMeshes(pieces, mode, layerName)) {
-    let material = materials.get(mesh.color);
+    const flags = mesh.flags ?? 0;
+    const key = `${mesh.color}:${flags}`;
+    let material = materials.get(key);
     if (!material) {
-      material = new THREE.MeshStandardMaterial({ color: mesh.color, roughness: 0.8, metalness: 0 });
-      material.name = `color_${mesh.color.toString(16).padStart(6, '0')}`;
-      materials.set(mesh.color, material);
+      const side = flags & FACE_DOUBLE ? THREE.DoubleSide : THREE.FrontSide;
+      // Sin sombra: un material básico, que el exportador escribe con KHR_materials_unlit.
+      material = flags & FACE_UNLIT ? new THREE.MeshBasicMaterial({ color: mesh.color, side }) : new THREE.MeshStandardMaterial({ color: mesh.color, roughness: 0.8, metalness: 0, side });
+      material.name = `color_${mesh.color.toString(16).padStart(6, '0')}${flags & FACE_DOUBLE ? '_doble' : ''}${flags & FACE_UNLIT ? '_sinluz' : ''}`;
+      materials.set(key, material);
     }
     const geometry = new THREE.BufferGeometry();
     geometry.setAttribute('position', new THREE.Float32BufferAttribute(mesh.positions, 3));
