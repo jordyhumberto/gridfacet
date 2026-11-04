@@ -3,7 +3,7 @@ import type { Piece, Vec3 } from '../core/piece';
 import { pieceKey, reflectPiece, reflections, type Reflection, type Symmetry } from '../core/symmetry';
 import { triangulateFace } from '../core/convex';
 import { collapses } from '../core/selfIntersect';
-import { flagFins, addFace, deleteFaces, deleteVertices, extrudeFaces, facesWithin, flipFaces, mergeVertices, placeVertices, rotateAbout, scaleAbout, setFaceFlags, splitEdge, addVertexOnFace, taperPoint, twistPoint, bendPoint, uniqueVertices, vertexKey } from '../core/vertices';
+import { finFaces, flagFins, splitFacesAtCenter, addFace, deleteFaces, deleteVertices, extrudeFaces, facesWithin, flipFaces, mergeVertices, placeVertices, rotateAbout, scaleAbout, setFaceFlags, splitEdge, addVertexOnFace, taperPoint, twistPoint, bendPoint, uniqueVertices, vertexKey } from '../core/vertices';
 import type { ModelScene } from '../scene';
 
 /** Paso de la rejilla de imán, en celdas. */
@@ -550,13 +550,26 @@ export class MeshTool {
     this.preview(delta);
   }
 
+  /**
+   * La pieza con los vértices elegidos llevados por `to`. Si un punto de arista (que toca solo dos caras) sale de los planos de las dos, antes se pone un
+   * vértice en el centro de cada una: sin él las dos caras acabarían siendo el mismo triángulo, una aleta plana sin volumen.
+   */
+  private place(target: Target, to: (p: Vec3) => Vec3): Piece | null {
+    const moved = placeVertices(target.original, target.keys, to, true);
+    if (!moved || moved.faces.length !== target.original.faces.length) return moved;
+    const { faces } = finFaces(moved, target.original);
+    if (faces.size === 0) return moved;
+    const prepared = splitFacesAtCenter(target.original, faces);
+    return (prepared && placeVertices(prepared, target.keys, to, true)) || moved;
+  }
+
   /** Las piezas con los vértices desplazados (null si una desaparece). */
   private placed(targets: Target[], delta: Vec3): (Piece | null)[] {
     return targets.map((target) =>
-      placeVertices(target.original, target.keys, (p) => {
+      this.place(target, (p) => {
         const d = partOf(target, p).dir(delta);
         return [p[0] + d[0], p[1] + d[1], p[2] + d[2]];
-      }, true),
+      }),
     );
   }
 
@@ -599,7 +612,7 @@ export class MeshTool {
     let finned = false;
     for (const target of drag.targets) {
       const current = this.host.model.get(target.original.id);
-      const moved = placeVertices(target.original, target.keys, shifted(target), true);
+      const moved = this.place(target, shifted(target));
       if (current) removed.push(current);
       if (moved) {
         const fins = flagFins(moved, target.original);
@@ -871,10 +884,10 @@ export class MeshTool {
   /** Las piezas con cada vértice elegido llevado por `map` (las imágenes en espejo reciben la transformación reflejada). */
   private placedMap(targets: Target[], map: (p: Vec3) => Vec3): (Piece | null)[] {
     return targets.map((target) =>
-      placeVertices(target.original, target.keys, (p) => {
+      this.place(target, (p) => {
         const { mirror } = partOf(target, p);
         return mirror ? mirror(map(mirror(p))) : map(p);
-      }, true),
+      }),
     );
   }
 
@@ -895,7 +908,7 @@ export class MeshTool {
     let finned = false;
     for (const target of targets) {
       const current = this.host.model.get(target.original.id);
-      const result = placeVertices(target.original, target.keys, placed(target), true);
+      const result = this.place(target, placed(target));
       if (current) removed.push(current);
       if (result) {
         const fins = flagFins(result, target.original);
