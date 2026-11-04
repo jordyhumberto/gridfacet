@@ -44,6 +44,24 @@ describe('triangulateFace', () => {
     expect(triangulateFace(quad)).toEqual([[0, 1, 2], [0, 2, 3]]);
   });
 
+  it('una cara alabeada con una punta a cada lado sale igual de un lado que de su imagen en espejo', () => {
+    // Anillo largo con vértices a media arista subidos (el caso de partir una arista de una pieza simétrica y levantar el punto).
+    const ring: Vec3[] = [[-1.25, 2, -0.75], [-1.25, 4, 0], [-1.25, 1, 0.75], [1.25, 1, 0.75], [1.25, 4, 0], [1.25, 2, -0.75]];
+    const mirror = ring.map((p) => [-p[0], p[1], p[2]] as Vec3).reverse();
+    const keys = (face: Vec3[]): string[] => triangulateFace(face).map((t) => t.map((i) => face[i].join(',')).sort().join('|')).sort();
+    const mirrored = (k: string): string => k.split('|').map((v) => v.split(',').map(Number)).map(([x, y, z]) => [-x, y, z].join(',')).sort().join('|');
+    const original = keys(ring);
+    const reflected = keys(mirror);
+    // Cada punta tiene su propio triángulo, y las dos son una imagen de la otra.
+    const spikes = original.filter((t) => t.includes('-1.25,4,0') || t.includes('1.25,4,0'));
+    expect(spikes).toHaveLength(2);
+    expect(spikes.map(mirrored).sort()).toEqual([...spikes].sort());
+    // Empezar a contar por otro vértice no cambia el resultado.
+    const turned = [...ring.slice(3), ...ring.slice(0, 3)];
+    expect(keys(turned)).toEqual(original);
+    expect(reflected.filter((t) => t.includes('4,0'))).toHaveLength(2);
+  });
+
   it('una cara en L cubre exactamente su área, sin tapar el hueco', () => {
     // L de área 3: cuadrado de 2×2 sin el cuadrante superior derecho.
     const l: Vec3[] = [[0, 0, 0], [2, 0, 0], [2, 1, 0], [1, 1, 0], [1, 2, 0], [0, 2, 0]];
