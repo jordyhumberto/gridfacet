@@ -12,7 +12,6 @@ const EXTRUDE_DISTANCE = 0.5;
 /** Distancia en pantalla (px) a la que el cursor "agarra" una arista para ponerle un vértice. */
 const EDGE_RADIUS = 8;
 /** Con Ctrl se empuja con pasos más finos. */
-const FINE_STEP = 1 / 16;
 /** Distancia en pantalla (px) a la que el cursor "agarra" un vértice. */
 const PICK_RADIUS = 12;
 /** Con más vértices que estos no se dibujan todos (solo los de la selección). */
@@ -667,11 +666,6 @@ export class MeshTool {
       this.deleteSelected();
       return true;
     }
-    const arrows: Record<string, [number, number]> = { arrowleft: [-1, 0], arrowright: [1, 0], arrowup: [0, 1], arrowdown: [0, -1] };
-    if (key in arrows) {
-      this.nudge(arrows[key], e.ctrlKey || e.metaKey ? FINE_STEP : SNAP_STEP);
-      return true;
-    }
     return false;
   }
 
@@ -830,30 +824,6 @@ export class MeshTool {
     return out;
   }
 
-  /** Empuja los vértices elegidos un paso en la dirección de pantalla dada (derecha/arriba), alineada con un eje del mundo. */
-  private nudge([sx, sy]: [number, number], step: number): void {
-    const camera = this.host.camera;
-    const right = new THREE.Vector3().setFromMatrixColumn(camera.matrixWorld, 0);
-    const up = new THREE.Vector3().setFromMatrixColumn(camera.matrixWorld, 1);
-    // Desde arriba o abajo la "pantalla arriba" es horizontal; si no, se mueve en altura.
-    const vertical = Math.abs(up.y) > 0.5 ? new THREE.Vector3(0, Math.sign(up.y), 0) : up;
-    const a = this.worldAxis(right);
-    const b = this.worldAxis(vertical);
-    const delta: Vec3 = [(a[0] * sx + b[0] * sy) * step, (a[1] * sx + b[1] * sy) * step, (a[2] * sx + b[2] * sy) * step];
-    this.change(
-      (piece, keys, dirAt) =>
-        placeVertices(piece, keys, (p) => {
-          const d = dirAt(p)(delta);
-          return [p[0] + d[0], p[1] + d[1], p[2] + d[2]];
-        }, true),
-      (p, dirAt) => {
-        const d = dirAt(p)(delta);
-        return [p[0] + d[0], p[1] + d[1], p[2] + d[2]];
-      },
-    );
-  }
-
-  /** Lleva los vértices elegidos a la rejilla. */
   snapToGrid(): void {
     const onGrid = (p: Vec3): Vec3 => p.map((v) => Math.round(v / SNAP_STEP) * SNAP_STEP) as Vec3;
     this.change((piece, keys) => placeVertices(piece, keys, onGrid, true), onGrid);
