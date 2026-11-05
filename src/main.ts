@@ -3198,29 +3198,43 @@ async function saveProject(asNew = false): Promise<void> {
 /** Abrir reemplaza la escena como un cambio más, así que se puede deshacer. */
 async function openProject(file: File, handle: FileHandle | null = null): Promise<void> {
   try {
-    const { pieces: loaded, marks, gridSize: savedSize, layers: savedLayers, animation: savedAnimation, references: savedReferences } = parseProjectFull(await file.text());
-    if (savedSize !== undefined) setGridSize(savedSize);
-    if (mode === 'cut') cutTool.cancel();
-    // Las piezas abiertas traen su capa: las nuevas no deben tomar la activa de antes.
-    model.activeLayer = 1;
-    stopAnimationView();
-    const previousAnimation = animation;
-    model.apply({ added: loaded, removed: model.all(), marksAdded: marks, marksRemoved: model.points() });
-    setAnimation(savedAnimation ?? emptyAnimation());
-    // Abrir reemplaza también la animación: si se deshace lo de abrir, vuelve la de antes.
-    if (animation !== previousAnimation) animationUndo.push({ before: previousAnimation, after: animation, depth: model.undoDepth - 1, serial: model.serial, withModel: true });
-    animationRedo = [];
-    layers.load(savedLayers, loaded);
-    applyLayerState();
-    setReferences(savedReferences);
-    fileHandle = handle;
-    fileName = file.name;
-    dirty = false;
-    syncFileName();
-    statusEl.textContent = `Abierto ${file.name} (${loaded.length} piezas). Ctrl+Z para volver atrás`;
+    const project = parseProjectFull(await file.text());
+    replaceProject(project, file.name, handle);
+    statusEl.textContent = `Abierto ${file.name} (${project.pieces.length} piezas). Ctrl+Z para volver atrás`;
   } catch (error) {
     fileProblem(error instanceof Error ? `No se pudo abrir: ${error.message}` : 'No se pudo abrir el archivo');
   }
+}
+
+/** Empieza de cero: lienzo en blanco sin piezas, capas, animación ni referencias, y sin archivo vinculado. Se puede deshacer. */
+function newProject(): void {
+  if (dirty && !window.confirm('Hay cambios sin guardar. ¿Empezar un proyecto nuevo de todas formas? (Ctrl+Z lo recupera)')) return;
+  replaceProject({ pieces: [], marks: [], references: [] }, 'Sin título', null);
+  statusEl.textContent = 'Proyecto nuevo en blanco';
+}
+
+/** Cambia toda la escena por la de un proyecto como un solo cambio (se puede deshacer) y lo deja vinculado al archivo `name`. */
+function replaceProject(project: ReturnType<typeof parseProjectFull>, name: string, handle: FileHandle | null): void {
+  const { pieces: loaded, marks, gridSize: savedSize, layers: savedLayers, animation: savedAnimation, references: savedReferences } = project;
+  if (savedSize !== undefined) setGridSize(savedSize);
+  if (mode === 'cut') cutTool.cancel();
+  // Las piezas abiertas traen su capa: las nuevas no deben tomar la activa de antes.
+  model.activeLayer = 1;
+  selection.clear();
+  stopAnimationView();
+  const previousAnimation = animation;
+  model.apply({ added: loaded, removed: model.all(), marksAdded: marks, marksRemoved: model.points() });
+  setAnimation(savedAnimation ?? emptyAnimation());
+  // Abrir reemplaza también la animación: si se deshace lo de abrir, vuelve la de antes.
+  if (animation !== previousAnimation) animationUndo.push({ before: previousAnimation, after: animation, depth: model.undoDepth - 1, serial: model.serial, withModel: true });
+  animationRedo = [];
+  layers.load(savedLayers, loaded);
+  applyLayerState();
+  setReferences(savedReferences);
+  fileHandle = handle;
+  fileName = name;
+  dirty = false;
+  syncFileName();
 }
 
 /** Con el selector del sistema se conserva el archivo para poder guardar encima; si no, se usa el campo de archivo clásico. */
@@ -3237,6 +3251,7 @@ async function requestOpen(): Promise<void> {
   }
 }
 
+document.getElementById('new')!.addEventListener('click', () => newProject());
 document.getElementById('save')!.addEventListener('click', () => void saveProject(false));
 document.getElementById('saveAs')!.addEventListener('click', () => void saveProject(true));
 document.getElementById('open')!.addEventListener('click', () => void requestOpen());
@@ -3546,6 +3561,7 @@ const commands: Command[] = [
     },
   },
   { name: 'Nueva capa', keywords: 'capas', run: () => layers.add() },
+  { name: 'Nuevo proyecto', keywords: 'nuevo en blanco lienzo vacio', run: newProject },
   { name: 'Guardar', shortcut: 'Ctrl+S', run: () => void saveProject(false) },
   { name: 'Guardar como…', shortcut: 'Ctrl+Alt+S', run: () => void saveProject(true) },
   { name: 'Abrir…', shortcut: 'Ctrl+O', run: () => void requestOpen() },
