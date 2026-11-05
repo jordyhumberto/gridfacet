@@ -3162,6 +3162,8 @@ async function saveProject(asNew = false): Promise<void> {
       }
       try {
         await writeHandle(handle, data);
+        // Algunos navegadores dan por bueno el guardado y dejan el archivo vacío: se comprueba leyéndolo de vuelta.
+        if ((await handle.getFile()).size === 0 && data.length > 0) throw new Error('el archivo quedó vacío');
         fileHandle = handle;
         name = handle.name;
       } catch (error) {
@@ -3271,7 +3273,7 @@ document.getElementById('exportObj')!.addEventListener('click', async () => {
     statusEl.textContent = 'No hay piezas que exportar';
     return;
   }
-  const base = (fileName === 'Sin título' ? 'gridfacet' : fileName.replace(/.json$/i, '')).replace(/[\/:*?"<>|s]+/g, '_');
+  const base = (fileName === 'Sin título' ? 'gridfacet' : fileName.replace(/\.json$/i, '')).replace(/[\/:*?"<>|\s]+/g, '_');
   try {
     const { obj, mtl, atlas } = buildObj(pieces, base);
     downloadBlob(obj, `${base}.obj`, 'text/plain');
