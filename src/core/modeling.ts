@@ -210,6 +210,22 @@ export function mergeChange(pieces: Piece[]): { change: Change } | { error: stri
   return { change: { added: [result], removed: pieces } };
 }
 
+/**
+ * Junta las piezas en un solo bloque sin tocar sus caras (sirve para formas cóncavas o libres, donde no cabe una envolvente convexa).
+ * Cada cara conserva su color, sus pixeles pintados y sus propiedades. Las piezas que se tocan comparten así vértices y aristas.
+ */
+export function joinChange(pieces: Piece[]): { change: Change } | { error: string } {
+  if (pieces.length < 2) return { error: 'Elige al menos dos piezas para fusionarlas' };
+  const faces = pieces.flatMap((piece) => piece.faces);
+  const colors = pieces.flatMap((piece) => piece.faces.map((_, i) => faceColorOf(piece, i)));
+  const textures = pieces.flatMap((piece) => piece.faces.map((_, i) => piece.faceTextures?.[i] ?? null));
+  const flags = pieces.flatMap((piece) => piece.faces.map((_, i) => piece.faceFlags?.[i] ?? 0));
+  const result = makePiece(faces, pieces[0].color, colors, textures, flags);
+  if (new Set(pieces.map((piece) => piece.group)).size === 1) keepGroup(result, pieces[0]);
+  if (new Set(pieces.map((piece) => piece.layer)).size === 1 && pieces[0].layer !== undefined) result.layer = pieces[0].layer;
+  return { change: { added: [result], removed: pieces } };
+}
+
 export interface RepeatSpec {
   count: number;
   /** Desplazamiento entre una copia y la siguiente, en celdas. */
