@@ -3,7 +3,7 @@ import type { Piece, Vec3 } from '../core/piece';
 import { pieceKey, reflectPiece, reflections, type Reflection, type Symmetry } from '../core/symmetry';
 import { triangulateFace } from '../core/convex';
 import { collapses } from '../core/selfIntersect';
-import { finFaces, flagFins, splitFacesAtCenter, addFace, deleteFaces, deleteVertices, extrudeFaces, facesWithin, flipFaces, mergeVertices, placeVertices, rotateAbout, scaleAbout, setFaceFlags, splitEdge, addVertexOnFace, taperPoint, twistPoint, bendPoint, uniqueVertices, vertexKey } from '../core/vertices';
+import { finFaces, flagFins, splitFacesAtCenter, addFace, deleteFaces, deleteVertices, extrudeFaces, facesWithin, flipFaces, mergeVertices, placeVertices, rotateAbout, scaleAbout, setFaceFlags, splitEdge, addMirrorPairOnFace, addVertexOnFace, taperPoint, twistPoint, bendPoint, uniqueVertices, vertexKey } from '../core/vertices';
 import type { ModelScene } from '../scene';
 
 /** Paso de la rejilla de imán, en celdas. */
@@ -1148,6 +1148,21 @@ export class MeshTool {
     if (!face) {
       this.host.status('Apunta a una arista o a una cara de una pieza');
       return false;
+    }
+    // Con un solo espejo y una cara que es su propia imagen, el punto y su espejo parten la cara a la vez y de forma simétrica.
+    const single = reflections(this.host.symmetry());
+    if (single.length === 1) {
+      const reflection = single[0];
+      const corners = face.piece.faces[face.index];
+      const cornerKeys = new Set(corners.map((p) => vertexKey(reflection.point(p))));
+      if (corners.every((p) => cornerKeys.has(vertexKey(p)))) {
+        const pair = addMirrorPairOnFace(face.piece, face.index, [face.point.x, face.point.y, face.point.z], reflection.point);
+        if (pair) {
+          this.commitVertex(new Map([[face.piece.id, sameId(pair.piece, face.piece)]]), face.piece.id, pair.vertex);
+          this.host.status('Vértice añadido en la cara y en su espejo: muévelo para deformar');
+          return true;
+        }
+      }
     }
     const result = addVertexOnFace(face.piece, face.index, [face.point.x, face.point.y, face.point.z]);
     if (!result) {
