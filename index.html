@@ -11,6 +11,10 @@
       #hud { position: fixed; top: 8px; left: 8px; display: flex; flex-direction: column; gap: 6px; padding: 6px; width: min(300px, calc(100vw - 16px)); box-sizing: border-box; background: rgba(20, 22, 28, 0.85); border: 1px solid #343944; border-radius: 8px; font-size: 12px; }
       #hud .row[hidden] { display: none; }
       #hud .row { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
+      /* Un límite de movimiento por línea: etiqueta a la izquierda y botones repartidos a lo ancho. */
+      #hud .axisGroup { display: flex; gap: 4px; align-items: center; flex: 1 1 100%; }
+      #hud .axisGroup > span { flex: 0 0 4.2em; opacity: 0.75; }
+      #hud .axisGroup > button { flex: 1 1 0; min-width: 0; }
       #hud button, #hud select { background: #2a2f3a; color: inherit; border: 1px solid #3d4452; border-radius: 6px; padding: 4px 8px; font-size: 12px; cursor: pointer; }
       #hud button.active { background: #3b6fd4; border-color: #6c98ee; }
       #hud input[type="color"] { width: 28px; height: 24px; padding: 0; border: 1px solid #3d4452; border-radius: 6px; background: none; cursor: pointer; }
@@ -78,7 +82,7 @@
       #faceActions select { background: #2a2f3a; color: inherit; border: 1px solid #3d4452; border-radius: 6px; padding: 2px 4px; font-size: 12px; }
       #repeatRow input[type=number] { width: 40px; }
       #growActions input[type=number] { width: 56px; background: #2a2f3a; color: inherit; border: 1px solid #3d4452; border-radius: 6px; padding: 2px 4px; font-size: 12px; }
-      #growActions button.active, #outlineActions button.active, #meshActions button.active, #placeSize button.active, #slabThick button.active { background: #3b6fd4; border-color: #3b6fd4; color: #fff; }
+      #growActions button.active, #outlineActions button.active, #meshActions button.active, #selectAxis button.active, #placeSize button.active, #slabThick button.active { background: #3b6fd4; border-color: #3b6fd4; color: #fff; }
       #placeSize input[type=number], #slabThick input[type=number] { width: 56px; background: #2a2f3a; color: inherit; border: 1px solid #3d4452; border-radius: 6px; padding: 2px 4px; font-size: 12px; }
       #placeSize, #slabThick, #slopeRow { margin-top: 6px; }
       #slopeRow select { background: #2a2f3a; color: inherit; border: 1px solid #3d4452; border-radius: 6px; padding: 2px 4px; font-size: 12px; }
@@ -318,18 +322,34 @@
             <small>Arrastra para pintar · Alt: tomar el color · Ctrl+Z deshace el trazo</small>
           </div>
           <div class="row" id="selectAxis" hidden>
-            <span title="Limita el arrastre de las piezas elegidas a un solo eje. Se mantiene hasta que lo cambies. Libre: por el suelo (Alt: en vertical)">Mover en:</span>
-            <button data-selaxis="free" title="Sin límite: por el suelo, o en vertical con Alt">Libre</button>
-            <button data-selaxis="0" title="Solo en el eje X">X</button>
-            <button data-selaxis="1" title="Solo en el eje Y (vertical)">Y</button>
-            <button data-selaxis="2" title="Solo en el eje Z">Z</button>
+            <div class="axisGroup">
+              <span title="Limita el arrastre de las piezas elegidas a un eje o a un plano. Se mantiene hasta que lo cambies. Libre: por el suelo (Alt: en vertical)">Mover en</span>
+              <button data-selaxis="free" title="Sin límite: por el suelo, o en vertical con Alt">Libre</button>
+              <button data-selaxis="0" title="Solo en el eje X">X</button>
+              <button data-selaxis="1" title="Solo en el eje Y (vertical)">Y</button>
+              <button data-selaxis="2" title="Solo en el eje Z">Z</button>
+            </div>
+            <div class="axisGroup">
+              <span title="Mezcla dos ejes y deja el tercero fijo">Plano</span>
+              <button data-selaxis="3" title="Mezcla X con Y: por una pared de frente, sin avanzar ni retroceder en Z">XY</button>
+              <button data-selaxis="4" title="Mezcla X con Z: por el suelo, sin subir ni bajar (como Libre, pero fijo)">XZ</button>
+              <button data-selaxis="5" title="Mezcla Y con Z: por una pared de lado, sin moverse en X">YZ</button>
+            </div>
           </div>
           <div class="row" id="meshActions" hidden>
-            <span title="Limita el movimiento de los vértices a un solo eje. Se mantiene hasta que lo cambies (mientras arrastras también sirven las teclas X, Y, Z)">Mover en:</span>
-            <button data-meshaxis="free" title="Sin límite">Libre</button>
-            <button data-meshaxis="0" title="Solo en el eje X">X</button>
-            <button data-meshaxis="1" title="Solo en el eje Y">Y</button>
-            <button data-meshaxis="2" title="Solo en el eje Z">Z</button>
+            <div class="axisGroup">
+              <span title="Limita el movimiento de los vértices a un eje o a un plano. Se mantiene hasta que lo cambies (mientras arrastras también sirven las teclas X, Y, Z)">Mover en</span>
+              <button data-meshaxis="free" title="Sin límite">Libre</button>
+              <button data-meshaxis="0" title="Solo en el eje X (tecla X)">X</button>
+              <button data-meshaxis="1" title="Solo en el eje Y (tecla Y)">Y</button>
+              <button data-meshaxis="2" title="Solo en el eje Z (tecla Z)">Z</button>
+            </div>
+            <div class="axisGroup">
+              <span title="Mezcla dos ejes y deja el tercero fijo">Plano</span>
+              <button data-meshaxis="3" title="Mezcla X con Y: Z queda fijo (Mayús+Z)">XY</button>
+              <button data-meshaxis="4" title="Mezcla X con Z: Y queda fijo (Mayús+Y)">XZ</button>
+              <button data-meshaxis="5" title="Mezcla Y con Z: X queda fijo (Mayús+X)">YZ</button>
+            </div>
             <button id="meshAdd" title="Añadir vértice: con el modo activo, un clic sobre una arista (en cuartos; Ctrl donde pulses) o dentro de una cara le pone un vértice nuevo, que queda elegido para moverlo. Alt+clic en una arista sigue funcionando">+ Vértice</button>
             <button data-mesh="all" title="Elige todos los vértices que se ven">Todos</button>
             <button data-mesh="merge" title="Junta los vértices elegidos de cada pieza en uno solo, en su centro">Fusionar</button>

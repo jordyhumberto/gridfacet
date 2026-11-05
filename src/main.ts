@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { axisAllowed, lockLabel, planeNormal, type AxisLock } from './core/axisLock';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { CATALOG, SLAB_THICKNESS, buildPieces, buildSlab } from './core/catalog';
 import { clearanceLift, edgeLines, flatSurface, gridLines as cellLines, snapSpan } from './core/placement';
@@ -1298,11 +1299,11 @@ function cameraAxes(): { forward: [number, number]; right: [number, number] } {
 }
 
 /** Eje al que se limita el arrastre de piezas con la herramienta Elegir (sin valor: libre). */
-let pieceAxis: number | null = null;
+let pieceAxis: AxisLock = null;
 
 interface Drag {
   id: number;
-  axis: number | null;
+  axis: AxisLock;
   wasSelected: boolean;
   vertical: boolean;
   plane: THREE.Plane;
@@ -2100,7 +2101,7 @@ selectAxisEl.querySelectorAll<HTMLButtonElement>('button[data-selaxis]').forEach
     button.blur();
     pieceAxis = button.dataset.selaxis === 'free' ? null : Number(button.dataset.selaxis);
     syncSelectAxis();
-    statusEl.textContent = pieceAxis === null ? 'Arrastre libre' : `Las piezas solo se mueven en ${'XYZ'[pieceAxis]}`;
+    statusEl.textContent = pieceAxis === null ? 'Arrastre libre' : `Las piezas solo se mueven en ${lockLabel(pieceAxis)}`;
   }),
 );
 syncSelectAxis();
@@ -2441,6 +2442,12 @@ function startDrag(event: PointerEvent): void {
     else plane.setFromNormalAndCoplanarPoint(facing.normalize(), hit.point);
   }
   if (!vertical) plane.setFromNormalAndCoplanarPoint(new THREE.Vector3(0, 1, 0), hit.point);
+  // XY y YZ: un plano vertical fijo (de frente o de lado) en vez del suelo.
+  const fixed = planeNormal(pieceAxis);
+  if (fixed === 2 || fixed === 0) {
+    vertical = false;
+    plane.setFromNormalAndCoplanarPoint(new THREE.Vector3(fixed === 0 ? 1 : 0, 0, fixed === 2 ? 1 : 0), hit.point);
+  }
 
   controls.enabled = false;
   try {
@@ -2501,7 +2508,11 @@ function updateDrag(event: PointerEvent): void {
 
   drag.moved = true;
   const delta = point.sub(drag.origin);
-  if (drag.vertical) {
+  const fixedAxis = planeNormal(drag.axis);
+  if (fixedAxis === 2 || fixedAxis === 0) {
+    const step = withCtrl(event) ? 2 * STEP_XZ : STEP_XZ;
+    drag.offset.set(fixedAxis === 0 ? 0 : snapTo(delta.x, step), snapTo(delta.y, withCtrl(event) ? 2 * STEP_Y : STEP_Y), fixedAxis === 2 ? 0 : snapTo(delta.z, step));
+  } else if (drag.vertical) {
     drag.offset.set(0, snapTo(delta.y, withCtrl(event) ? 2 * STEP_Y : STEP_Y), 0);
   } else {
     const step = withCtrl(event) ? 2 * STEP_XZ : STEP_XZ;
@@ -2707,11 +2718,11 @@ function drawCompass(): void {
   ctx.textBaseline = 'middle';
   for (const a of arrows) {
     const color = '#' + AXIS_COLORS[a.axis].toString(16).padStart(6, '0');
-    const dim = locked !== null && locked !== a.axis;
+    const dim = locked !== null && !axisAllowed(locked, a.axis);
     ctx.globalAlpha = (dim ? 0.3 : 1) * (a.depth < -0.2 ? 0.6 : 1);
     ctx.strokeStyle = color;
     ctx.fillStyle = color;
-    ctx.lineWidth = locked === a.axis ? 4 : 2.5;
+    ctx.lineWidth = locked !== null && axisAllowed(locked, a.axis) ? 4 : 2.5;
     ctx.beginPath();
     ctx.moveTo(centre, centre);
     ctx.lineTo(a.x, a.y);
