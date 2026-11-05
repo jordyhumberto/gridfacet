@@ -677,7 +677,11 @@ export class MeshTool {
     if (this.pendingAdd) {
       const { x, y, ctrl } = this.pendingAdd;
       this.pendingAdd = null;
-      if (Math.hypot(e.clientX - x, e.clientY - y) < DRAG_THRESHOLD && this.addVertexAt(x, y, ctrl)) e.stopImmediatePropagation();
+      if (Math.hypot(e.clientX - x, e.clientY - y) < DRAG_THRESHOLD && this.addVertexAt(x, y, ctrl)) {
+        e.stopImmediatePropagation();
+        // La cámara recibió el pulsar pero ya no recibirá el soltar: sin esto se queda agarrada y sigue al ratón sin tener el botón pulsado.
+        this.host.domElement.dispatchEvent(new PointerEvent('pointercancel', { pointerId: e.pointerId, bubbles: true }));
+      }
       return;
     }
     if (this.marquee) {
