@@ -6,6 +6,7 @@ import {
   excavateChange,
   findSlivers,
   extrudeFaceChange,
+  joinChange,
   mergeChange,
   repeatChange,
   splitFaceChange,
@@ -144,6 +145,22 @@ describe('fusionar', () => {
   it('una L no es convexa y se rechaza', () => {
     const result = mergeChange([box(0, 0, 0, 2, 1, 1), box(0, 1, 0, 1, 2, 1)]);
     expect('error' in result).toBe(true);
+  });
+
+  it('joinChange junta las caras de una L en un solo bloque, con sus colores', () => {
+    const a = box(0, 0, 0, 2, 1, 1);
+    const b = box(0, 1, 0, 1, 2, 1);
+    b.color = 0x0000ff;
+    const result = joinChange([a, b]);
+    expect('error' in result).toBe(false);
+    if ('error' in result) return;
+    const [joined] = result.change.added;
+    expect(result.change.added).toHaveLength(1);
+    expect(joined.faces).toHaveLength(a.faces.length + b.faces.length);
+    expect(joined.faces.slice(a.faces.length)).toEqual(b.faces);
+    expect(joined.faceColors?.[0]).toBe(0x00ff00);
+    expect(joined.faceColors?.[a.faces.length]).toBe(0x0000ff);
+    expect(joinChange([a])).toHaveProperty('error');
   });
 
   it('piezas separadas dejan hueco y se rechazan', () => {

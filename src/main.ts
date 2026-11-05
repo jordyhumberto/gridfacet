@@ -47,7 +47,7 @@ import { VertexTool } from './tools/vertexTool';
 import { FaceEditor } from './tools/faceEditor';
 import { AXIS_COLORS, MeshTool } from './tools/meshTool';
 import { isConvex } from './core/convex';
-import { excavateChange, extrudeFaceChange, findSlivers, mergeChange, repeatChange, sinkCutters, sinkFacesChange, splitFaceChange, triangleCount } from './core/modeling';
+import { excavateChange, extrudeFaceChange, findSlivers, joinChange, mergeChange, repeatChange, sinkCutters, sinkFacesChange, splitFaceChange, triangleCount } from './core/modeling';
 
 const DEFAULT_GRID_SIZE = 24;
 const MIN_GRID_SIZE = 4;
@@ -1630,13 +1630,16 @@ function excavateSelected(): void {
 
 /** Une las piezas elegidas en una sola si su unión es convexa. */
 function mergeSelected(): void {
-  const result = mergeChange(selectedPieces());
+  const pieces = selectedPieces();
+  const hull = mergeChange(pieces);
+  // Si la unión no es convexa, las piezas se juntan tal cual en un solo bloque, con todas sus caras.
+  const result = 'error' in hull ? joinChange(pieces) : hull;
   if ('error' in result) {
     statusEl.textContent = result.error;
     return;
   }
   commitTransform(result.change);
-  statusEl.textContent = 'Piezas fusionadas en una';
+  statusEl.textContent = 'error' in hull ? 'Piezas fusionadas en un solo bloque (con todas sus caras)' : 'Piezas fusionadas en una';
 }
 
 const repeatEl = document.getElementById('repeatRow')!;
