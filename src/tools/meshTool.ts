@@ -114,18 +114,27 @@ function planeDistance(face: Vec3[], point: Vec3): number {
   return Infinity;
 }
 
-/** La arista de la pieza cuyos extremos están (a menos de 0,02) en esos dos puntos, en cualquier orden. */
-function nearestEdge(piece: Piece, a: Vec3, b: Vec3): { a: Vec3; b: Vec3; swapped: boolean } | null {
-  const tolerance = 0.02;
+/** La arista de la pieza que pasa a menos de 0,02 del punto (sin ser uno de sus extremos), con la posición del punto a lo largo de ella. */
+function edgeThrough(piece: Piece, point: Vec3): { a: Vec3; b: Vec3; t: number } | null {
+  let best: { a: Vec3; b: Vec3; t: number } | null = null;
+  let bestDistance = 0.02;
   for (const face of piece.faces) {
     for (let i = 0; i < face.length; i++) {
       const p = face[i];
       const q = face[(i + 1) % face.length];
-      if (distance3(p, a) < tolerance && distance3(q, b) < tolerance) return { a: p, b: q, swapped: false };
-      if (distance3(p, b) < tolerance && distance3(q, a) < tolerance) return { a: p, b: q, swapped: true };
+      const d: Vec3 = [q[0] - p[0], q[1] - p[1], q[2] - p[2]];
+      const length2 = d[0] * d[0] + d[1] * d[1] + d[2] * d[2];
+      if (length2 < 1e-12) continue;
+      const t = ((point[0] - p[0]) * d[0] + (point[1] - p[1]) * d[1] + (point[2] - p[2]) * d[2]) / length2;
+      if (t < 0.02 || t > 0.98) continue;
+      const distance = distance3([p[0] + d[0] * t, p[1] + d[1] * t, p[2] + d[2] * t], point);
+      if (distance < bestDistance) {
+        bestDistance = distance;
+        best = { a: p, b: q, t };
+      }
     }
   }
-  return null;
+  return best;
 }
 
 export class MeshTool {
@@ -1256,22 +1265,25 @@ export class MeshTool {
     if (!result) return false;
     const edits = new Map<number, Piece>([[piece.id, sameId(result.piece, piece)]]);
     // Con simetría, la arista espejo de cada pieza imagen recibe el vértice en el punto reflejado.
-    for (const { reflection, other } of this.mirrorImages(piece)) {
+    // (Si la imagen es la propia pieza, su arista espejo puede ser la misma ya partida: eso lo resuelve la búsqueda por posición de abajo.)
+    const imagesDone = this.mirrorImages(piece);
+    for (const { reflection, other } of imagesDone) {
+      if (other.id === piece.id) continue;
       const current = edits.get(other.id) ?? other;
       const image = splitEdge(current, reflection.point(a), reflection.point(b), t);
       if (image) edits.set(other.id, sameId(image.piece, other));
     }
     // Sin pieza imagen exacta, la arista espejo se busca por posición (con unas milésimas de margen).
-    const imagesDone = this.mirrorImages(piece);
-    for (const reflection of this.missingReflections(imagesDone)) {
-      const wantA = reflection.point(a);
-      const wantB = reflection.point(b);
-      if (distance3(wantA, a) < 1e-6 && distance3(wantB, b) < 1e-6) continue;
+    for (const reflection of this.missingReflections(imagesDone.filter((i) => i.other.id !== piece.id))) {
+      const at: Vec3 = [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t];
+      const want = reflection.point(at);
+      if (distance3(want, at) < 1e-6) continue;
       for (const other of this.host.model.editable()) {
         const current = edits.get(other.id) ?? other;
-        const edge = nearestEdge(current, wantA, wantB);
+        // Se busca, en la pieza ya editada, la arista que pasa por el punto reflejado (puede ser un tramo de la propia arista recién partida).
+        const edge = edgeThrough(current, want);
         if (!edge) continue;
-        const image = splitEdge(current, edge.a, edge.b, edge.swapped ? 1 - t : t);
+        const image = splitEdge(current, edge.a, edge.b, edge.t);
         if (image) {
           edits.set(other.id, sameId(image.piece, other));
           break;
