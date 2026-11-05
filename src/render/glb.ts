@@ -98,6 +98,10 @@ export function downloadBlob(data: BlobPart, filename: string, type: string): vo
   const link = document.createElement('a');
   link.href = url;
   link.download = filename;
+  link.hidden = true;
+  // Unido al documento (Firefox y los paneles integrados lo exigen) y sin soltar la URL de golpe: la descarga puede tardar en empezar.
+  document.body.appendChild(link);
   link.click();
-  URL.revokeObjectURL(url);
+  link.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 30000);
 }
