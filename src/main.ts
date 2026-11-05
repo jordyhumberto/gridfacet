@@ -2148,6 +2148,11 @@ function syncMeshActions(): void {
 for (const [input, flag] of [[meshDoubleEl, FACE_DOUBLE], [meshUnlitEl, FACE_UNLIT], [meshBehindEl, FACE_BEHIND]] as const) {
   input.addEventListener('change', () => meshTool.setFaceFlag(flag, input.checked));
 }
+const meshDensityEl = document.getElementById('meshDensity') as HTMLSelectElement;
+meshDensityEl.addEventListener('change', () => {
+  meshTool.edgeDivisions = Number(meshDensityEl.value);
+  meshDensityEl.blur();
+});
 document.getElementById('meshAdd')!.addEventListener('click', (event) => {
   (event.currentTarget as HTMLButtonElement).blur();
   meshTool.setAddMode(!meshTool.addMode);
