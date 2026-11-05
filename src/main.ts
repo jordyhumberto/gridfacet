@@ -3147,6 +3147,12 @@ let fileHandle: FileHandle | null = null;
 
 const errorText = (error: unknown): string => (error instanceof Error ? error.message : 'error desconocido');
 
+/** Un fallo al guardar o abrir se muestra en un aviso: la línea de estado es pequeña y pasa desapercibida. */
+function fileProblem(message: string): void {
+  statusEl.textContent = message;
+  window.alert(message);
+}
+
 /** Guardar escribe sobre el archivo actual; "Guardar como" (o un proyecto nuevo) abre el diálogo para elegir carpeta y nombre. */
 async function saveProject(asNew = false): Promise<void> {
   const pieces = model.all();
@@ -3170,7 +3176,7 @@ async function saveProject(asNew = false): Promise<void> {
         // Algunos navegadores (o paneles integrados) crean el archivo pero no dejan escribir en él: queda vacío. Se guarda como descarga normal.
         fileHandle = null;
         downloadBlob(data, suggested, 'application/json');
-        statusEl.textContent = `No se pudo escribir en ${handle.name} (${errorText(error)}); se descargó ${suggested} en su lugar`;
+        fileProblem(`No se pudo escribir en ${handle.name} (${errorText(error)}); se descargó ${suggested} en su lugar`);
         fileName = suggested;
         dirty = false;
         syncFileName();
@@ -3180,7 +3186,7 @@ async function saveProject(asNew = false): Promise<void> {
       downloadBlob(data, suggested, 'application/json');
     }
   } catch (error) {
-    statusEl.textContent = `No se pudo guardar: ${errorText(error)}`;
+    fileProblem(`No se pudo guardar: ${errorText(error)}`);
     return;
   }
   fileName = name;
@@ -3213,7 +3219,7 @@ async function openProject(file: File, handle: FileHandle | null = null): Promis
     syncFileName();
     statusEl.textContent = `Abierto ${file.name} (${loaded.length} piezas). Ctrl+Z para volver atrás`;
   } catch (error) {
-    statusEl.textContent = error instanceof Error ? `No se pudo abrir: ${error.message}` : 'No se pudo abrir el archivo';
+    fileProblem(error instanceof Error ? `No se pudo abrir: ${error.message}` : 'No se pudo abrir el archivo');
   }
 }
 
@@ -3227,7 +3233,7 @@ async function requestOpen(): Promise<void> {
     const handle = await pickOpen('Proyecto de Gridfacet', 'application/json', '.json');
     if (handle) await openProject(await handle.getFile(), handle);
   } catch (error) {
-    statusEl.textContent = `No se pudo abrir: ${errorText(error)}`;
+    fileProblem(`No se pudo abrir: ${errorText(error)}`);
   }
 }
 
