@@ -171,6 +171,9 @@ export class MeshTool {
    */
   private history: { depth: number; before: VertexSelection; after: VertexSelection }[] = [];
   private pendingBefore: VertexSelection | null = null;
+  /** En cuántas partes se divide una arista al añadir un vértice (2 = por la mitad, 4 = cuartos…); 0 es libre, donde se pulse. */
+  edgeDivisions = 4;
+
   /** Con el modo «Añadir vértice», un clic sobre una arista o una cara le pone un vértice nuevo (sin Alt). */
   private adding = false;
   /** Dónde se pulsó en modo añadir: si el ratón no se movió al soltar, es un clic y se añade; si se movió, era girar la cámara. */
@@ -233,7 +236,7 @@ export class MeshTool {
   setAddMode(on: boolean): void {
     this.adding = on;
     this.pendingAdd = null;
-    this.host.status(on ? 'Añadir vértice: clic en una arista (en cuartos; Ctrl donde pulses) o en una cara' : 'Añadir vértice desactivado');
+    this.host.status(on ? 'Añadir vértice: clic en una arista (según la cantidad elegida; Ctrl donde pulses) o en una cara' : 'Añadir vértice desactivado');
     this.host.onSelectionChange();
   }
 
@@ -1281,8 +1284,11 @@ export class MeshTool {
     if (!best) return false;
     const { piece, a, b } = best as { piece: Piece; a: Vec3; b: Vec3; t: number };
     let t = (best as { t: number }).t;
-    if (!(e.ctrlKey || e.metaKey)) t = Math.min(0.75, Math.max(0.25, Math.round(t * 4) / 4));
-    else t = Math.min(0.95, Math.max(0.05, t));
+    const free = e.ctrlKey || e.metaKey || this.edgeDivisions === 0;
+    if (!free) {
+      const n = this.edgeDivisions;
+      t = Math.min(1 - 1 / n, Math.max(1 / n, Math.round(t * n) / n));
+    } else t = Math.min(0.95, Math.max(0.05, t));
     const result = splitEdge(piece, a, b, t);
     if (!result) return false;
     const edits = new Map<number, Piece>([[piece.id, sameId(result.piece, piece)]]);
