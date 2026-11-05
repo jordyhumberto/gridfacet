@@ -137,13 +137,17 @@ export function addVertexOnFace(piece: Piece, faceIndex: number, point: Vec3): {
     // Dentro de la cara, el punto queda a la izquierda de cada arista (mismo sentido que la normal).
     if (distance < 0.02 || cross[0] * unit[0] + cross[1] * unit[1] + cross[2] * unit[2] <= 0) return null;
   }
+  return { piece: replaceFace(piece, faceIndex, face.map((p, k) => [p, face[(k + 1) % face.length], vertex] as Vec3[])), vertex };
+}
+
+/** La pieza con la cara `faceIndex` cambiada por estas caras nuevas, cada una con el color, las propiedades y los píxeles de la original. */
+function replaceFace(piece: Piece, faceIndex: number, parts: Vec3[][]): Piece {
   const faces: Vec3[][] = [];
   const colors: number[] = [];
   const textures: (FaceTexture | null)[] = [];
   const flags: number[] = [];
   piece.faces.forEach((original, i) => {
-    const pieces = i === faceIndex ? original.map((p, k) => [p, original[(k + 1) % original.length], vertex] as Vec3[]) : [original];
-    for (const next of pieces) {
+    for (const next of i === faceIndex ? parts : [original]) {
       faces.push(next);
       colors.push(piece.faceColors?.[i] ?? piece.color);
       flags.push(piece.faceFlags?.[i] ?? 0);
@@ -155,7 +159,66 @@ export function addVertexOnFace(piece: Piece, faceIndex: number, point: Vec3): {
   if (piece.group !== undefined) result.group = piece.group;
   if (piece.groupName) result.groupName = piece.groupName;
   if (piece.layer !== undefined) result.layer = piece.layer;
-  return { piece: result, vertex };
+  return result;
+}
+
+/**
+ * Pone dos vértices espejo (`point` y su imagen por `mirror`) dentro de una cara que es su propia imagen en el espejo, partiéndola de forma simétrica:
+ * un abanico de triángulos a cada lado y dos cuadriláteros entre los dos puntos. Partir la cara punto por punto dejaría las conexiones de uno distintas
+ * a las del otro y al deformar saldría ladeada. Null si la cara no es simétrica, tiene vértices sobre el plano o los puntos no caben dentro.
+ */
+export function addMirrorPairOnFace(piece: Piece, faceIndex: number, point: Vec3, mirror: (p: Vec3) => Vec3): { piece: Piece; vertex: Vec3; mirrorVertex: Vec3 } | null {
+  const face = piece.faces[faceIndex];
+  if (!face || face.length < 3) return null;
+  const n = faceNormal(face);
+  const length = Math.hypot(...n);
+  if (length < 1e-12) return null;
+  const unit: Vec3 = [n[0] / length, n[1] / length, n[2] / length];
+  const onFace = (q: Vec3): Vec3 => {
+    const off = (q[0] - face[0][0]) * unit[0] + (q[1] - face[0][1]) * unit[1] + (q[2] - face[0][2]) * unit[2];
+    return [q[0] - unit[0] * off, q[1] - unit[1] * off, q[2] - unit[2] * off];
+  };
+  const a = onFace(point);
+  const b = onFace(mirror(a));
+  const apart: Vec3 = [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
+  if (Math.hypot(...apart) < 0.04) return null;
+  // Los dos puntos tienen que quedar dentro de la cara, lejos de sus aristas.
+  for (const q of [a, b]) {
+    for (let i = 0; i < face.length; i++) {
+      const p = face[i];
+      const r = face[(i + 1) % face.length];
+      const e: Vec3 = [r[0] - p[0], r[1] - p[1], r[2] - p[2]];
+      const w: Vec3 = [q[0] - p[0], q[1] - p[1], q[2] - p[2]];
+      const cross: Vec3 = [e[1] * w[2] - e[2] * w[1], e[2] * w[0] - e[0] * w[2], e[0] * w[1] - e[1] * w[0]];
+      if (Math.hypot(...cross) / (Math.hypot(...e) || 1) < 0.02 || cross[0] * unit[0] + cross[1] * unit[1] + cross[2] * unit[2] <= 0) return null;
+    }
+  }
+  // De qué lado del plano cae cada vértice de la cara: tiene que haber un tramo seguido a cada lado y ninguno sobre el plano.
+  const side = face.map((p) => {
+    const m = mirror(p);
+    const s = (p[0] - m[0]) * apart[0] + (p[1] - m[1]) * apart[1] + (p[2] - m[2]) * apart[2];
+    return Math.abs(s) < 1e-6 ? 0 : s > 0 ? 1 : -1;
+  });
+  if (side.includes(0)) return null;
+  const start = side.findIndex((s, i) => s === 1 && side[(i + side.length - 1) % side.length] === -1);
+  if (start < 0) return null;
+  const ring = face.map((_, i) => (start + i) % face.length);
+  const left = ring.filter((i) => side[i] === 1);
+  if (!left.every((_, k) => ring[k] === left[k])) return null;
+  const right = ring.slice(left.length);
+  if (right.length !== left.length || right.some((i) => side[i] !== -1)) return null;
+  // Cada pieza de un lado se corresponde con la del otro, así que la partición es simétrica.
+  const parts: Vec3[][] = [];
+  for (let k = 0; k + 1 < left.length; k++) parts.push([face[left[k]], face[left[k + 1]], a]);
+  for (let k = 0; k + 1 < right.length; k++) parts.push([face[right[k]], face[right[k + 1]], b]);
+  parts.push([face[left[left.length - 1]], face[right[0]], b, a]);
+  parts.push([face[right[right.length - 1]], face[left[0]], a, b]);
+  // Todas tienen que mirar al mismo lado que la cara original (si no, los cuadriláteros se cruzarían).
+  for (const part of parts) {
+    const pn = faceNormal(part);
+    if (pn[0] * unit[0] + pn[1] * unit[1] + pn[2] * unit[2] <= 1e-9) return null;
+  }
+  return { piece: replaceFace(piece, faceIndex, parts), vertex: a, mirrorVertex: b };
 }
 
 const centreOf = (points: Vec3[]): Vec3 => [0, 1, 2].map((k) => points.reduce((sum, p) => sum + p[k], 0) / points.length) as Vec3;

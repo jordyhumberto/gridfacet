@@ -5,7 +5,7 @@ import { collapses } from './selfIntersect';
 import { floodFill, textureOfFace, withFaceTexture } from './pixels';
 import { FACE_DOUBLE, FACE_UNLIT, faceNormal, volume, type Vec3 } from './piece';
 import { sampleTexture, pointOf, uvOf } from './texture';
-import { finFaces, flagFins, splitFacesAtCenter, addFace, deleteFaces, deleteVertices, extrudeFaces, facesWithin, flipFaces, mergeVertices, moveVertices, placeVertices, rotateAbout, scaleAbout, setFaceFlags, splitEdge, addVertexOnFace, taperPoint, twistPoint, bendPoint, uniqueVertices, vertexKey } from './vertices';
+import { addMirrorPairOnFace, finFaces, flagFins, splitFacesAtCenter, addFace, deleteFaces, deleteVertices, extrudeFaces, facesWithin, flipFaces, mergeVertices, moveVertices, placeVertices, rotateAbout, scaleAbout, setFaceFlags, splitEdge, addVertexOnFace, taperPoint, twistPoint, bendPoint, uniqueVertices, vertexKey } from './vertices';
 
 const cube = () => buildPiece(CATALOG[0], 0, 0, 0, 0, 0x336699);
 const topCorner = (piece = cube()): Vec3 => {
@@ -359,5 +359,36 @@ describe('splitFacesAtCenter', () => {
 
   it('sin caras que partir no hace nada', () => {
     expect(splitFacesAtCenter(cube(), new Set())).toBeNull();
+  });
+});
+
+describe('addMirrorPairOnFace', () => {
+  const mirrorX = (p: Vec3): Vec3 => [1 - p[0], p[1], p[2]];
+  const frontFace = (piece: ReturnType<typeof cube>) => piece.faces.findIndex((f) => f.every((p) => Math.abs(p[2] - 0.5) < 1e-9));
+
+  it('parte la cara de forma simétrica: la pieza resultante es su propia imagen en el espejo', () => {
+    const base = cube();
+    const zs = base.faces.flat().map((p) => p[2]);
+    const frontZ = Math.max(...zs);
+    const index = base.faces.findIndex((f) => f.every((p) => Math.abs(p[2] - frontZ) < 1e-9));
+    const ys = base.faces.flat().map((p) => p[1]);
+    const mid = (Math.min(...ys) + Math.max(...ys)) / 2;
+    const result = addMirrorPairOnFace(base, index, [0.27, mid, frontZ], mirrorX)!;
+    expect(result).not.toBeNull();
+    expect(result.mirrorVertex[0]).toBeCloseTo(0.73, 9);
+    // 2 triángulos (uno a cada lado) y 2 cuadriláteros entre los puntos
+    expect(result.piece.faces.length).toBe(base.faces.length - 1 + 4);
+    const reflected = new Set(result.piece.faces.map((f) => f.map((p) => vertexKey(mirrorX(p))).sort().join('|')));
+    for (const f of result.piece.faces) expect(reflected.has(f.map(vertexKey).sort().join('|'))).toBe(true);
+    expect(volume(result.piece)).toBeCloseTo(volume(base), 9);
+    expect(collapses(result.piece)).toBe(false);
+    void frontFace;
+  });
+
+  it('con el punto sobre el plano, o muy cerca de su espejo, no hace nada', () => {
+    const base = cube();
+    const frontZ = Math.max(...base.faces.flat().map((p) => p[2]));
+    const index = base.faces.findIndex((f) => f.every((p) => Math.abs(p[2] - frontZ) < 1e-9));
+    expect(addMirrorPairOnFace(base, index, [0.5, 0.5, frontZ], mirrorX)).toBeNull();
   });
 });
