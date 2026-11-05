@@ -283,6 +283,51 @@ export function addFace(piece: Piece, keys: ReadonlySet<string>): Piece | null {
 }
 
 /**
+ * Hace crecer una cara desde dos vértices: copia los dos `distance` celdas en dirección perpendicular al segmento y cierra un cuadrilátero entre ellos.
+ * La dirección es la de las caras que ya usan el segmento (hacia fuera de la pieza); si no hay ninguna, es la vertical (o X si el segmento es vertical).
+ * La cara nueva se ve por las dos caras. Devuelve la pieza y las claves de los dos vértices nuevos, o null si no son exactamente dos.
+ */
+export function extrudeEdge(piece: Piece, keys: ReadonlySet<string>, distance: number): { piece: Piece; keys: Set<string> } | null {
+  const chosen = uniqueVertices(piece).filter((p) => keys.has(vertexKey(p)));
+  if (chosen.length !== 2 || Math.abs(distance) < 1e-9) return null;
+  const [a, b] = chosen;
+  const edge: Vec3 = [b[0] - a[0], b[1] - a[1], b[2] - a[2]];
+  const length = Math.hypot(...edge);
+  if (length < 1e-9) return null;
+  const along: Vec3 = [edge[0] / length, edge[1] / length, edge[2] / length];
+  const ka = vertexKey(a);
+  const kb = vertexKey(b);
+  const sum: Vec3 = [0, 0, 0];
+  for (const face of piece.faces) {
+    const k = face.map(vertexKey);
+    if (!k.includes(ka) || !k.includes(kb)) continue;
+    const n = faceNormal(face);
+    const nl = Math.hypot(...n) || 1;
+    for (let i = 0; i < 3; i++) sum[i] += n[i] / nl;
+  }
+  // Se quita de la dirección la parte paralela al segmento para que quede perpendicular a él.
+  const perpendicular = (v: Vec3): Vec3 => {
+    const d = v[0] * along[0] + v[1] * along[1] + v[2] * along[2];
+    return [v[0] - along[0] * d, v[1] - along[1] * d, v[2] - along[2] * d];
+  };
+  let dir = perpendicular(sum);
+  if (Math.hypot(...dir) < 1e-6) dir = perpendicular([0, 1, 0]);
+  if (Math.hypot(...dir) < 1e-6) dir = perpendicular([1, 0, 0]);
+  const dl = Math.hypot(...dir);
+  const move = (p: Vec3): Vec3 => [p[0] + (dir[0] / dl) * distance, p[1] + (dir[1] / dl) * distance, p[2] + (dir[2] / dl) * distance];
+  const a2 = move(a);
+  const b2 = move(b);
+  const result = withFaces(
+    piece,
+    [...piece.faces, [a, b, b2, a2]],
+    [...piece.faces.map((_, i) => piece.faceColors?.[i] ?? piece.color), piece.color],
+    [...(piece.faceTextures ?? piece.faces.map(() => null)), null],
+    [...piece.faces.map((_, i) => piece.faceFlags?.[i] ?? 0), FACE_DOUBLE],
+  );
+  return { piece: result, keys: new Set([vertexKey(a2), vertexKey(b2)]) };
+}
+
+/**
  * Extruye las caras indicadas `distance` celdas a lo largo de su normal: la cara sube con copias de sus vértices y se cierran las paredes
  * por el borde. Devuelve la pieza y las claves de los vértices nuevos (para seguir moviéndolos).
  */

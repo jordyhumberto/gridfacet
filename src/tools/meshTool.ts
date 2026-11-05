@@ -4,7 +4,7 @@ import type { Piece, Vec3 } from '../core/piece';
 import { pieceKey, reflectPiece, reflections, type Reflection, type Symmetry } from '../core/symmetry';
 import { triangulateFace } from '../core/convex';
 import { collapses } from '../core/selfIntersect';
-import { finFaces, flagFins, splitFacesAtCenter, addFace, deleteFaces, deleteVertices, extrudeFaces, facesWithin, flipFaces, mergeVertices, placeVertices, rotateAbout, scaleAbout, setFaceFlags, splitEdge, addMirrorPairOnFace, addVertexOnFace, taperPoint, twistPoint, bendPoint, uniqueVertices, vertexKey } from '../core/vertices';
+import { finFaces, flagFins, splitFacesAtCenter, addFace, deleteFaces, deleteVertices, extrudeEdge, extrudeFaces, facesWithin, flipFaces, mergeVertices, placeVertices, rotateAbout, scaleAbout, setFaceFlags, splitEdge, addMirrorPairOnFace, addVertexOnFace, taperPoint, twistPoint, bendPoint, uniqueVertices, vertexKey } from '../core/vertices';
 import type { ModelScene } from '../scene';
 
 /** Paso de la rejilla de imán, en celdas. */
@@ -1087,6 +1087,18 @@ export class MeshTool {
       return { piece: sameId(result.piece, piece), select: result.keys };
     });
     if (!any) this.host.status('Elige todos los vértices de una cara para extruirla');
+  }
+
+  /** Con dos vértices elegidos en una pieza, hace crecer una cara desde ese segmento; los dos vértices nuevos quedan elegidos para moverlos. */
+  growFaceFromEdge(distance = EXTRUDE_DISTANCE): void {
+    let any = false;
+    this.change((piece, keys) => {
+      const result = extrudeEdge(piece, keys, distance);
+      if (!result) return null;
+      any = true;
+      return { piece: sameId(result.piece, piece), select: result.keys };
+    });
+    if (!any) this.host.status('Elige exactamente dos vértices de una pieza para hacer crecer una cara desde su segmento');
   }
 
   /** Cuántas de las caras elegidas (con todos sus vértices elegidos) tienen la propiedad `flag`. */

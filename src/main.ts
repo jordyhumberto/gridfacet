@@ -2183,6 +2183,7 @@ meshActionsEl.querySelectorAll<HTMLButtonElement>('button[data-mesh]').forEach((
     else if (action === 'delface') meshTool.deleteFacesSelected();
     else if (action === 'flip') meshTool.flipSelected();
     else if (action === 'extrude') meshTool.extrudeSelected();
+    else if (action === 'growedge') meshTool.growFaceFromEdge();
   }),
 );
 

@@ -5,7 +5,7 @@ import { collapses } from './selfIntersect';
 import { floodFill, textureOfFace, withFaceTexture } from './pixels';
 import { FACE_DOUBLE, FACE_UNLIT, faceNormal, volume, type Vec3 } from './piece';
 import { sampleTexture, pointOf, uvOf } from './texture';
-import { addMirrorPairOnFace, finFaces, flagFins, splitFacesAtCenter, addFace, deleteFaces, deleteVertices, extrudeFaces, facesWithin, flipFaces, mergeVertices, moveVertices, placeVertices, rotateAbout, scaleAbout, setFaceFlags, splitEdge, addVertexOnFace, taperPoint, twistPoint, bendPoint, uniqueVertices, vertexKey } from './vertices';
+import { addMirrorPairOnFace, extrudeEdge, finFaces, flagFins, splitFacesAtCenter, addFace, deleteFaces, deleteVertices, extrudeFaces, facesWithin, flipFaces, mergeVertices, moveVertices, placeVertices, rotateAbout, scaleAbout, setFaceFlags, splitEdge, addVertexOnFace, taperPoint, twistPoint, bendPoint, uniqueVertices, vertexKey } from './vertices';
 
 const cube = () => buildPiece(CATALOG[0], 0, 0, 0, 0, 0x336699);
 const topCorner = (piece = cube()): Vec3 => {
@@ -390,5 +390,30 @@ describe('addMirrorPairOnFace', () => {
     const frontZ = Math.max(...base.faces.flat().map((p) => p[2]));
     const index = base.faces.findIndex((f) => f.every((p) => Math.abs(p[2] - frontZ) < 1e-9));
     expect(addMirrorPairOnFace(base, index, [0.5, 0.5, frontZ], mirrorX)).toBeNull();
+  });
+});
+
+describe('extrudeEdge', () => {
+  const cube = () => buildPiece(CATALOG[0], 0, 0, 0, 0, 0xff0000);
+  it('hace crecer una cara perpendicular al segmento y hacia fuera de la pieza', () => {
+    const piece = cube();
+    const keys = new Set([vertexKey([0, 1, 0]), vertexKey([1, 1, 0])]);
+    const result = extrudeEdge(piece, keys, 0.5)!;
+    expect(result.piece.faces).toHaveLength(piece.faces.length + 1);
+    expect(result.keys.size).toBe(2);
+    const added = result.piece.faces[result.piece.faces.length - 1];
+    expect(added).toHaveLength(4);
+    // Los dos vértices nuevos siguen el segmento (paralelos en X) y se alejan de la pieza (arriba y hacia -Z).
+    const [, , b2, a2] = added;
+    expect(b2[0] - a2[0]).toBeCloseTo(1, 6);
+    expect(a2[1]).toBeGreaterThan(1);
+    expect(a2[2]).toBeLessThan(0);
+    expect(result.piece.faceFlags?.[result.piece.faces.length - 1]).toBe(FACE_DOUBLE);
+  });
+  it('sin caras vecinas sube en vertical, y no hace nada si no son dos vértices', () => {
+    const piece = cube();
+    const keys = new Set([vertexKey([0, 0, 0]), vertexKey([1, 0, 0]), vertexKey([1, 1, 0])]);
+    expect(extrudeEdge(piece, keys, 0.5)).toBeNull();
+    expect(extrudeEdge(piece, new Set([vertexKey([0, 0, 0])]), 0.5)).toBeNull();
   });
 });
