@@ -392,3 +392,22 @@ describe('addMirrorPairOnFace', () => {
     expect(addMirrorPairOnFace(base, index, [0.5, 0.5, frontZ], mirrorX)).toBeNull();
   });
 });
+
+describe('vértices repetidos en una cara', () => {
+  const cube = () => buildPiece(CATALOG[0], 0, 0, 0, 0, 0xff0000);
+  it('una cara con un vértice repetido deja añadir un vértice dentro', () => {
+    const piece = cube();
+    const index = piece.faces.findIndex((f) => faceNormal(f)[2] > 0.5);
+    const face = piece.faces[index];
+    // Como al llevar un vértice encima de otro: el primero aparece dos veces seguidas.
+    piece.faces[index] = [face[0], face[0], ...face.slice(1)];
+    const result = addVertexOnFace(piece, index, [0.5, 0.5, 1]);
+    expect(result).not.toBeNull();
+    expect(result!.piece.faces.every((f) => f.every((p, k) => vertexKey(p) !== vertexKey(f[(k + 1) % f.length])))).toBe(true);
+  });
+  it('mover un vértice encima de otro no deja vértices repetidos en las caras', () => {
+    const piece = cube();
+    const moved = moveVertices(piece, new Set([vertexKey([1, 1, 1])]), [-1, 0, 0])!;
+    expect(moved.faces.every((f) => f.every((p, k) => vertexKey(p) !== vertexKey(f[(k + 1) % f.length])))).toBe(true);
+  });
+});
