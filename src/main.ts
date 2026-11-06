@@ -3170,8 +3170,12 @@ async function saveProject(asNew = false): Promise<void> {
     if (canPickSave()) {
       let handle = asNew ? null : fileHandle;
       if (!handle) {
+        statusEl.textContent = 'Abriendo el selector de archivos… (si no aparece, usa «Descargar»)';
         handle = await pickSave(suggested, 'Proyecto de Gridfacet', 'application/json', '.json');
-        if (!handle) return;
+        if (!handle) {
+          statusEl.textContent = 'Guardado cancelado';
+          return;
+        }
       }
       try {
         await writeHandle(handle, data);
@@ -3259,6 +3263,18 @@ async function requestOpen(): Promise<void> {
 }
 
 document.getElementById('new')!.addEventListener('click', () => newProject());
+/** Descarga una copia del proyecto sin usar el selector de archivos del navegador: llega siempre a la carpeta de descargas. */
+document.getElementById('download')!.addEventListener('click', () => {
+  try {
+    const pieces = model.all();
+    const data = serializeProject(pieces, model.points(), gridSize, layers.toJSON(), pruneTracks(animation, pieces), references);
+    const name = fileName === 'Sin título' ? 'gridfacet-proyecto.json' : fileName.replace(/(.json)?$/i, '.json');
+    downloadBlob(data, name, 'application/json');
+    statusEl.textContent = `Descargado ${name} (${pieces.length} piezas) en la carpeta de descargas del navegador`;
+  } catch (error) {
+    fileProblem(`No se pudo descargar: ${errorText(error)}`);
+  }
+});
 document.getElementById('save')!.addEventListener('click', () => void saveProject(false));
 document.getElementById('saveAs')!.addEventListener('click', () => void saveProject(true));
 document.getElementById('open')!.addEventListener('click', () => void requestOpen());
