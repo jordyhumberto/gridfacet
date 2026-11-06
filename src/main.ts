@@ -19,7 +19,7 @@ import { defaultReference, nextReferenceId, withPlane, type RefImage, type RefPl
 import { ReferenceLayer, loadReferenceFile } from './render/references';
 import { groupCentre, emptyAnimation, pruneTracks, removeKey, resize as resizeAnimation, sampleTrack, setKey, trackOf, MAX_FPS, MAX_FRAMES, type Animation, type Pose } from './core/animation';
 import { AnimationPlayer } from './render/animationPlayer';
-import { canPickOpen, canPickSave, pickOpen, pickSave, writeHandle, type FileHandle } from './fileAccess';
+import { canPickOpen, canPickSave, PICKER_HELP, PickerUnresponsive, pickOpen, pickSave, writeHandle, type FileHandle } from './fileAccess';
 import { downloadBlob, exportGlb } from './render/glb';
 import { framesToPngs, framesToSheet, renderSprites } from './render/sprites';
 import { TextureLayer, atlasToPng } from './render/textures';
@@ -71,7 +71,8 @@ try {
 
 const container = document.getElementById('app')!;
 const renderer = new THREE.WebGLRenderer({ antialias: true });
-renderer.setPixelRatio(window.devicePixelRatio);
+// Más de 2× no se nota y cuesta mucho: en pantallas muy densas la tarjeta gráfica trabaja el doble o el triple.
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 container.appendChild(renderer.domElement);
 
 const scene3d = new THREE.Scene();
@@ -1315,7 +1316,14 @@ interface Drag {
 }
 let drag: Drag | null = null;
 
-const snapTo = (value: number, step: number): number => Math.round(value / step) * step || 0;
+/** Imán al mover piezas y vértices: con él caen en la rejilla, sin él (por defecto) siguen al ratón. Se recuerda en el navegador. */
+let magnet = false;
+try {
+  magnet = localStorage.getItem('gridfacet.magnet') === '1';
+} catch {
+  // Sin almacenamiento empieza sin imán.
+}
+const snapTo = (value: number, step: number): number => (magnet ? Math.round(value / step) * step || 0 : value);
 
 function selectedObjects(): THREE.Object3D[] {
   return [...objects].filter(([id]) => selection.has(id)).map(([, object]) => object);
@@ -2127,6 +2135,20 @@ const meshTool = new MeshTool({
   onSelectionChange: () => syncMeshActions(),
 });
 model.onHistory = (kind) => meshTool.historyMoved(kind);
+meshTool.magnet = magnet;
+const magnetEl = document.getElementById('magnet') as HTMLInputElement;
+magnetEl.checked = magnet;
+magnetEl.addEventListener('change', () => {
+  magnet = magnetEl.checked;
+  meshTool.magnet = magnet;
+  magnetEl.blur();
+  try {
+    localStorage.setItem('gridfacet.magnet', magnet ? '1' : '0');
+  } catch {
+    // Sin almacenamiento vale solo para esta sesión.
+  }
+  statusEl.textContent = magnet ? 'Imán activado: piezas y vértices caen en la rejilla' : 'Imán desactivado: piezas y vértices siguen al ratón';
+});
 if (import.meta.env.DEV) (window as unknown as Record<string, unknown>).__mesh = meshTool;
 function syncMeshActions(): void {
   meshActionsEl.hidden = mode !== 'mesh';
@@ -2183,6 +2205,7 @@ meshActionsEl.querySelectorAll<HTMLButtonElement>('button[data-mesh]').forEach((
     else if (action === 'delface') meshTool.deleteFacesSelected();
     else if (action === 'flip') meshTool.flipSelected();
     else if (action === 'extrude') meshTool.extrudeSelected();
+    else if (action === 'growedge') meshTool.growFaceFromEdge();
   }),
 );
 
@@ -2389,7 +2412,7 @@ function updateGrowDrag(event: PointerEvent): void {
   const t = (b * d.dot(w) - n.dot(w)) / denominator;
   const step = growStep(growDrag.face.normal);
   growDrag.moved = true;
-  growDrag.distance = Math.max(step, snapTo(growDrag.sink ? -t : t, step));
+  growDrag.distance = Math.max(step, Math.round((growDrag.sink ? -t : t) / step) * step);
   statusEl.textContent = `${growDrag.sink ? 'Hundir' : 'Crecer'} ${+growDrag.distance.toFixed(3)} (Esc cancela)`;
   showGrowPreview();
 }
@@ -3147,18 +3170,41 @@ let fileHandle: FileHandle | null = null;
 
 const errorText = (error: unknown): string => (error instanceof Error ? error.message : 'error desconocido');
 
+/** Un fallo al guardar o abrir se muestra en un aviso: la línea de estado es pequeña y pasa desapercibida. */
+function fileProblem(message: string): void {
+  statusEl.textContent = message;
+  window.alert(message);
+}
+
 /** Guardar escribe sobre el archivo actual; "Guardar como" (o un proyecto nuevo) abre el diálogo para elegir carpeta y nombre. */
 async function saveProject(asNew = false): Promise<void> {
   const pieces = model.all();
-  const data = serializeProject(pieces, model.points(), gridSize, layers.toJSON(), pruneTracks(animation, pieces), references);
+  // Si esto falla (texturas o referencias dañadas, por ejemplo) no debe quedar mudo: antes la promesa fallaba sin avisar y parecía que Guardar no hacía nada.
+  let data: string;
+  try {
+    data = serializeProject(pieces, model.points(), gridSize, layers.toJSON(), pruneTracks(animation, pieces), references);
+  } catch (error) {
+    fileProblem(`No se pudo preparar el proyecto para guardarlo: ${errorText(error)}`);
+    return;
+  }
   const suggested = fileName === 'Sin título' ? 'gridfacet-proyecto.json' : fileName.replace(/(\.json)?$/i, '.json');
   let name = suggested;
   try {
     if (canPickSave()) {
       let handle = asNew ? null : fileHandle;
       if (!handle) {
-        handle = await pickSave(suggested, 'Proyecto de Gridfacet', 'application/json', '.json');
-        if (!handle) return;
+        statusEl.textContent = 'Abriendo el selector de archivos…';
+        try {
+          handle = await pickSave(suggested, 'Proyecto de Gridfacet', 'application/json', '.json');
+        } catch (error) {
+          // No se guarda nada a escondidas: se explica por qué no salió el diálogo y cómo arreglarlo.
+          fileProblem(error instanceof PickerUnresponsive ? `No se guardó. ${PICKER_HELP}` : `No se pudo guardar: ${errorText(error)}`);
+          return;
+        }
+        if (!handle) {
+          statusEl.textContent = 'Guardado cancelado';
+          return;
+        }
       }
       try {
         await writeHandle(handle, data);
@@ -3170,17 +3216,25 @@ async function saveProject(asNew = false): Promise<void> {
         // Algunos navegadores (o paneles integrados) crean el archivo pero no dejan escribir en él: queda vacío. Se guarda como descarga normal.
         fileHandle = null;
         downloadBlob(data, suggested, 'application/json');
-        statusEl.textContent = `No se pudo escribir en ${handle.name} (${errorText(error)}); se descargó ${suggested} en su lugar`;
+        fileProblem(`No se pudo escribir en ${handle.name} (${errorText(error)}); se descargó ${suggested} en su lugar`);
         fileName = suggested;
         dirty = false;
         syncFileName();
         return;
       }
     } else {
-      downloadBlob(data, suggested, 'application/json');
+      // Sin selector del sistema el archivo se descarga: «Guardar como» pide el nombre y va a la carpeta de descargas del navegador.
+      let target = suggested;
+      if (asNew) {
+        const typed = window.prompt('Nombre del archivo', suggested);
+        if (!typed) return;
+        target = typed.replace(/(\.json)?$/i, '.json');
+      }
+      downloadBlob(data, target, 'application/json');
+      name = target;
     }
   } catch (error) {
-    statusEl.textContent = `No se pudo guardar: ${errorText(error)}`;
+    fileProblem(`No se pudo guardar: ${errorText(error)}`);
     return;
   }
   fileName = name;
@@ -3192,29 +3246,43 @@ async function saveProject(asNew = false): Promise<void> {
 /** Abrir reemplaza la escena como un cambio más, así que se puede deshacer. */
 async function openProject(file: File, handle: FileHandle | null = null): Promise<void> {
   try {
-    const { pieces: loaded, marks, gridSize: savedSize, layers: savedLayers, animation: savedAnimation, references: savedReferences } = parseProjectFull(await file.text());
-    if (savedSize !== undefined) setGridSize(savedSize);
-    if (mode === 'cut') cutTool.cancel();
-    // Las piezas abiertas traen su capa: las nuevas no deben tomar la activa de antes.
-    model.activeLayer = 1;
-    stopAnimationView();
-    const previousAnimation = animation;
-    model.apply({ added: loaded, removed: model.all(), marksAdded: marks, marksRemoved: model.points() });
-    setAnimation(savedAnimation ?? emptyAnimation());
-    // Abrir reemplaza también la animación: si se deshace lo de abrir, vuelve la de antes.
-    if (animation !== previousAnimation) animationUndo.push({ before: previousAnimation, after: animation, depth: model.undoDepth - 1, serial: model.serial, withModel: true });
-    animationRedo = [];
-    layers.load(savedLayers, loaded);
-    applyLayerState();
-    setReferences(savedReferences);
-    fileHandle = handle;
-    fileName = file.name;
-    dirty = false;
-    syncFileName();
-    statusEl.textContent = `Abierto ${file.name} (${loaded.length} piezas). Ctrl+Z para volver atrás`;
+    const project = parseProjectFull(await file.text());
+    replaceProject(project, file.name, handle);
+    statusEl.textContent = `Abierto ${file.name} (${project.pieces.length} piezas). Ctrl+Z para volver atrás`;
   } catch (error) {
-    statusEl.textContent = error instanceof Error ? `No se pudo abrir: ${error.message}` : 'No se pudo abrir el archivo';
+    fileProblem(error instanceof Error ? `No se pudo abrir: ${error.message}` : 'No se pudo abrir el archivo');
   }
+}
+
+/** Empieza de cero: lienzo en blanco sin piezas, capas, animación ni referencias, y sin archivo vinculado. Se puede deshacer. */
+function newProject(): void {
+  if (dirty && !window.confirm('Hay cambios sin guardar. ¿Empezar un proyecto nuevo de todas formas? (Ctrl+Z lo recupera)')) return;
+  replaceProject({ pieces: [], marks: [], references: [] }, 'Sin título', null);
+  statusEl.textContent = 'Proyecto nuevo en blanco';
+}
+
+/** Cambia toda la escena por la de un proyecto como un solo cambio (se puede deshacer) y lo deja vinculado al archivo `name`. */
+function replaceProject(project: ReturnType<typeof parseProjectFull>, name: string, handle: FileHandle | null): void {
+  const { pieces: loaded, marks, gridSize: savedSize, layers: savedLayers, animation: savedAnimation, references: savedReferences } = project;
+  if (savedSize !== undefined) setGridSize(savedSize);
+  if (mode === 'cut') cutTool.cancel();
+  // Las piezas abiertas traen su capa: las nuevas no deben tomar la activa de antes.
+  model.activeLayer = 1;
+  selection.clear();
+  stopAnimationView();
+  const previousAnimation = animation;
+  model.apply({ added: loaded, removed: model.all(), marksAdded: marks, marksRemoved: model.points() });
+  setAnimation(savedAnimation ?? emptyAnimation());
+  // Abrir reemplaza también la animación: si se deshace lo de abrir, vuelve la de antes.
+  if (animation !== previousAnimation) animationUndo.push({ before: previousAnimation, after: animation, depth: model.undoDepth - 1, serial: model.serial, withModel: true });
+  animationRedo = [];
+  layers.load(savedLayers, loaded);
+  applyLayerState();
+  setReferences(savedReferences);
+  fileHandle = handle;
+  fileName = name;
+  dirty = false;
+  syncFileName();
 }
 
 /** Con el selector del sistema se conserva el archivo para poder guardar encima; si no, se usa el campo de archivo clásico. */
@@ -3227,10 +3295,15 @@ async function requestOpen(): Promise<void> {
     const handle = await pickOpen('Proyecto de Gridfacet', 'application/json', '.json');
     if (handle) await openProject(await handle.getFile(), handle);
   } catch (error) {
-    statusEl.textContent = `No se pudo abrir: ${errorText(error)}`;
+    if (error instanceof PickerUnresponsive) {
+      fileProblem(`No se abrió nada. ${PICKER_HELP}`);
+      return;
+    }
+    fileProblem(`No se pudo abrir: ${errorText(error)}`);
   }
 }
 
+document.getElementById('new')!.addEventListener('click', () => newProject());
 document.getElementById('save')!.addEventListener('click', () => void saveProject(false));
 document.getElementById('saveAs')!.addEventListener('click', () => void saveProject(true));
 document.getElementById('open')!.addEventListener('click', () => void requestOpen());
@@ -3540,6 +3613,8 @@ const commands: Command[] = [
     },
   },
   { name: 'Nueva capa', keywords: 'capas', run: () => layers.add() },
+  { name: 'Recuperar el trabajo anterior', keywords: 'copia automatica restaurar sesion anterior', run: recoverPrevious },
+  { name: 'Nuevo proyecto', keywords: 'nuevo en blanco lienzo vacio', run: newProject },
   { name: 'Guardar', shortcut: 'Ctrl+S', run: () => void saveProject(false) },
   { name: 'Guardar como…', shortcut: 'Ctrl+Alt+S', run: () => void saveProject(true) },
   { name: 'Abrir…', shortcut: 'Ctrl+O', run: () => void requestOpen() },
@@ -4765,27 +4840,46 @@ refFileEl.addEventListener('change', async () => {
   }
 });
 
-/** Al abrir la página con la escena vacía, recupera la última copia automática si la hay. */
-function restoreAutosave(): void {
-  if (model.all().length > 0) return;
+/** El trabajo de la sesión anterior, guardado aparte al abrir la página para poder recuperarlo sin que se cuele en la hoja nueva. */
+const PREVIOUS_KEY = 'gridfacet.previous';
+
+/**
+ * Al abrir la página se empieza en una hoja en blanco: la última copia automática ya no se mete sola en la escena (se confundía con el
+ * trabajo de ahora). Se aparta y se puede traer con el comando «Recuperar el trabajo anterior».
+ */
+function stashPreviousSession(): void {
   try {
     const text = localStorage.getItem(AUTOSAVE_KEY);
     if (!text) return;
-    const { pieces: loaded, marks, gridSize: savedSize, layers: savedLayers, animation: savedAnimation, references: savedReferences } = parseProjectFull(text);
-    if (loaded.length === 0) return;
-    if (savedSize !== undefined) setGridSize(savedSize);
-    model.activeLayer = 1;
-    model.apply({ added: loaded, removed: [], marksAdded: marks });
-    setAnimation(savedAnimation ?? emptyAnimation());
-    layers.load(savedLayers, loaded);
-    applyLayerState();
-    setReferences(savedReferences);
-    statusEl.textContent = `Recuperado tu último trabajo (${loaded.length} piezas). Guárdalo en un archivo para no perderlo`;
+    const { pieces } = parseProjectFull(text);
+    if (pieces.length === 0) return;
+    localStorage.setItem(PREVIOUS_KEY, text);
+    localStorage.removeItem(AUTOSAVE_KEY);
+    statusEl.textContent = `Hoja nueva. Tu trabajo anterior (${pieces.length} piezas) sigue disponible: busca «recuperar» en el buscador de comandos`;
   } catch {
     // Una copia dañada o ilegible se ignora: se empieza con la escena vacía.
   }
 }
-restoreAutosave();
+stashPreviousSession();
+
+/** Trae a la escena el trabajo de la sesión anterior (se puede deshacer). */
+function recoverPrevious(): void {
+  try {
+    const text = localStorage.getItem(PREVIOUS_KEY);
+    if (!text) {
+      statusEl.textContent = 'No hay un trabajo anterior que recuperar';
+      return;
+    }
+    if (dirty && !window.confirm('La hoja actual tiene cambios sin guardar. ¿Reemplazarla por el trabajo anterior? (Ctrl+Z lo deshace)')) return;
+    const project = parseProjectFull(text);
+    replaceProject(project, 'Sin título', null);
+    dirty = true;
+    syncFileName();
+    statusEl.textContent = `Recuperado el trabajo anterior (${project.pieces.length} piezas). Guárdalo en un archivo para no perderlo`;
+  } catch (error) {
+    fileProblem(`No se pudo recuperar: ${errorText(error)}`);
+  }
+}
 
 function resize(): void {
   const { clientWidth: w, clientHeight: h } = container;
@@ -4797,6 +4891,17 @@ window.addEventListener('resize', resize);
 resize();
 
 let lastFrame = performance.now();
+/** La escena solo se vuelve a dibujar si algo pudo cambiar: antes se repintaba sin parar a la velocidad de la pantalla y calentaba el equipo. */
+let renderUntil = performance.now() + 1500;
+let lastRendered = 0;
+let lastSerial = -1;
+const wakeRender = (): void => {
+  renderUntil = performance.now() + 800;
+};
+for (const type of ['pointerdown', 'pointermove', 'pointerup', 'wheel', 'keydown', 'keyup', 'click', 'input', 'change', 'drop', 'focus', 'resize', 'contextmenu']) {
+  window.addEventListener(type, wakeRender, { capture: true, passive: true });
+}
+document.addEventListener('visibilitychange', wakeRender);
 renderer.setAnimationLoop((now) => {
   const dt = Math.min((now - lastFrame) / 1000, 0.1);
   lastFrame = now;
@@ -4808,8 +4913,13 @@ renderer.setAnimationLoop((now) => {
     animSlider.value = String(animFrame);
     animEl('animFrameLabel').textContent = `${animFrame + 1} / ${animation.frames}`;
   }
-  controls.update();
+  // Con la inercia de la cámara activa, `update` dice si todavía se está moviendo.
+  if (controls.update()) wakeRender();
   batches.flush();
+  // Dibuja mientras haya actividad, se reproduzca la animación o cambie el modelo; y, por si algo cambia sin avisar (una imagen que termina de cargar), dos veces por segundo.
+  if (!animPlaying && now > renderUntil && model.serial === lastSerial && now - lastRendered < 500) return;
+  lastSerial = model.serial;
+  lastRendered = now;
   renderer.render(scene3d, camera);
   drawCompass();
 });

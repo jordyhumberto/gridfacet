@@ -164,6 +164,7 @@
         <section>
           <h4><span class="title">Archivo</span></h4>
           <div class="row">
+            <button id="new" title="Empieza un proyecto en blanco">Nuevo</button>
             <button id="open" title="Ctrl+O">Abrir</button>
             <button id="save" title="Ctrl+S">Guardar</button>
             <button id="saveAs" title="Ctrl+Alt+S">Guardar como…</button>
@@ -173,6 +174,7 @@
         <section>
           <h4><span class="title">Herramientas</span></h4>
           <div class="row grid" id="tools"></div>
+          <label title="Con imán, al arrastrar, las piezas y los vértices caen en la rejilla (¼ de celda); sin imán siguen al ratón con suavidad. En Malla, Ctrl invierte el imán mientras arrastras"><input type="checkbox" id="magnet" /> Imán (rejilla)</label>
           <small id="status"></small>
           <div class="row" id="selActions" hidden>
             <button data-sel="hide" title="O">Ocultar (O)</button>
@@ -370,6 +372,7 @@
             <button data-mesh="face" title="Crea una cara con los vértices elegidos (tres o más, de la misma pieza)">Crear cara</button>
             <button data-mesh="delface" title="Quita las caras cuyos vértices están todos elegidos: la pieza queda abierta">Borrar cara</button>
             <button data-mesh="flip" title="Da la vuelta a las caras cuyos vértices están todos elegidos">Invertir cara</button>
+            <button data-mesh="growedge" title="Con dos vértices elegidos, hace crecer una cara desde su segmento, perpendicular a él (hacia fuera si el segmento es una arista de la pieza); los dos vértices nuevos quedan elegidos para moverlos">Cara desde segmento</button>
             <button data-mesh="extrude" title="Extruye las caras cuyos vértices están todos elegidos y deja elegidos los vértices de arriba para moverlos">Extruir cara</button>
             <label title="Las caras cuyos vértices están todos elegidos se ven también por detrás (hojas, cartulinas, ropa)"><input type="checkbox" id="meshDouble" /> Doble cara</label>
             <label title="Las caras cuyos vértices están todos elegidos no reciben luz ni sombra: se ven con su color tal cual"><input type="checkbox" id="meshUnlit" /> Sin sombra</label>
@@ -661,7 +664,7 @@
           <dt>Giro y volteo</dt><dd><kbd>R</kbd> gira la selección 90° sobre el eje vertical (<kbd>Alt</kbd>+<kbd>R</kbd> al revés); <kbd>Alt</kbd>+flechas la tumba 90° hacia la flecha (dos veces: de cabeza). En “Selección” → Girar, cualquier ángulo sobre X, Y o Z.</dd>
           <dt>Paleta de comandos</dt><dd><kbd>Ctrl</kbd>+<kbd>K</kbd> abre un buscador de acciones: escribe “espejo”, “rotar” o “guardar”, elige con las flechas y <kbd>Intro</kbd>. Incluye “Espejo-copia” en X o Z, que añade el reflejo de la selección respecto al plano de simetría (el origen por defecto).</dd>
           <dt>Alinear, repartir, suelo y medida</dt><dd>En la paleta (<kbd>Ctrl</kbd>+<kbd>K</kbd>): “Alinear en X/Y/Z” deja las partes a ras por un borde o por el centro; “Distribuir” reparte tres o más con huecos iguales (las de los extremos no se mueven); “Mover al suelo” apoya la selección en y = 0; “Redimensionar…” fija la dimensión mayor conservando proporciones. Un grupo cuenta como una sola parte.</dd>
-          <dt>Copia automática</dt><dd>La escena se copia sola en el navegador; si recargas o cierras la página sin guardar, al volver se recupera. Guarda en un archivo para conservarla de verdad.</dd>
+          <dt>Copia automática</dt><dd>La escena se copia sola en el navegador. Al abrir la página siempre empiezas con una hoja en blanco; si no guardaste el trabajo anterior, búscalo con el comando «Recuperar el trabajo anterior». Guarda en un archivo para conservarlo de verdad.</dd>
           <dt>Exportar con texturas</dt><dd>Los píxeles pintados salen en los sprites PNG, en el GLB (mallas aparte pegadas a su cara, con textura de vecino más cercano y recorte por transparencia) y en “Exportar OBJ”, que baja tres archivos: .obj, .mtl y un PNG con todas las texturas. Guárdalos juntos y, en Blender, pon la interpolación de la textura en “Closest”.</dd>
           <dt>Exportar sprites</dt><dd>En Archivo: elige cámara (isométrica, lateral o cenital), 1, 4, 8 o 16 vistas alrededor del modelo, tamaño de 16 a 256 px, sombreado plano o con luz, y contorno. Se dibuja sin suavizado y con fondo transparente. Con “Hoja” sale un solo PNG con las vistas por filas; sin ella, un PNG por vista. Todas las vistas comparten escala.</dd>
           <dt>Pintar píxeles</dt><dd>En Pintar, la casilla “Píxeles” cambia el pincel: en vez de teñir la cara entera se pinta casilla a casilla (16 por celda), arrastrando, con lápiz (1, 2, 3, 4 u 8 px), borrador (deja ver el color de la cara) o relleno. <kbd>Alt</kbd>+clic toma el color del píxel. Un trazo se deshace de una vez, y el trazo se queda en la cara donde empezó. Las texturas se guardan con el proyecto y se conservan al mover, girar, espejar y repetir; cortar, hundir o crecer sobre la cara las pierde, y por ahora ni la exportación de sprites ni la del GLB las usan.</dd>
