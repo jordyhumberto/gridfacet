@@ -24,7 +24,9 @@ function rebuild(piece: Piece, mapFace: (face: Vec3[], index: number) => Vec3[] 
   const textures: (FaceTexture | null)[] = [];
   const flags: number[] = [];
   piece.faces.forEach((face, i) => {
-    const next = mapFace(face, i);
+    // Dos vértices seguidos en el mismo sitio (al llevar uno encima de otro) dejan una arista de largo cero que bloquea añadir vértices en la cara: se juntan.
+    const mapped = mapFace(face, i);
+    const next = mapped && withoutRepeats(mapped);
     if (!next || next.length < 3) return;
     faces.push(next);
     colors.push(piece.faceColors?.[i] ?? piece.color);
@@ -50,6 +52,18 @@ export function moveVertices(piece: Piece, keys: ReadonlySet<string>, delta: Vec
 /** Lleva cada vértice elegido a la posición que da `target` (por ejemplo, el punto más cercano de la rejilla). */
 export function placeVertices(piece: Piece, keys: ReadonlySet<string>, target: (p: Vec3) => Vec3, keepId = false): Piece | null {
   return rebuild(piece, (face) => face.map((p) => (keys.has(vertexKey(p)) ? target(p) : p)), keepId);
+}
+
+/** La cara sin vértices consecutivos repetidos (puede quedar con menos de tres). */
+export function withoutRepeats(face: Vec3[]): Vec3[] {
+  const ring = face.filter((p, i) => !same(p, face[(i + 1) % face.length]));
+  return ring.length === face.length ? face : ring;
+}
+
+/** La pieza sin vértices repetidos en sus caras (las caras que se quedan sin superficie se quitan); la misma pieza si no había ninguno. */
+export function cleanRepeats(piece: Piece): Piece {
+  if (piece.faces.every((face) => withoutRepeats(face) === face)) return piece;
+  return rebuild(piece, (face) => face, true) ?? piece;
 }
 
 /** Quita de la cara los vértices consecutivos que quedaron en el mismo sitio. */
@@ -118,8 +132,10 @@ export function splitEdge(piece: Piece, a: Vec3, b: Vec3, t: number): { piece: P
  * (ahí sale una cara sin superficie) o la cara no tiene plano.
  */
 export function addVertexOnFace(piece: Piece, faceIndex: number, point: Vec3): { piece: Piece; vertex: Vec3 } | null {
-  const face = piece.faces[faceIndex];
-  if (!face) return null;
+  if (!piece.faces[faceIndex]) return null;
+  // Una cara con un vértice repetido tiene una arista de largo cero: se trabaja sobre la cara sin él.
+  const face = withoutRepeats(piece.faces[faceIndex]);
+  if (face.length < 3) return null;
   const n = faceNormal(face);
   const length = Math.hypot(...n);
   if (length < 1e-12) return null;
@@ -168,7 +184,7 @@ function replaceFace(piece: Piece, faceIndex: number, parts: Vec3[][]): Piece {
  * a las del otro y al deformar saldría ladeada. Null si la cara no es simétrica, tiene vértices sobre el plano o los puntos no caben dentro.
  */
 export function addMirrorPairOnFace(piece: Piece, faceIndex: number, point: Vec3, mirror: (p: Vec3) => Vec3): { piece: Piece; vertex: Vec3; mirrorVertex: Vec3 } | null {
-  const face = piece.faces[faceIndex];
+  const face = piece.faces[faceIndex] && withoutRepeats(piece.faces[faceIndex]);
   if (!face || face.length < 3) return null;
   const n = faceNormal(face);
   const length = Math.hypot(...n);
