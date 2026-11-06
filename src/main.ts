@@ -3209,7 +3209,7 @@ async function saveProject(asNew = false): Promise<void> {
       if (asNew) {
         const typed = window.prompt('Nombre del archivo', suggested);
         if (!typed) return;
-        target = typed.replace(/(.json)?$/i, '.json');
+        target = typed.replace(/(\.json)?$/i, '.json');
       }
       downloadBlob(data, target, 'application/json');
       name = target;
