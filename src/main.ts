@@ -19,7 +19,7 @@ import { defaultReference, nextReferenceId, withPlane, type RefImage, type RefPl
 import { ReferenceLayer, loadReferenceFile } from './render/references';
 import { groupCentre, emptyAnimation, pruneTracks, removeKey, resize as resizeAnimation, sampleTrack, setKey, trackOf, MAX_FPS, MAX_FRAMES, type Animation, type Pose } from './core/animation';
 import { AnimationPlayer } from './render/animationPlayer';
-import { canPickOpen, canPickSave, PickerUnresponsive, pickOpen, pickSave, writeHandle, type FileHandle } from './fileAccess';
+import { canPickOpen, canPickSave, PICKER_HELP, PickerUnresponsive, pickOpen, pickSave, writeHandle, type FileHandle } from './fileAccess';
 import { downloadBlob, exportGlb } from './render/glb';
 import { framesToPngs, framesToSheet, renderSprites } from './render/sprites';
 import { TextureLayer, atlasToPng } from './render/textures';
@@ -3174,12 +3174,8 @@ async function saveProject(asNew = false): Promise<void> {
         try {
           handle = await pickSave(suggested, 'Proyecto de Gridfacet', 'application/json', '.json');
         } catch (error) {
-          // El diálogo no se muestra o falla: se baja el archivo a Descargas en vez de no hacer nada.
-          downloadBlob(data, suggested, 'application/json');
-          fileProblem(`El selector de archivos no funciona en este navegador (${errorText(error)}); se descargó ${suggested} en Descargas`);
-          fileName = suggested;
-          dirty = false;
-          syncFileName();
+          // No se guarda nada a escondidas: se explica por qué no salió el diálogo y cómo arreglarlo.
+          fileProblem(error instanceof PickerUnresponsive ? `No se guardó. ${PICKER_HELP}` : `No se pudo guardar: ${errorText(error)}`);
           return;
         }
         if (!handle) {
@@ -3276,10 +3272,8 @@ async function requestOpen(): Promise<void> {
     const handle = await pickOpen('Proyecto de Gridfacet', 'application/json', '.json');
     if (handle) await openProject(await handle.getFile(), handle);
   } catch (error) {
-    // Si el diálogo del sistema no se muestra, se ofrece el selector clásico (aún dentro del gesto del clic).
     if (error instanceof PickerUnresponsive) {
-      statusEl.textContent = 'El selector del sistema no respondió: usa el selector clásico';
-      openFileEl.click();
+      fileProblem(`No se abrió nada. ${PICKER_HELP}`);
       return;
     }
     fileProblem(`No se pudo abrir: ${errorText(error)}`);

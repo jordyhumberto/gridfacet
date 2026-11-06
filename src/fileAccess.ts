@@ -24,7 +24,10 @@ const picker = (): PickerWindow => window as PickerWindow;
 export const canPickSave = (): boolean => typeof picker().showSaveFilePicker === 'function';
 export const canPickOpen = (): boolean => typeof picker().showOpenFilePicker === 'function';
 
-/** El selector no llegó a mostrarse ni respondió: se avisa para volver a la descarga o al selector clásico. */
+/**
+ * El selector no llegó a mostrarse o Chrome lo cerró por su cuenta. Chrome cancela el diálogo de archivos cuando la ventana del diálogo
+ * tapa Chrome por completo (lo marca como «ocluido»), algo que pasa si el diálogo está maximizado.
+ */
 export class PickerUnresponsive extends Error {}
 
 /**
@@ -91,6 +94,9 @@ export async function pickOpen(description: string, mime: string, extension: str
     throw error;
   }
 }
+
+/** Explicación para la persona de por qué no se abrió o se cerró el diálogo de archivos, y qué hacer. */
+export const PICKER_HELP = 'Chrome cerró la ventana para elegir el archivo antes de terminar. Lo hace cuando esa ventana tapa Chrome por completo (por ejemplo, si está maximizada). Vuelve a pulsar el botón y, si la ventana sale a pantalla completa, hazla más pequeña con doble clic en su barra de título; Windows recordará el tamaño. Otra opción: en chrome://flags desactiva «Calculate window occlusion on Windows» y reinicia Chrome.';
 
 export async function writeHandle(handle: FileHandle, data: BlobPart): Promise<void> {
   const writable = await handle.createWritable();
