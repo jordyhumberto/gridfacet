@@ -3596,6 +3596,7 @@ const commands: Command[] = [
     },
   },
   { name: 'Nueva capa', keywords: 'capas', run: () => layers.add() },
+  { name: 'Recuperar el trabajo anterior', keywords: 'copia automatica restaurar sesion anterior', run: recoverPrevious },
   { name: 'Nuevo proyecto', keywords: 'nuevo en blanco lienzo vacio', run: newProject },
   { name: 'Guardar', shortcut: 'Ctrl+S', run: () => void saveProject(false) },
   { name: 'Guardar como…', shortcut: 'Ctrl+Alt+S', run: () => void saveProject(true) },
@@ -4822,27 +4823,46 @@ refFileEl.addEventListener('change', async () => {
   }
 });
 
-/** Al abrir la página con la escena vacía, recupera la última copia automática si la hay. */
-function restoreAutosave(): void {
-  if (model.all().length > 0) return;
+/** El trabajo de la sesión anterior, guardado aparte al abrir la página para poder recuperarlo sin que se cuele en la hoja nueva. */
+const PREVIOUS_KEY = 'gridfacet.previous';
+
+/**
+ * Al abrir la página se empieza en una hoja en blanco: la última copia automática ya no se mete sola en la escena (se confundía con el
+ * trabajo de ahora). Se aparta y se puede traer con el comando «Recuperar el trabajo anterior».
+ */
+function stashPreviousSession(): void {
   try {
     const text = localStorage.getItem(AUTOSAVE_KEY);
     if (!text) return;
-    const { pieces: loaded, marks, gridSize: savedSize, layers: savedLayers, animation: savedAnimation, references: savedReferences } = parseProjectFull(text);
-    if (loaded.length === 0) return;
-    if (savedSize !== undefined) setGridSize(savedSize);
-    model.activeLayer = 1;
-    model.apply({ added: loaded, removed: [], marksAdded: marks });
-    setAnimation(savedAnimation ?? emptyAnimation());
-    layers.load(savedLayers, loaded);
-    applyLayerState();
-    setReferences(savedReferences);
-    statusEl.textContent = `Recuperado tu último trabajo (${loaded.length} piezas). Guárdalo en un archivo para no perderlo`;
+    const { pieces } = parseProjectFull(text);
+    if (pieces.length === 0) return;
+    localStorage.setItem(PREVIOUS_KEY, text);
+    localStorage.removeItem(AUTOSAVE_KEY);
+    statusEl.textContent = `Hoja nueva. Tu trabajo anterior (${pieces.length} piezas) sigue disponible: busca «recuperar» en el buscador de comandos`;
   } catch {
     // Una copia dañada o ilegible se ignora: se empieza con la escena vacía.
   }
 }
-restoreAutosave();
+stashPreviousSession();
+
+/** Trae a la escena el trabajo de la sesión anterior (se puede deshacer). */
+function recoverPrevious(): void {
+  try {
+    const text = localStorage.getItem(PREVIOUS_KEY);
+    if (!text) {
+      statusEl.textContent = 'No hay un trabajo anterior que recuperar';
+      return;
+    }
+    if (dirty && !window.confirm('La hoja actual tiene cambios sin guardar. ¿Reemplazarla por el trabajo anterior? (Ctrl+Z lo deshace)')) return;
+    const project = parseProjectFull(text);
+    replaceProject(project, 'Sin título', null);
+    dirty = true;
+    syncFileName();
+    statusEl.textContent = `Recuperado el trabajo anterior (${project.pieces.length} piezas). Guárdalo en un archivo para no perderlo`;
+  } catch (error) {
+    fileProblem(`No se pudo recuperar: ${errorText(error)}`);
+  }
+}
 
 function resize(): void {
   const { clientWidth: w, clientHeight: h } = container;
