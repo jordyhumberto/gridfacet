@@ -1316,7 +1316,14 @@ interface Drag {
 }
 let drag: Drag | null = null;
 
-const snapTo = (value: number, step: number): number => Math.round(value / step) * step || 0;
+/** Imán al mover piezas y vértices: con él caen en la rejilla, sin él (por defecto) siguen al ratón. Se recuerda en el navegador. */
+let magnet = false;
+try {
+  magnet = localStorage.getItem('gridfacet.magnet') === '1';
+} catch {
+  // Sin almacenamiento empieza sin imán.
+}
+const snapTo = (value: number, step: number): number => (magnet ? Math.round(value / step) * step || 0 : value);
 
 function selectedObjects(): THREE.Object3D[] {
   return [...objects].filter(([id]) => selection.has(id)).map(([, object]) => object);
@@ -2128,6 +2135,20 @@ const meshTool = new MeshTool({
   onSelectionChange: () => syncMeshActions(),
 });
 model.onHistory = (kind) => meshTool.historyMoved(kind);
+meshTool.magnet = magnet;
+const magnetEl = document.getElementById('magnet') as HTMLInputElement;
+magnetEl.checked = magnet;
+magnetEl.addEventListener('change', () => {
+  magnet = magnetEl.checked;
+  meshTool.magnet = magnet;
+  magnetEl.blur();
+  try {
+    localStorage.setItem('gridfacet.magnet', magnet ? '1' : '0');
+  } catch {
+    // Sin almacenamiento vale solo para esta sesión.
+  }
+  statusEl.textContent = magnet ? 'Imán activado: piezas y vértices caen en la rejilla' : 'Imán desactivado: piezas y vértices siguen al ratón';
+});
 if (import.meta.env.DEV) (window as unknown as Record<string, unknown>).__mesh = meshTool;
 function syncMeshActions(): void {
   meshActionsEl.hidden = mode !== 'mesh';
@@ -2391,7 +2412,7 @@ function updateGrowDrag(event: PointerEvent): void {
   const t = (b * d.dot(w) - n.dot(w)) / denominator;
   const step = growStep(growDrag.face.normal);
   growDrag.moved = true;
-  growDrag.distance = Math.max(step, snapTo(growDrag.sink ? -t : t, step));
+  growDrag.distance = Math.max(step, Math.round((growDrag.sink ? -t : t) / step) * step);
   statusEl.textContent = `${growDrag.sink ? 'Hundir' : 'Crecer'} ${+growDrag.distance.toFixed(3)} (Esc cancela)`;
   showGrowPreview();
 }
