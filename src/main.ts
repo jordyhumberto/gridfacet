@@ -19,7 +19,7 @@ import { defaultReference, nextReferenceId, withPlane, type RefImage, type RefPl
 import { ReferenceLayer, loadReferenceFile } from './render/references';
 import { groupCentre, emptyAnimation, pruneTracks, removeKey, resize as resizeAnimation, sampleTrack, setKey, trackOf, MAX_FPS, MAX_FRAMES, type Animation, type Pose } from './core/animation';
 import { AnimationPlayer } from './render/animationPlayer';
-import { canPickOpen, canPickSave, pickOpen, pickSave, writeHandle, type FileHandle } from './fileAccess';
+import { canPickOpen, canPickSave, pickOpen, pickSave, setSystemPicker, systemPickerEnabled, writeHandle, type FileHandle } from './fileAccess';
 import { downloadBlob, exportGlb } from './render/glb';
 import { framesToPngs, framesToSheet, renderSprites } from './render/sprites';
 import { TextureLayer, atlasToPng } from './render/textures';
@@ -3194,7 +3194,15 @@ async function saveProject(asNew = false): Promise<void> {
         return;
       }
     } else {
-      downloadBlob(data, suggested, 'application/json');
+      // Sin selector del sistema el archivo se descarga: «Guardar como» pide el nombre y va a la carpeta de descargas del navegador.
+      let target = suggested;
+      if (asNew) {
+        const typed = window.prompt('Nombre del archivo', suggested);
+        if (!typed) return;
+        target = typed.replace(/(.json)?$/i, '.json');
+      }
+      downloadBlob(data, target, 'application/json');
+      name = target;
     }
   } catch (error) {
     fileProblem(`No se pudo guardar: ${errorText(error)}`);
@@ -3263,6 +3271,13 @@ async function requestOpen(): Promise<void> {
 }
 
 document.getElementById('new')!.addEventListener('click', () => newProject());
+const systemPickerEl = document.getElementById('systemPicker') as HTMLInputElement;
+systemPickerEl.checked = systemPickerEnabled();
+systemPickerEl.addEventListener('change', () => {
+  setSystemPicker(systemPickerEl.checked);
+  fileHandle = null;
+  statusEl.textContent = systemPickerEl.checked ? 'Selector de archivos del sistema activado (si no aparece el diálogo, desactívalo)' : 'Guardar descarga el archivo y Abrir usa el selector clásico';
+});
 /** Descarga una copia del proyecto sin usar el selector de archivos del navegador: llega siempre a la carpeta de descargas. */
 document.getElementById('download')!.addEventListener('click', () => {
   try {

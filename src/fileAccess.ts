@@ -21,8 +21,27 @@ type PickerWindow = Window & {
 
 const picker = (): PickerWindow => window as PickerWindow;
 
-export const canPickSave = (): boolean => typeof picker().showSaveFilePicker === 'function';
-export const canPickOpen = (): boolean => typeof picker().showOpenFilePicker === 'function';
+const KEY = 'gridfacet.systemPicker';
+
+/** El selector del sistema es opcional (apagado por defecto): en algunos navegadores el diálogo no aparece o nunca responde, y entonces ni se guarda ni se abre. */
+export function systemPickerEnabled(): boolean {
+  try {
+    return localStorage.getItem(KEY) === '1';
+  } catch {
+    return false;
+  }
+}
+
+export function setSystemPicker(on: boolean): void {
+  try {
+    localStorage.setItem(KEY, on ? '1' : '0');
+  } catch {
+    // Sin almacenamiento la opción vale solo para esta sesión.
+  }
+}
+
+export const canPickSave = (): boolean => systemPickerEnabled() && typeof picker().showSaveFilePicker === 'function';
+export const canPickOpen = (): boolean => systemPickerEnabled() && typeof picker().showOpenFilePicker === 'function';
 
 const isCancel = (error: unknown): boolean => error instanceof DOMException && error.name === 'AbortError';
 
