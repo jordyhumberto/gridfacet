@@ -19,7 +19,7 @@ import { defaultReference, nextReferenceId, withPlane, type RefImage, type RefPl
 import { ReferenceLayer, loadReferenceFile } from './render/references';
 import { groupCentre, emptyAnimation, pruneTracks, removeKey, resize as resizeAnimation, sampleTrack, setKey, trackOf, MAX_FPS, MAX_FRAMES, type Animation, type Pose } from './core/animation';
 import { AnimationPlayer } from './render/animationPlayer';
-import { canPickOpen, canPickSave, pickOpen, pickSave, setSystemPicker, systemPickerEnabled, writeHandle, type FileHandle } from './fileAccess';
+import { canPickOpen, canPickSave, PickerUnresponsive, pickOpen, pickSave, writeHandle, type FileHandle } from './fileAccess';
 import { downloadBlob, exportGlb } from './render/glb';
 import { framesToPngs, framesToSheet, renderSprites } from './render/sprites';
 import { TextureLayer, atlasToPng } from './render/textures';
@@ -3170,8 +3170,18 @@ async function saveProject(asNew = false): Promise<void> {
     if (canPickSave()) {
       let handle = asNew ? null : fileHandle;
       if (!handle) {
-        statusEl.textContent = 'Abriendo el selector de archivos… (si no aparece, usa «Descargar»)';
-        handle = await pickSave(suggested, 'Proyecto de Gridfacet', 'application/json', '.json');
+        statusEl.textContent = 'Abriendo el selector de archivos…';
+        try {
+          handle = await pickSave(suggested, 'Proyecto de Gridfacet', 'application/json', '.json');
+        } catch (error) {
+          // El diálogo no se muestra o falla: se baja el archivo a Descargas en vez de no hacer nada.
+          downloadBlob(data, suggested, 'application/json');
+          fileProblem(`El selector de archivos no funciona en este navegador (${errorText(error)}); se descargó ${suggested} en Descargas`);
+          fileName = suggested;
+          dirty = false;
+          syncFileName();
+          return;
+        }
         if (!handle) {
           statusEl.textContent = 'Guardado cancelado';
           return;
@@ -3266,30 +3276,17 @@ async function requestOpen(): Promise<void> {
     const handle = await pickOpen('Proyecto de Gridfacet', 'application/json', '.json');
     if (handle) await openProject(await handle.getFile(), handle);
   } catch (error) {
+    // Si el diálogo del sistema no se muestra, se ofrece el selector clásico (aún dentro del gesto del clic).
+    if (error instanceof PickerUnresponsive) {
+      statusEl.textContent = 'El selector del sistema no respondió: usa el selector clásico';
+      openFileEl.click();
+      return;
+    }
     fileProblem(`No se pudo abrir: ${errorText(error)}`);
   }
 }
 
 document.getElementById('new')!.addEventListener('click', () => newProject());
-const systemPickerEl = document.getElementById('systemPicker') as HTMLInputElement;
-systemPickerEl.checked = systemPickerEnabled();
-systemPickerEl.addEventListener('change', () => {
-  setSystemPicker(systemPickerEl.checked);
-  fileHandle = null;
-  statusEl.textContent = systemPickerEl.checked ? 'Selector de archivos del sistema activado (si no aparece el diálogo, desactívalo)' : 'Guardar descarga el archivo y Abrir usa el selector clásico';
-});
-/** Descarga una copia del proyecto sin usar el selector de archivos del navegador: llega siempre a la carpeta de descargas. */
-document.getElementById('download')!.addEventListener('click', () => {
-  try {
-    const pieces = model.all();
-    const data = serializeProject(pieces, model.points(), gridSize, layers.toJSON(), pruneTracks(animation, pieces), references);
-    const name = fileName === 'Sin título' ? 'gridfacet-proyecto.json' : fileName.replace(/(.json)?$/i, '.json');
-    downloadBlob(data, name, 'application/json');
-    statusEl.textContent = `Descargado ${name} (${pieces.length} piezas) en la carpeta de descargas del navegador`;
-  } catch (error) {
-    fileProblem(`No se pudo descargar: ${errorText(error)}`);
-  }
-});
 document.getElementById('save')!.addEventListener('click', () => void saveProject(false));
 document.getElementById('saveAs')!.addEventListener('click', () => void saveProject(true));
 document.getElementById('open')!.addEventListener('click', () => void requestOpen());

@@ -21,27 +21,47 @@ type PickerWindow = Window & {
 
 const picker = (): PickerWindow => window as PickerWindow;
 
-const KEY = 'gridfacet.systemPicker';
+export const canPickSave = (): boolean => typeof picker().showSaveFilePicker === 'function';
+export const canPickOpen = (): boolean => typeof picker().showOpenFilePicker === 'function';
 
-/** El selector del sistema es opcional (apagado por defecto): en algunos navegadores el diálogo no aparece o nunca responde, y entonces ni se guarda ni se abre. */
-export function systemPickerEnabled(): boolean {
-  try {
-    return localStorage.getItem(KEY) === '1';
-  } catch {
-    return false;
-  }
+/** El selector no llegó a mostrarse ni respondió: se avisa para volver a la descarga o al selector clásico. */
+export class PickerUnresponsive extends Error {}
+
+/**
+ * Ejecuta el selector del sistema con un vigilante: al abrirse el diálogo la ventana pierde el foco. Si pasan 3 s sin que eso ocurra y sin respuesta,
+ * el diálogo no se está mostrando (algunos navegadores o paneles integrados lo bloquean sin avisar) y se rinde para que Guardar y Abrir no queden mudos.
+ */
+function watched<T>(start: () => Promise<T>): Promise<T> {
+  return new Promise((resolve, reject) => {
+    let blurred = !document.hasFocus();
+    const onBlur = (): void => {
+      blurred = true;
+    };
+    window.addEventListener('blur', onBlur);
+    const done = (): void => {
+      clearTimeout(timer);
+      window.removeEventListener('blur', onBlur);
+    };
+    const timer = setTimeout(() => {
+      if (blurred) return;
+      done();
+      reject(new PickerUnresponsive('el selector de archivos no respondió'));
+    }, 3000);
+    const began = performance.now();
+    start().then(
+      (value) => {
+        done();
+        resolve(value);
+      },
+      (error) => {
+        done();
+        // Nadie cancela un diálogo en menos de medio segundo: un «cancelado» así de rápido es el navegador negándose a mostrarlo.
+        if (isCancel(error) && performance.now() - began < 500) reject(new PickerUnresponsive('el navegador canceló el selector al instante'));
+        else reject(error);
+      },
+    );
+  });
 }
-
-export function setSystemPicker(on: boolean): void {
-  try {
-    localStorage.setItem(KEY, on ? '1' : '0');
-  } catch {
-    // Sin almacenamiento la opción vale solo para esta sesión.
-  }
-}
-
-export const canPickSave = (): boolean => systemPickerEnabled() && typeof picker().showSaveFilePicker === 'function';
-export const canPickOpen = (): boolean => systemPickerEnabled() && typeof picker().showOpenFilePicker === 'function';
 
 const isCancel = (error: unknown): boolean => error instanceof DOMException && error.name === 'AbortError';
 
@@ -52,7 +72,7 @@ function types(description: string, mime: string, extension: string): PickerOpti
 /** Abre el diálogo de guardar; devuelve null si el usuario lo cancela. */
 export async function pickSave(suggestedName: string, description: string, mime: string, extension: string): Promise<FileHandle | null> {
   try {
-    return await picker().showSaveFilePicker!({ suggestedName, types: types(description, mime, extension) });
+    return await watched(() => picker().showSaveFilePicker!({ suggestedName, types: types(description, mime, extension) }));
   } catch (error) {
     if (isCancel(error)) return null;
     throw error;
@@ -62,7 +82,7 @@ export async function pickSave(suggestedName: string, description: string, mime:
 /** Abre el diálogo de abrir; devuelve null si el usuario lo cancela. */
 export async function pickOpen(description: string, mime: string, extension: string): Promise<FileHandle | null> {
   try {
-    const [handle] = await picker().showOpenFilePicker!({ types: types(description, mime, extension) });
+    const [handle] = await watched(() => picker().showOpenFilePicker!({ types: types(description, mime, extension) }));
     return handle ?? null;
   } catch (error) {
     if (isCancel(error)) return null;
