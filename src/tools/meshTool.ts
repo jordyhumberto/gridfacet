@@ -171,6 +171,9 @@ export class MeshTool {
    */
   private history: { depth: number; before: VertexSelection; after: VertexSelection }[] = [];
   private pendingBefore: VertexSelection | null = null;
+  /** Imán: con él, los vértices arrastrados caen en la rejilla de ¼ y girar/escalar van a saltos. Apagado (por defecto) se mueven suaves; Ctrl invierte. */
+  magnet = false;
+
   /** En cuántas partes se divide una arista al añadir un vértice (2 = por la mitad, 4 = cuartos…); 0 es libre, donde se pulse. */
   edgeDivisions = 4;
 
@@ -528,7 +531,7 @@ export class MeshTool {
   private move(e: PointerEvent): void {
     if (!this.active) return;
     if (this.modal) {
-      this.modal.last = { x: e.clientX, y: e.clientY, free: e.ctrlKey || e.metaKey };
+      this.modal.last = { x: e.clientX, y: e.clientY, free: this.magnet === (e.ctrlKey || e.metaKey) };
       this.updateModal();
       return;
     }
@@ -553,8 +556,8 @@ export class MeshTool {
     if (!point) return;
     let delta: Vec3 = [point.x - drag.grab.x, point.y - drag.grab.y, point.z - drag.grab.z];
     if (this.axisLock !== null) delta = delta.map((v, i) => (axisAllowed(this.axisLock, i) ? v : 0)) as Vec3;
-    // Con imán la posición final del vértice agarrado cae en la rejilla; Ctrl lo suelta.
-    if (!(e.ctrlKey || e.metaKey)) {
+    // Con imán la posición final del vértice agarrado cae en la rejilla; sin él sigue al ratón. Ctrl invierte.
+    if (this.magnet !== (e.ctrlKey || e.metaKey)) {
       delta = delta.map((v, i) => {
         if (!axisAllowed(this.axisLock, i)) return 0;
         return Math.round((drag.anchor[i] + v) / SNAP_STEP) * SNAP_STEP - drag.anchor[i];
@@ -851,7 +854,7 @@ export class MeshTool {
     this.host.setOrbit(false);
     const name = { rotate: 'Girar', scale: 'Escalar', taper: 'Afinar', twist: 'Torcer', bend: 'Curvar' }[kind];
     const hint = kind === 'taper' || kind === 'twist' || kind === 'bend' ? 'mueve el ratón a los lados · X/Y/Z cambia el eje (por defecto Y)' : 'mueve el ratón · X/Y/Z fija el eje';
-    this.host.status(`${name}: ${hint} · Ctrl sin imán · clic o Intro confirma · Esc cancela`);
+    this.host.status(`${name}: ${hint} · Ctrl invierte el imán · clic o Intro confirma · Esc cancela`);
   }
 
   /** Eje de giro: el del mundo elegido, o el más parecido a la dirección de la cámara. */
