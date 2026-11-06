@@ -57,6 +57,8 @@ function watched<T>(start: () => Promise<T>): Promise<T> {
         done();
         // Nadie cancela un diálogo en menos de medio segundo: un «cancelado» así de rápido es el navegador negándose a mostrarlo.
         if (isCancel(error) && performance.now() - began < 500) reject(new PickerUnresponsive('el navegador canceló el selector al instante'));
+        // Si la persona cancela, la ventana del diálogo ya se cerró y la página recupera el foco. Un «cancelado» sin foco es Chrome rindiéndose con el diálogo aún abierto.
+        else if (isCancel(error) && !document.hasFocus()) reject(new PickerUnresponsive('Chrome canceló el guardado con la ventana todavía abierta'));
         else reject(error);
       },
     );
