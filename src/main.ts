@@ -71,7 +71,8 @@ try {
 
 const container = document.getElementById('app')!;
 const renderer = new THREE.WebGLRenderer({ antialias: true });
-renderer.setPixelRatio(window.devicePixelRatio);
+// Más de 2× no se nota y cuesta mucho: en pantallas muy densas la tarjeta gráfica trabaja el doble o el triple.
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 container.appendChild(renderer.domElement);
 
 const scene3d = new THREE.Scene();
@@ -4797,6 +4798,17 @@ window.addEventListener('resize', resize);
 resize();
 
 let lastFrame = performance.now();
+/** La escena solo se vuelve a dibujar si algo pudo cambiar: antes se repintaba sin parar a la velocidad de la pantalla y calentaba el equipo. */
+let renderUntil = performance.now() + 1500;
+let lastRendered = 0;
+let lastSerial = -1;
+const wakeRender = (): void => {
+  renderUntil = performance.now() + 800;
+};
+for (const type of ['pointerdown', 'pointermove', 'pointerup', 'wheel', 'keydown', 'keyup', 'click', 'input', 'change', 'drop', 'focus', 'resize', 'contextmenu']) {
+  window.addEventListener(type, wakeRender, { capture: true, passive: true });
+}
+document.addEventListener('visibilitychange', wakeRender);
 renderer.setAnimationLoop((now) => {
   const dt = Math.min((now - lastFrame) / 1000, 0.1);
   lastFrame = now;
@@ -4808,8 +4820,13 @@ renderer.setAnimationLoop((now) => {
     animSlider.value = String(animFrame);
     animEl('animFrameLabel').textContent = `${animFrame + 1} / ${animation.frames}`;
   }
-  controls.update();
+  // Con la inercia de la cámara activa, `update` dice si todavía se está moviendo.
+  if (controls.update()) wakeRender();
   batches.flush();
+  // Dibuja mientras haya actividad, se reproduzca la animación o cambie el modelo; y, por si algo cambia sin avisar (una imagen que termina de cargar), dos veces por segundo.
+  if (!animPlaying && now > renderUntil && model.serial === lastSerial && now - lastRendered < 500) return;
+  lastSerial = model.serial;
+  lastRendered = now;
   renderer.render(scene3d, camera);
   drawCompass();
 });
