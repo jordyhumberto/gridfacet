@@ -3156,7 +3156,14 @@ function fileProblem(message: string): void {
 /** Guardar escribe sobre el archivo actual; "Guardar como" (o un proyecto nuevo) abre el diálogo para elegir carpeta y nombre. */
 async function saveProject(asNew = false): Promise<void> {
   const pieces = model.all();
-  const data = serializeProject(pieces, model.points(), gridSize, layers.toJSON(), pruneTracks(animation, pieces), references);
+  // Si esto falla (texturas o referencias dañadas, por ejemplo) no debe quedar mudo: antes la promesa fallaba sin avisar y parecía que Guardar no hacía nada.
+  let data: string;
+  try {
+    data = serializeProject(pieces, model.points(), gridSize, layers.toJSON(), pruneTracks(animation, pieces), references);
+  } catch (error) {
+    fileProblem(`No se pudo preparar el proyecto para guardarlo: ${errorText(error)}`);
+    return;
+  }
   const suggested = fileName === 'Sin título' ? 'gridfacet-proyecto.json' : fileName.replace(/(\.json)?$/i, '.json');
   let name = suggested;
   try {
