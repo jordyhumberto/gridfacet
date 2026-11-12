@@ -822,6 +822,11 @@ export class MeshTool {
       return true;
     }
     if (this.count === 0) return false;
+    // U (de «unir») traza el segmento entre dos vértices elegidos, igual que el botón «Unir vértices».
+    if (key === 'u' && !this.drag && !e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey) {
+      this.connectSelected();
+      return true;
+    }
     if (key === 'delete' || key === 'backspace') {
       this.deleteSelected();
       return true;
