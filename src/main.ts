@@ -2207,6 +2207,7 @@ meshActionsEl.querySelectorAll<HTMLButtonElement>('button[data-mesh]').forEach((
     else if (action === 'extrude') meshTool.extrudeSelected();
     else if (action === 'growedge') meshTool.growFaceFromEdge();
     else if (action === 'connect') meshTool.connectSelected();
+    else if (action === 'dissolve') meshTool.dissolveSelected();
   }),
 );
 
@@ -3838,6 +3839,7 @@ const GUIDE: Record<Mode, [string, string][]> = {
     ['Doble cara · Sin sombra · Al fondo', 'casillas del panel: afectan a las caras cuyos vértices están todos elegidos'],
     ['A', 'enciende y apaga el modo añadir vértice (lo mismo que el botón «+ Vértice»; en Malla sustituye a la A que oculta esta ayuda)'],
     ['U', 'unir vértices: con dos vértices elegidos de una misma cara traza el segmento entre ellos y parte la cara (lo mismo que el botón; con vértices elegidos sustituye a la U que refleja piezas en Y)'],
+    ['Q', 'quitar segmento: con los dos vértices de un segmento que separa dos caras del mismo plano, las junta en una (lo contrario de Unir vértices; con vértices elegidos sustituye a la Q que baja las piezas)'],
     ['+ Vértice (panel)', 'activa el modo añadir: clic en una arista (en cuartos; Ctrl: donde pulses) o dentro de una cara le pone un vértice nuevo, que queda elegido para moverlo. Arrastrar sigue girando la cámara'],
     ['Alt+clic en una arista', 'ponerle un vértice nuevo sin activar el modo (en cuartos; Ctrl: donde hagas clic)'],
     ['Panel', 'Todos · Fusionar (junta los elegidos en uno) · Borrar · A la rejilla'],
