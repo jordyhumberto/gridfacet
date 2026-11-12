@@ -85,6 +85,8 @@ const partOf = (target: Target, p: Vec3): Part => target.parts.find((part) => pa
 const chosenKeys = (target: Target): Set<string> => target.parts.find((part) => !part.mirror)?.keys ?? new Set();
 
 const sameId = (made: Piece, old: Piece): Piece => ({ ...made, id: old.id });
+/** Lo que devuelve una operación de `change` cuando la pieza se queda sin caras y desaparece (distinto de `null`: no hacer nada). */
+const REMOVE = Symbol('remove');
 
 const FIN_MESSAGE = 'Ese punto solo toca dos caras: queda como una aleta plana (sin volumen) y se ve por los dos lados. Añade el punto en una cara para tener volumen';
 const cloneSelection = (selection: VertexSelection): VertexSelection => new Map([...selection].map(([id, keys]) => [id, new Set(keys)]));
@@ -1024,7 +1026,7 @@ export class MeshTool {
 
   snapToGrid(): void {
     const onGrid = (p: Vec3): Vec3 => p.map((v) => Math.round(v / SNAP_STEP) * SNAP_STEP) as Vec3;
-    this.change((piece, keys) => placeVertices(piece, keys, onGrid, true), onGrid);
+    this.change((piece, keys) => placeVertices(piece, keys, onGrid, true) ?? REMOVE, onGrid);
   }
 
   mergeSelected(): void {
@@ -1034,14 +1036,16 @@ export class MeshTool {
     }
     this.change((piece, keys) => {
       const merged = mergeVertices(piece, keys);
-      return merged ? sameId(merged, piece) : null;
+      if (merged) return sameId(merged, piece);
+      // Con menos de dos vértices elegidos en esta pieza no hay nada que fusionar; con dos o más y sin resultado, se quedó sin caras.
+      return uniqueVertices(piece).filter((p) => keys.has(vertexKey(p))).length < 2 ? null : REMOVE;
     });
   }
 
   deleteSelected(): void {
     this.change((piece, keys) => {
       const result = deleteVertices(piece, keys);
-      return result ? sameId(result, piece) : null;
+      return result ? sameId(result, piece) : REMOVE;
     });
   }
 
@@ -1065,7 +1069,7 @@ export class MeshTool {
       if (faces.length === 0) return null;
       any = true;
       const result = deleteFaces(piece, new Set(faces));
-      return result ? sameId(result, piece) : null;
+      return result ? sameId(result, piece) : REMOVE;
     }, keepPosition);
     if (!any) this.host.status('Elige todos los vértices de una cara para borrarla');
   }
@@ -1123,7 +1127,7 @@ export class MeshTool {
         ? split > 1
           ? `Segmento trazado: ${split} caras partidas (la del espejo también)`
           : 'Segmento trazado: la cara quedó partida en dos'
-        : 'Elige dos vértices de una misma cara, no vecinos y con el camino libre entre ellos, para trazar el segmento',
+        : 'No se trazó nada: elige dos vértices de una misma cara que no estén ya unidos por una arista y con el camino libre entre ellos',
     );
   }
 
@@ -1363,8 +1367,9 @@ export class MeshTool {
   /**
    * Aplica una operación sobre cada pieza con vértices elegidos (y sus imágenes en espejo) como un único paso de deshacer.
    * Con `after` la selección sigue a los vértices a su posición nueva; sin él se vacía (fusionar, borrar).
+   * La operación devuelve la pieza nueva, `null` si no puede hacer nada con esa pieza (se queda tal cual) o `REMOVE` si la pieza desaparece.
    */
-  private change(operation: (piece: Piece, keys: Set<string>, dirAt: (p: Vec3) => (v: Vec3) => Vec3) => Piece | { piece: Piece; select: Set<string> } | null, after?: (position: Vec3, dirAt: (p: Vec3) => (v: Vec3) => Vec3) => Vec3): void {
+  private change(operation: (piece: Piece, keys: Set<string>, dirAt: (p: Vec3) => (v: Vec3) => Vec3) => Piece | { piece: Piece; select: Set<string> } | typeof REMOVE | null, after?: (position: Vec3, dirAt: (p: Vec3) => (v: Vec3) => Vec3) => Vec3): void {
     const targets = this.buildTargets();
     if (targets.length === 0) return;
     const before = cloneSelection(this.selection);
@@ -1374,8 +1379,14 @@ export class MeshTool {
     for (const target of targets) {
       const dirAt = (p: Vec3): ((v: Vec3) => Vec3) => partOf(target, p).dir;
       const outcome = operation(target.original, target.keys, dirAt);
+      if (outcome === null) {
+        // Sin cambios: la pieza y su selección se quedan como están.
+        const kept = this.selection.get(target.original.id);
+        if (kept) next.set(target.original.id, kept);
+        continue;
+      }
       removed.push(target.original);
-      if (!outcome) continue;
+      if (outcome === REMOVE) continue;
       const result = 'select' in outcome ? outcome.piece : outcome;
       added.push(result);
       if ('select' in outcome) {
