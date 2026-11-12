@@ -1135,11 +1135,20 @@ export class MeshTool {
   /** Con dos vértices elegidos de una misma cara, traza el segmento entre ellos: la cara se parte en dos. Los vértices siguen elegidos. */
   connectSelected(): void {
     let split = 0;
-    this.change((piece, keys) => {
-      const result = connectVertices(piece, keys);
-      if (!result) return null;
-      split += result.split;
-      return { piece: sameId(result.piece, piece), select: new Set(keys) };
+    // Con simetría, `keys` trae los elegidos y también sus imágenes en el espejo (cuatro vértices en una misma cara no se pueden unir de dos en dos
+    // sin saber cuáles): cada grupo se une por separado, con sus propios vértices, y la cara se vuelve a mirar tras cada corte.
+    this.change((piece, keys, _dirAt, parts) => {
+      let current = piece;
+      let here = 0;
+      for (const part of parts) {
+        const result = connectVertices(current, part.full);
+        if (!result) continue;
+        current = result.piece;
+        here += result.split;
+      }
+      if (here === 0) return null;
+      split += here;
+      return { piece: sameId(current, piece), select: new Set(keys) };
     });
     this.host.status(
       split > 0
