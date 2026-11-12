@@ -4,7 +4,7 @@ import type { Piece, Vec3 } from '../core/piece';
 import { pieceKey, reflectPiece, reflections, type Reflection, type Symmetry } from '../core/symmetry';
 import { triangulateFace } from '../core/convex';
 import { collapses } from '../core/selfIntersect';
-import { finFaces, flagFins, splitFacesAtCenter, addFace, deleteFaces, deleteVertices, extrudeEdge, extrudeFaces, facesWithin, flipFaces, mergeVertices, placeVertices, rotateAbout, scaleAbout, setFaceFlags, splitEdge, addMirrorPairOnFace, addVertexOnFace, taperPoint, twistPoint, bendPoint, uniqueVertices, vertexKey } from '../core/vertices';
+import { connectVertices, finFaces, flagFins, splitFacesAtCenter, addFace, deleteFaces, deleteVertices, extrudeEdge, extrudeFaces, facesWithin, flipFaces, mergeVertices, placeVertices, rotateAbout, scaleAbout, setFaceFlags, splitEdge, addMirrorPairOnFace, addVertexOnFace, taperPoint, twistPoint, bendPoint, uniqueVertices, vertexKey } from '../core/vertices';
 import type { ModelScene } from '../scene';
 
 /** Paso de la rejilla de imán, en celdas. */
@@ -1102,6 +1102,24 @@ export class MeshTool {
       return { piece: sameId(result.piece, piece), select: result.keys };
     });
     if (!any) this.host.status('Elige exactamente dos vértices de una pieza para hacer crecer una cara desde su segmento');
+  }
+
+  /** Con dos vértices elegidos de una misma cara, traza el segmento entre ellos: la cara se parte en dos. Los vértices siguen elegidos. */
+  connectSelected(): void {
+    let split = 0;
+    this.change((piece, keys) => {
+      const result = connectVertices(piece, keys);
+      if (!result) return null;
+      split += result.split;
+      return { piece: sameId(result.piece, piece), select: new Set(keys) };
+    });
+    this.host.status(
+      split > 0
+        ? split > 1
+          ? `Segmento trazado: ${split} caras partidas (la del espejo también)`
+          : 'Segmento trazado: la cara quedó partida en dos'
+        : 'Elige dos vértices de una misma cara, no vecinos y con el camino libre entre ellos, para trazar el segmento',
+    );
   }
 
   /** Cuántas de las caras elegidas (con todos sus vértices elegidos) tienen la propiedad `flag`. */
