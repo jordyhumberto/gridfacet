@@ -802,6 +802,11 @@ export class MeshTool {
       this.beginTransform(key === 'r' ? 'rotate' : 'scale');
       return true;
     }
+    // A (de «añadir») enciende y apaga el modo añadir vértice, igual que el botón «+ Vértice».
+    if (!this.drag && !e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey && key === 'a') {
+      this.setAddMode(!this.adding);
+      return true;
+    }
     // En Malla, X / Y / Z fijan el eje (como los botones «Mover en») y no tocan la simetría, que se cambia con sus casillas.
     if (!e.ctrlKey && !e.metaKey && !e.altKey && (key === 'x' || key === 'y' || key === 'z')) {
       const axis = 'xyz'.indexOf(key);

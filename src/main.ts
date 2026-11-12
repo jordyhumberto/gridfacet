@@ -3836,6 +3836,7 @@ const GUIDE: Record<Mode, [string, string][]> = {
     ['R / T', 'girar / escalar los vértices elegidos alrededor de su centro: mueve el ratón, X/Y/Z fija el eje, clic confirma, Esc cancela (Ctrl: sin imán)'],
     ['Shift+clic en una cara', 'elegir todos sus vértices (se suman a los elegidos)'],
     ['Doble cara · Sin sombra · Al fondo', 'casillas del panel: afectan a las caras cuyos vértices están todos elegidos'],
+    ['A', 'enciende y apaga el modo añadir vértice (lo mismo que el botón «+ Vértice»; en Malla sustituye a la A que oculta esta ayuda)'],
     ['+ Vértice (panel)', 'activa el modo añadir: clic en una arista (en cuartos; Ctrl: donde pulses) o dentro de una cara le pone un vértice nuevo, que queda elegido para moverlo. Arrastrar sigue girando la cámara'],
     ['Alt+clic en una arista', 'ponerle un vértice nuevo sin activar el modo (en cuartos; Ctrl: donde hagas clic)'],
     ['Panel', 'Todos · Fusionar (junta los elegidos en uno) · Borrar · A la rejilla'],
