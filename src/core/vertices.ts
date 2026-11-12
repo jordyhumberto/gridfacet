@@ -330,6 +330,64 @@ export function connectVertices(piece: Piece, keys: ReadonlySet<string>): { piec
   return replacements.size > 0 ? { piece: replaceFaces(piece, replacements), split: replacements.size } : null;
 }
 
+/**
+ * Quita el segmento entre dos vértices elegidos: las dos caras que lo comparten se juntan en una sola. Es lo contrario de `connectVertices`.
+ * Solo vale si el segmento separa exactamente dos caras que están en el mismo plano, miran hacia el mismo lado y se recorren al revés una de otra,
+ * y si juntas forman un polígono simple (sin solaparse). Los vértices se quedan; la cara nueva conserva el color, las propiedades y la textura de la primera.
+ * Devuelve null si no se puede.
+ */
+export function dissolveEdge(piece: Piece, keys: ReadonlySet<string>): Piece | null {
+  const chosen = uniqueVertices(piece).filter((p) => keys.has(vertexKey(p)));
+  if (chosen.length !== 2) return null;
+  const [ka, kb] = chosen.map(vertexKey);
+  const rings = piece.faces.map(withoutRepeats);
+  // Las caras que tienen el segmento como arista, con su sentido (a→b o b→a).
+  const using: { index: number; at: number; forward: boolean }[] = [];
+  rings.forEach((ring, index) => {
+    if (ring.length < 3) return;
+    ring.forEach((p, k) => {
+      const next = vertexKey(ring[(k + 1) % ring.length]);
+      const here = vertexKey(p);
+      if (here === ka && next === kb) using.push({ index, at: k, forward: true });
+      else if (here === kb && next === ka) using.push({ index, at: k, forward: false });
+    });
+  });
+  if (using.length !== 2 || using[0].index === using[1].index || using[0].forward === using[1].forward) return null;
+  const [one, two] = using;
+  const f1 = rings[one.index];
+  const f2 = rings[two.index];
+  const n1 = faceNormal(f1);
+  const n2 = faceNormal(f2);
+  const l1 = Math.hypot(...n1);
+  const l2 = Math.hypot(...n2);
+  if (l1 < 1e-12 || l2 < 1e-12) return null;
+  const unit: Vec3 = [n1[0] / l1, n1[1] / l1, n1[2] / l1];
+  if ((n2[0] * unit[0] + n2[1] * unit[1] + n2[2] * unit[2]) / l2 < 0.9999) return null;
+  if (!f2.every((p) => Math.abs((p[0] - f1[0][0]) * unit[0] + (p[1] - f1[0][1]) * unit[1] + (p[2] - f1[0][2]) * unit[2]) < 1e-4)) return null;
+  // La primera cara recorre el segmento de `from` a `to`; la unión sigue su contorno desde `to` hasta `from` y vuelve por el de la segunda.
+  const from = one.at;
+  const to = (one.at + 1) % f1.length;
+  const merged: Vec3[] = [];
+  for (let k = to; ; k = (k + 1) % f1.length) {
+    merged.push(f1[k]);
+    if (k === from) break;
+  }
+  // En la segunda, el segmento va de `to` a `from`: se sigue desde lo que viene después de `from`, sin repetir los extremos.
+  const second = two.at;
+  for (let k = (second + 2) % f2.length; k !== second; k = (k + 1) % f2.length) merged.push(f2[k]);
+  // Tiene que ser un polígono simple: sin solaparse, su superficie es la suma de las dos.
+  const nm = faceNormal(merged);
+  const area = nm[0] * unit[0] + nm[1] * unit[1] + nm[2] * unit[2];
+  if (Math.abs(area - (l1 + l2)) > 1e-6 * (l1 + l2) + 1e-9) return null;
+  return replaceFaces(
+    piece,
+    new Map<number, Vec3[][]>([
+      [one.index, [merged]],
+      [two.index, []],
+    ]),
+  );
+}
+
 const centreOf = (points: Vec3[]): Vec3 => [0, 1, 2].map((k) => points.reduce((sum, p) => sum + p[k], 0) / points.length) as Vec3;
 
 /** Los vértices elegidos puestos en orden alrededor de su centro, en un plano que se ajusta a ellos. */

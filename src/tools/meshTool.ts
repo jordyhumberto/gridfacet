@@ -4,7 +4,7 @@ import type { Piece, Vec3 } from '../core/piece';
 import { pieceKey, reflectPiece, reflections, type Reflection, type Symmetry } from '../core/symmetry';
 import { triangulateFace } from '../core/convex';
 import { collapses } from '../core/selfIntersect';
-import { connectVertices, finFaces, flagFins, splitFacesAtCenter, addFace, deleteFaces, deleteVertices, extrudeEdge, extrudeFaces, facesWithin, flipFaces, mergeVertices, placeVertices, rotateAbout, scaleAbout, setFaceFlags, splitEdge, addMirrorPairOnFace, addVertexOnFace, taperPoint, twistPoint, bendPoint, uniqueVertices, vertexKey } from '../core/vertices';
+import { connectVertices, dissolveEdge, finFaces, flagFins, splitFacesAtCenter, addFace, deleteFaces, deleteVertices, extrudeEdge, extrudeFaces, facesWithin, flipFaces, mergeVertices, placeVertices, rotateAbout, scaleAbout, setFaceFlags, splitEdge, addMirrorPairOnFace, addVertexOnFace, taperPoint, twistPoint, bendPoint, uniqueVertices, vertexKey } from '../core/vertices';
 import type { ModelScene } from '../scene';
 
 /** Paso de la rejilla de imán, en celdas. */
@@ -829,6 +829,11 @@ export class MeshTool {
       this.connectSelected();
       return true;
     }
+    // Q (de «quitar segmento») junta las dos caras que separa el segmento entre dos vértices elegidos, igual que el botón «Quitar segmento».
+    if (key === 'q' && !this.drag && !e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey) {
+      this.dissolveSelected();
+      return true;
+    }
     if (key === 'delete' || key === 'backspace') {
       this.deleteSelected();
       return true;
@@ -1156,6 +1161,32 @@ export class MeshTool {
           ? `Segmento trazado: ${split} caras partidas (la del espejo también)`
           : 'Segmento trazado: la cara quedó partida en dos'
         : 'No se trazó nada: elige dos vértices de una misma cara que no estén ya unidos por una arista y con el camino libre entre ellos',
+    );
+  }
+
+  /** Con dos vértices elegidos que forman un segmento entre dos caras del mismo plano, quita el segmento: las dos caras pasan a ser una. */
+  dissolveSelected(): void {
+    let joined = 0;
+    this.change((piece, keys, _dirAt, parts) => {
+      let current = piece;
+      let here = 0;
+      // Como en Unir vértices: con simetría, cada grupo (los elegidos y cada espejo) quita su propio segmento.
+      for (const part of parts) {
+        const result = dissolveEdge(current, part.full);
+        if (!result) continue;
+        current = result;
+        here++;
+      }
+      if (here === 0) return null;
+      joined += here;
+      return { piece: sameId(current, piece), select: new Set(keys) };
+    });
+    this.host.status(
+      joined > 0
+        ? joined > 1
+          ? `Segmento quitado: ${joined} pares de caras juntados (el espejo también)`
+          : 'Segmento quitado: las dos caras pasan a ser una'
+        : 'No se quitó nada: elige los dos vértices de un segmento que separe dos caras del mismo plano (no un borde de la pieza ni un ángulo)',
     );
   }
 

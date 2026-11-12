@@ -4,7 +4,7 @@ import { isConvex } from './convex';
 import { collapses } from './selfIntersect';
 import { floodFill, textureOfFace, withFaceTexture } from './pixels';
 import { FACE_DOUBLE, FACE_UNLIT, faceNormal, makePiece, volume, type Vec3 } from './piece';import { sampleTexture, pointOf, uvOf } from './texture';
-import { addMirrorPairOnFace, connectVertices, extrudeEdge, finFaces, flagFins, splitFacesAtCenter, addFace, deleteFaces, deleteVertices, extrudeFaces, facesWithin, flipFaces, mergeVertices, moveVertices, placeVertices, rotateAbout, scaleAbout, setFaceFlags, splitEdge, addVertexOnFace, taperPoint, twistPoint, bendPoint, uniqueVertices, vertexKey } from './vertices';
+import { addMirrorPairOnFace, connectVertices, dissolveEdge, extrudeEdge, finFaces, flagFins, splitFacesAtCenter, addFace, deleteFaces, deleteVertices, extrudeFaces, facesWithin, flipFaces, mergeVertices, moveVertices, placeVertices, rotateAbout, scaleAbout, setFaceFlags, splitEdge, addVertexOnFace, taperPoint, twistPoint, bendPoint, uniqueVertices, vertexKey } from './vertices';
 
 const cube = () => buildPiece(CATALOG[0], 0, 0, 0, 0, 0x336699);
 const topCorner = (piece = cube()): Vec3 => {
@@ -504,6 +504,64 @@ describe('connectVertices', () => {
     // (0,0)-(2,0) tiene el vértice (1,0) en medio.
     expect(connectVertices(piece, keysOf([0, 0, 0], [2, 0, 0]))).toBeNull();
     expect(connectVertices(piece, keysOf([1, 0, 0], [0, 1, 0]))).not.toBeNull();
+  });
+});
+
+describe('dissolveEdge', () => {
+  const cube = () => buildPiece(CATALOG[0], 0, 0, 0, 0, 0xff0000);
+  const area = (face: Vec3[]) => Math.hypot(...faceNormal(face)) / 2;
+
+  it('es lo contrario de unir: quita el segmento y las dos mitades vuelven a ser una cara', () => {
+    const piece = cube();
+    const face = piece.faces.find((f) => f.every((p) => p[2] === 0))!;
+    const a = face.find((p) => p[0] === 0 && p[1] === 0)!;
+    const c = face.find((p) => p[0] === 1 && p[1] === 1)!;
+    const split = connectVertices(piece, keysOf(a, c))!.piece;
+    expect(split.faces).toHaveLength(7);
+    const back = dissolveEdge(split, keysOf(a, c))!;
+    expect(back.faces).toHaveLength(6);
+    const joined = back.faces.find((f) => f.every((p) => p[2] === 0))!;
+    expect(joined).toHaveLength(4);
+    expect(area(joined)).toBeCloseTo(1, 9);
+    expect(faceNormal(joined)[2]).toBeLessThan(0);
+    expect(volume(back)).toBeCloseTo(volume(piece), 9);
+  });
+
+  it('la cara que queda conserva el color y las propiedades de la primera', () => {
+    const base = cube();
+    const index = base.faces.findIndex((f) => f.every((p) => p[2] === 0));
+    const face = base.faces[index];
+    const painted = makePiece(base.faces, base.color, base.faces.map((_, i) => (i === index ? 0x00ff00 : 0xff0000)), undefined, base.faces.map((_, i) => (i === index ? FACE_UNLIT : 0)));
+    const split = connectVertices(painted, keysOf(face[0], face[2]))!.piece;
+    const back = dissolveEdge(split, keysOf(face[0], face[2]))!;
+    const at = back.faces.findIndex((f) => f.every((p) => p[2] === 0));
+    expect(back.faceColors?.[at]).toBe(0x00ff00);
+    expect(back.faceFlags?.[at]).toBe(FACE_UNLIT);
+  });
+
+  it('rechaza un borde de la pieza (dos caras en ángulo), un segmento sin dos caras y lo que no son dos vértices', () => {
+    const piece = cube();
+    expect(dissolveEdge(piece, keysOf([0, 0, 0], [1, 0, 0]))).toBeNull();
+    const open = deleteFaces(piece, new Set([piece.faces.findIndex((f) => f.every((p) => p[2] === 0))]))!;
+    expect(dissolveEdge(open, keysOf([0, 0, 0], [0, 1, 0]))).toBeNull();
+    expect(dissolveEdge(piece, keysOf([0, 0, 0]))).toBeNull();
+    expect(dissolveEdge(piece, keysOf([0, 0, 0], [1, 0, 0], [1, 1, 0]))).toBeNull();
+  });
+
+  it('rechaza caras del mismo borde que no están en el mismo plano', () => {
+    // Dos triángulos que comparten el borde a-b pero están plegados en ángulo.
+    const a: Vec3 = [0, 0, 0];
+    const b: Vec3 = [1, 0, 0];
+    const flat = makePiece([[a, b, [0.5, 1, 0]], [b, a, [0.5, -1, 0.8]]], 0x888888);
+    expect(dissolveEdge(flat, keysOf(a, b))).toBeNull();
+  });
+
+  it('rechaza si la unión no es un polígono simple', () => {
+    // Dos cuadrados en el mismo plano que comparten un borde pero se solapan al juntarlos (el segundo vuelve sobre el primero).
+    const a: Vec3 = [0, 0, 0];
+    const b: Vec3 = [1, 0, 0];
+    const over = makePiece([[a, b, [1, 1, 0], [0, 1, 0]], [b, a, [0, 1, 0], [1, 1, 0]]], 0x888888);
+    expect(dissolveEdge(over, keysOf(a, b))).toBeNull();
   });
 });
 
