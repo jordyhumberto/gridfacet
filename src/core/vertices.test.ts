@@ -3,8 +3,7 @@ import { CATALOG, buildPiece } from './catalog';
 import { isConvex } from './convex';
 import { collapses } from './selfIntersect';
 import { floodFill, textureOfFace, withFaceTexture } from './pixels';
-import { FACE_DOUBLE, FACE_UNLIT, faceNormal, makePiece, volume, type Vec3 } from './piece';
-import { sampleTexture, pointOf, uvOf } from './texture';
+import { FACE_DOUBLE, FACE_UNLIT, faceNormal, makePiece, volume, type Vec3 } from './piece';import { sampleTexture, pointOf, uvOf } from './texture';
 import { addMirrorPairOnFace, connectVertices, extrudeEdge, finFaces, flagFins, splitFacesAtCenter, addFace, deleteFaces, deleteVertices, extrudeFaces, facesWithin, flipFaces, mergeVertices, moveVertices, placeVertices, rotateAbout, scaleAbout, setFaceFlags, splitEdge, addVertexOnFace, taperPoint, twistPoint, bendPoint, uniqueVertices, vertexKey } from './vertices';
 
 const cube = () => buildPiece(CATALOG[0], 0, 0, 0, 0, 0x336699);
@@ -123,6 +122,39 @@ describe('caras', () => {
     expect(closed.faces).toHaveLength(6);
     expect(isConvex(closed)).toBe(true);
     expect(volume(closed)).toBeCloseTo(volume(piece), 9);
+  });
+
+  // Tetraedro sin la base: A, B, C en el suelo y D arriba. `sign` 1 = caras hacia fuera, -1 = hacia dentro.
+  const tetraWithoutBase = (sign: 1 | -1) => {
+    const A: Vec3 = [0, 0, 0];
+    const B: Vec3 = [1, 0, 0];
+    const C: Vec3 = [0, 0, 1];
+    const D: Vec3 = [0, 1, 0];
+    const centre: Vec3 = [0.25, 0.25, 0.25];
+    const outward = (face: Vec3[]): Vec3[] => {
+      const n = faceNormal(face);
+      const mid = face.reduce((s, p) => [s[0] + p[0] / face.length, s[1] + p[1] / face.length, s[2] + p[2] / face.length], [0, 0, 0]);
+      const out = n[0] * (mid[0] - centre[0]) + n[1] * (mid[1] - centre[1]) + n[2] * (mid[2] - centre[2]);
+      return (out > 0) === (sign === 1) ? face : [...face].reverse();
+    };
+    return { piece: makePiece([outward([A, B, D]), outward([B, C, D]), outward([C, A, D])], 0x336699), keys: keysOf(A, B, C) };
+  };
+
+  it('con tres vértices crea un triángulo con esos tres vértices', () => {
+    const { piece, keys } = tetraWithoutBase(1);
+    const closed = addFace(piece, keys)!;
+    expect(closed.faces).toHaveLength(4);
+    const added = closed.faces[3];
+    expect(added).toHaveLength(3);
+    expect(new Set(added.map(vertexKey))).toEqual(keys);
+    // La base cierra el tetraedro mirando hacia abajo, igual que las demás miran hacia fuera.
+    expect(faceNormal(added)[1]).toBeLessThan(0);
+  });
+
+  it('al cerrar un hueco la cara mira hacia el mismo lado que las vecinas, aunque ese lado sea hacia dentro', () => {
+    const { piece, keys } = tetraWithoutBase(-1);
+    const closed = addFace(piece, keys)!;
+    expect(faceNormal(closed.faces[3])[1]).toBeGreaterThan(0);
   });
 
   it('no crea una cara que ya existe ni con menos de tres vértices', () => {
