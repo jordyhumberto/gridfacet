@@ -3,9 +3,9 @@ import { CATALOG, buildPiece } from './catalog';
 import { isConvex } from './convex';
 import { collapses } from './selfIntersect';
 import { floodFill, textureOfFace, withFaceTexture } from './pixels';
-import { FACE_DOUBLE, FACE_UNLIT, faceNormal, volume, type Vec3 } from './piece';
+import { FACE_DOUBLE, FACE_UNLIT, faceNormal, makePiece, volume, type Vec3 } from './piece';
 import { sampleTexture, pointOf, uvOf } from './texture';
-import { addMirrorPairOnFace, extrudeEdge, finFaces, flagFins, splitFacesAtCenter, addFace, deleteFaces, deleteVertices, extrudeFaces, facesWithin, flipFaces, mergeVertices, moveVertices, placeVertices, rotateAbout, scaleAbout, setFaceFlags, splitEdge, addVertexOnFace, taperPoint, twistPoint, bendPoint, uniqueVertices, vertexKey } from './vertices';
+import { addMirrorPairOnFace, connectVertices, extrudeEdge, finFaces, flagFins, splitFacesAtCenter, addFace, deleteFaces, deleteVertices, extrudeFaces, facesWithin, flipFaces, mergeVertices, moveVertices, placeVertices, rotateAbout, scaleAbout, setFaceFlags, splitEdge, addVertexOnFace, taperPoint, twistPoint, bendPoint, uniqueVertices, vertexKey } from './vertices';
 
 const cube = () => buildPiece(CATALOG[0], 0, 0, 0, 0, 0x336699);
 const topCorner = (piece = cube()): Vec3 => {
@@ -409,6 +409,69 @@ describe('vértices repetidos en una cara', () => {
     const piece = cube();
     const moved = moveVertices(piece, new Set([vertexKey([1, 1, 1])]), [-1, 0, 0])!;
     expect(moved.faces.every((f) => f.every((p, k) => vertexKey(p) !== vertexKey(f[(k + 1) % f.length])))).toBe(true);
+  });
+});
+
+describe('connectVertices', () => {
+  const cube = () => buildPiece(CATALOG[0], 0, 0, 0, 0, 0xff0000);
+  const area = (face: Vec3[]) => Math.hypot(...faceNormal(face)) / 2;
+  // Cara en L (cóncava), mirando a +Z: el codo está en (1,1).
+  const L: Vec3[] = [[0, 0, 0], [2, 0, 0], [2, 1, 0], [1, 1, 0], [1, 2, 0], [0, 2, 0]];
+
+  it('parte una cara en dos por la diagonal y las dos mitades suman la superficie original', () => {
+    const piece = cube();
+    const face = piece.faces.find((f) => f.every((p) => p[2] === 0))!;
+    const [a, c] = [face.find((p) => p[0] === 0 && p[1] === 0)!, face.find((p) => p[0] === 1 && p[1] === 1)!];
+    const result = connectVertices(piece, keysOf(a, c))!;
+    expect(result.split).toBe(1);
+    expect(result.piece.faces).toHaveLength(piece.faces.length + 1);
+    const halves = result.piece.faces.filter((f) => f.every((p) => p[2] === 0));
+    expect(halves).toHaveLength(2);
+    expect(halves.every((f) => f.length === 3)).toBe(true);
+    expect(halves[0].some((p) => vertexKey(p) === vertexKey(a)) && halves[0].some((p) => vertexKey(p) === vertexKey(c))).toBe(true);
+    expect(halves[0].some((p) => vertexKey(p) === vertexKey(a)) && halves[1].some((p) => vertexKey(p) === vertexKey(c))).toBe(true);
+    expect(area(halves[0]) + area(halves[1])).toBeCloseTo(area(face), 6);
+    // Siguen mirando hacia fuera igual que la original.
+    for (const half of halves) expect(faceNormal(half)[2]).toBeLessThan(0);
+    expect(faceNormal(face)[2]).toBeLessThan(0);
+  });
+
+  it('cada mitad conserva el color y las propiedades de la cara original', () => {
+    const piece = cube();
+    const index = piece.faces.findIndex((f) => f.every((p) => p[2] === 0));
+    const painted = makePiece(piece.faces, piece.color, piece.faces.map((_, i) => (i === index ? 0x00ff00 : 0xff0000)), undefined, piece.faces.map((_, i) => (i === index ? FACE_UNLIT : 0)));
+    const face = painted.faces[index];
+    const result = connectVertices(painted, keysOf(face[0], face[2]))!;
+    const halves = result.piece.faces.map((f, i) => ({ f, i })).filter(({ f }) => f.every((p) => p[2] === 0));
+    expect(halves.map(({ i }) => result.piece.faceColors?.[i])).toEqual([0x00ff00, 0x00ff00]);
+    expect(halves.map(({ i }) => result.piece.faceFlags?.[i])).toEqual([FACE_UNLIT, FACE_UNLIT]);
+  });
+
+  it('no hace nada con vértices vecinos, de caras distintas o si no son exactamente dos', () => {
+    const piece = cube();
+    expect(connectVertices(piece, keysOf([0, 0, 0], [1, 0, 0]))).toBeNull();
+    expect(connectVertices(piece, keysOf([0, 0, 0], [1, 1, 1]))).toBeNull();
+    expect(connectVertices(piece, keysOf([0, 0, 0]))).toBeNull();
+    expect(connectVertices(piece, keysOf([0, 0, 0], [1, 1, 0], [1, 0, 0]))).toBeNull();
+  });
+
+  it('en una cara cóncava traza un segmento que cabe dentro y rechaza el que sale de ella', () => {
+    const piece = makePiece([L], 0x888888);
+    // (0,0)→(1,2) pasa por dentro de la L.
+    const inside = connectVertices(piece, keysOf([0, 0, 0], [1, 2, 0]))!;
+    expect(inside.piece.faces).toHaveLength(2);
+    expect(inside.piece.faces.reduce((sum, f) => sum + area(f), 0)).toBeCloseTo(area(L), 6);
+    // (2,1)→(1,2) cruza el hueco del codo (su punto medio queda fuera) y (2,0)→(1,2) corta el borde (2,1)-(1,1).
+    expect(connectVertices(piece, keysOf([2, 1, 0], [1, 2, 0]))).toBeNull();
+    expect(connectVertices(piece, keysOf([2, 0, 0], [1, 2, 0]))).toBeNull();
+  });
+
+  it('rechaza el trayecto con otro vértice encima', () => {
+    const strip: Vec3[] = [[0, 0, 0], [1, 0, 0], [2, 0, 0], [2, 1, 0], [0, 1, 0]];
+    const piece = makePiece([strip], 0x888888);
+    // (0,0)-(2,0) tiene el vértice (1,0) en medio.
+    expect(connectVertices(piece, keysOf([0, 0, 0], [2, 0, 0]))).toBeNull();
+    expect(connectVertices(piece, keysOf([1, 0, 0], [0, 1, 0]))).not.toBeNull();
   });
 });
 

@@ -158,17 +158,23 @@ export function addVertexOnFace(piece: Piece, faceIndex: number, point: Vec3): {
 
 /** La pieza con la cara `faceIndex` cambiada por estas caras nuevas, cada una con el color, las propiedades y los píxeles de la original. */
 function replaceFace(piece: Piece, faceIndex: number, parts: Vec3[][]): Piece {
+  return replaceFaces(piece, new Map([[faceIndex, parts]]));
+}
+
+/** Como `replaceFace`, para varias caras a la vez (índice de la cara → las caras que la sustituyen). */
+function replaceFaces(piece: Piece, replacements: ReadonlyMap<number, Vec3[][]>): Piece {
   const faces: Vec3[][] = [];
   const colors: number[] = [];
   const textures: (FaceTexture | null)[] = [];
   const flags: number[] = [];
   piece.faces.forEach((original, i) => {
-    for (const next of i === faceIndex ? parts : [original]) {
+    const replaced = replacements.get(i);
+    for (const next of replaced ?? [original]) {
       faces.push(next);
       colors.push(piece.faceColors?.[i] ?? piece.color);
       flags.push(piece.faceFlags?.[i] ?? 0);
       const texture = piece.faceTextures?.[i] ?? null;
-      textures.push(texture ? (i === faceIndex ? remapTexture(texture, original, next, (p) => p) : texture) : null);
+      textures.push(texture ? (replaced ? remapTexture(texture, original, next, (p) => p) : texture) : null);
     }
   });
   const result = makePiece(faces, piece.color, colors, piece.faceTextures ? textures : undefined, flags);
@@ -235,6 +241,93 @@ export function addMirrorPairOnFace(piece: Piece, faceIndex: number, point: Vec3
     if (pn[0] * unit[0] + pn[1] * unit[1] + pn[2] * unit[2] <= 1e-9) return null;
   }
   return { piece: replaceFace(piece, faceIndex, parts), vertex: a, mirrorVertex: b };
+}
+
+/**
+ * Parte en dos la cara `face` por el segmento entre sus vértices `ia` e `ib` (índices del anillo), o null si no se puede:
+ * si son vecinos, si algún otro vértice o arista se cruza en el trayecto, o si el segmento sale de la cara (cara cóncava).
+ */
+function splitRing(face: Vec3[], ia: number, ib: number): Vec3[][] | null {
+  const count = face.length;
+  const gap = (ib - ia + count) % count;
+  if (gap <= 1 || gap >= count - 1) return null;
+  const n = faceNormal(face);
+  const length = Math.hypot(...n);
+  if (length < 1e-12) return null;
+  const unit: Vec3 = [n[0] / length, n[1] / length, n[2] / length];
+  // Base 2D del plano de la cara, para comprobar el trayecto con geometría plana.
+  const seed: Vec3 = Math.abs(unit[1]) < 0.9 ? [0, 1, 0] : [1, 0, 0];
+  const ux: Vec3 = [seed[1] * unit[2] - seed[2] * unit[1], seed[2] * unit[0] - seed[0] * unit[2], seed[0] * unit[1] - seed[1] * unit[0]];
+  const ul = Math.hypot(...ux);
+  const axisX: Vec3 = [ux[0] / ul, ux[1] / ul, ux[2] / ul];
+  const axisY: Vec3 = [unit[1] * axisX[2] - unit[2] * axisX[1], unit[2] * axisX[0] - unit[0] * axisX[2], unit[0] * axisX[1] - unit[1] * axisX[0]];
+  const flat = face.map((p) => [p[0] * axisX[0] + p[1] * axisX[1] + p[2] * axisX[2], p[0] * axisY[0] + p[1] * axisY[1] + p[2] * axisY[2]] as [number, number]);
+  const a = flat[ia];
+  const b = flat[ib];
+  const EPS = 0.01;
+  const cross = (o: [number, number], p: [number, number], q: [number, number]): number => (p[0] - o[0]) * (q[1] - o[1]) - (p[1] - o[1]) * (q[0] - o[0]);
+  const distanceToSegment = (p: [number, number], s: [number, number], t: [number, number]): number => {
+    const dx = t[0] - s[0];
+    const dy = t[1] - s[1];
+    const len2 = dx * dx + dy * dy;
+    const k = len2 < 1e-18 ? 0 : Math.max(0, Math.min(1, ((p[0] - s[0]) * dx + (p[1] - s[1]) * dy) / len2));
+    return Math.hypot(p[0] - (s[0] + dx * k), p[1] - (s[1] + dy * k));
+  };
+  for (let k = 0; k < count; k++) {
+    const p = flat[k];
+    const q = flat[(k + 1) % count];
+    // Otro vértice sobre el trayecto: se necesitaría uno más para decidir por dónde pasa.
+    if (k !== ia && k !== ib && distanceToSegment(p, a, b) < EPS) return null;
+    // Una arista que sale de un extremo y se echa sobre el segmento (o lo contiene).
+    if ((k === ia || (k + 1) % count === ia) && distanceToSegment(b, p, q) < EPS) return null;
+    if ((k === ib || (k + 1) % count === ib) && distanceToSegment(a, p, q) < EPS) return null;
+    // Una arista que cruza el segmento de lado a lado.
+    if (k === ia || k === ib || (k + 1) % count === ia || (k + 1) % count === ib) continue;
+    if (cross(a, b, p) * cross(a, b, q) < 0 && cross(p, q, a) * cross(p, q, b) < 0) return null;
+  }
+  // Sin cruces, el segmento queda entero dentro o entero fuera: se mira su punto medio (par-impar).
+  const mid: [number, number] = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
+  let inside = false;
+  for (let k = 0, j = count - 1; k < count; j = k++) {
+    const p = flat[k];
+    const q = flat[j];
+    if (p[1] > mid[1] !== q[1] > mid[1] && mid[0] < ((q[0] - p[0]) * (mid[1] - p[1])) / (q[1] - p[1]) + p[0]) inside = !inside;
+  }
+  if (!inside) return null;
+  const walk = (from: number, to: number): Vec3[] => {
+    const ring: Vec3[] = [];
+    for (let k = from; ; k = (k + 1) % count) {
+      ring.push(face[k]);
+      if (k === to) break;
+    }
+    return ring;
+  };
+  const parts = [walk(ia, ib), walk(ib, ia)];
+  // Las dos mitades tienen que tener superficie y mirar hacia el mismo lado que la cara original.
+  for (const part of parts) {
+    const pn = faceNormal(part);
+    if (pn[0] * unit[0] + pn[1] * unit[1] + pn[2] * unit[2] <= 1e-9) return null;
+  }
+  return parts;
+}
+
+/**
+ * Traza un segmento entre dos vértices elegidos que estén en una misma cara: la cara se parte en dos a lo largo de él, y cada mitad conserva el color,
+ * las propiedades y los píxeles de la original. Se parte cada cara que tiene exactamente dos de los vértices elegidos (con el espejo activo, también
+ * la cara espejo). Se salta la cara donde los dos ya son vecinos, donde algo se cruza en el trayecto o donde el segmento saldría de la cara.
+ * Devuelve la pieza y cuántas caras se partieron, o null si ninguna.
+ */
+export function connectVertices(piece: Piece, keys: ReadonlySet<string>): { piece: Piece; split: number } | null {
+  const replacements = new Map<number, Vec3[][]>();
+  piece.faces.forEach((original, index) => {
+    const face = withoutRepeats(original);
+    if (face.length < 4) return;
+    const chosen = face.flatMap((p, k) => (keys.has(vertexKey(p)) ? [k] : []));
+    if (chosen.length !== 2 || new Set(chosen.map((k) => vertexKey(face[k]))).size !== 2) return;
+    const parts = splitRing(face, chosen[0], chosen[1]);
+    if (parts) replacements.set(index, parts);
+  });
+  return replacements.size > 0 ? { piece: replaceFaces(piece, replacements), split: replacements.size } : null;
 }
 
 const centreOf = (points: Vec3[]): Vec3 => [0, 1, 2].map((k) => points.reduce((sum, p) => sum + p[k], 0) / points.length) as Vec3;

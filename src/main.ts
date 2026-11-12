@@ -2206,6 +2206,7 @@ meshActionsEl.querySelectorAll<HTMLButtonElement>('button[data-mesh]').forEach((
     else if (action === 'flip') meshTool.flipSelected();
     else if (action === 'extrude') meshTool.extrudeSelected();
     else if (action === 'growedge') meshTool.growFaceFromEdge();
+    else if (action === 'connect') meshTool.connectSelected();
   }),
 );
 
