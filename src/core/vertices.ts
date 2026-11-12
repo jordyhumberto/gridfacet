@@ -376,10 +376,28 @@ export function addFace(piece: Piece, keys: ReadonlySet<string>): Piece | null {
   if (chosen.length < 3) return null;
   let ring = ringAround(chosen);
   if (ring.length < 3) return null;
-  const middle = centreOf(uniqueVertices(piece));
-  const centre = centreOf(ring);
-  const n = faceNormal(ring);
-  if (n[0] * (centre[0] - middle[0]) + n[1] * (centre[1] - middle[1]) + n[2] * (centre[2] - middle[2]) < 0) ring = [...ring].reverse();
+  // Sentido de la cara: si comparte aristas con caras que ya existen (cerrar un hueco), tiene que recorrerlas al revés que ellas; así queda
+  // mirando hacia el mismo lado que sus vecinas, aunque la pieza sea cóncava o esté abierta. Sin vecinas, mira hacia fuera del centro de la pieza.
+  let agree = 0;
+  let clash = 0;
+  ring.forEach((p, i) => {
+    const q = ring[(i + 1) % ring.length];
+    for (const face of piece.faces) {
+      face.forEach((f, k) => {
+        const g = face[(k + 1) % face.length];
+        if (same(f, p) && same(g, q)) clash++;
+        else if (same(f, q) && same(g, p)) agree++;
+      });
+    }
+  });
+  if (agree !== clash) {
+    if (clash > agree) ring = [...ring].reverse();
+  } else {
+    const middle = centreOf(uniqueVertices(piece));
+    const centre = centreOf(ring);
+    const n = faceNormal(ring);
+    if (n[0] * (centre[0] - middle[0]) + n[1] * (centre[1] - middle[1]) + n[2] * (centre[2] - middle[2]) < 0) ring = [...ring].reverse();
+  }
   const wanted = chosen.map(vertexKey).sort().join('|');
   if (piece.faces.some((face) => [...new Set(face.map(vertexKey))].sort().join('|') === wanted)) return null;
   return withFaces(

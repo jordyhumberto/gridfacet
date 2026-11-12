@@ -62,6 +62,8 @@ type VertexSelection = Map<number, Set<string>>;
 /** Un grupo de vértices de una pieza que se mueven juntos: los elegidos, o las imágenes en espejo de una reflexión. */
 interface Part {
   keys: Set<string>;
+  /** Todos los vértices del grupo, también los que ya cuenta otro grupo de la misma pieza (`keys` solo trae los que no se repiten). */
+  full: Set<string>;
   /** Dirección del desplazamiento para estos vértices: la identidad, o el reflejo si son la imagen en espejo de los elegidos. */
   dir: (v: Vec3) => Vec3;
   /** Reflejo de un punto, si son la imagen en espejo de los elegidos; sin él, la identidad. */
@@ -493,7 +495,7 @@ export class MeshTool {
       if (fresh.size === 0) return;
       for (const key of fresh) already.add(key);
       taken.set(piece.id, already);
-      const part: Part = { keys: fresh, dir, mirror };
+      const part: Part = { keys: fresh, full: new Set(keys), dir, mirror };
       const existing = targets.find((t) => t.original.id === piece.id);
       if (existing) {
         existing.parts.push(part);
@@ -1054,16 +1056,28 @@ export class MeshTool {
     });
   }
 
-  /** Crea una cara con los vértices elegidos de cada pieza. */
+  /**
+   * Crea una cara con los vértices elegidos de cada pieza (con tres, un triángulo). Con simetría, cada lado se arma con sus propios vértices:
+   * mezclar los elegidos con sus imágenes en el espejo daría una cara con otros vértices y en otro plano.
+   */
   createFace(): void {
     if (this.count < 3) {
       this.host.status('Elige al menos tres vértices de la misma pieza para crear una cara');
       return;
     }
-    this.change((piece, keys) => {
-      const result = addFace(piece, keys);
-      return result ? sameId(result, piece) : null;
+    let made = 0;
+    this.change((piece, _keys, _dirAt, parts) => {
+      let current = piece;
+      for (const part of parts) {
+        const result = addFace(current, part.full);
+        if (result) {
+          current = result;
+          made++;
+        }
+      }
+      return current === piece ? null : sameId(current, piece);
     }, keepPosition);
+    if (made === 0) this.host.status('No se creó ninguna cara: elige tres o más vértices de una misma pieza que no formen ya una cara');
   }
 
   /** Quita las caras cuyos vértices están todos elegidos. */
@@ -1374,7 +1388,7 @@ export class MeshTool {
    * Con `after` la selección sigue a los vértices a su posición nueva; sin él se vacía (fusionar, borrar).
    * La operación devuelve la pieza nueva, `null` si no puede hacer nada con esa pieza (se queda tal cual) o `REMOVE` si la pieza desaparece.
    */
-  private change(operation: (piece: Piece, keys: Set<string>, dirAt: (p: Vec3) => (v: Vec3) => Vec3) => Piece | { piece: Piece; select: Set<string> } | typeof REMOVE | null, after?: (position: Vec3, dirAt: (p: Vec3) => (v: Vec3) => Vec3) => Vec3): void {
+  private change(operation: (piece: Piece, keys: Set<string>, dirAt: (p: Vec3) => (v: Vec3) => Vec3, parts: Part[]) => Piece | { piece: Piece; select: Set<string> } | typeof REMOVE | null, after?: (position: Vec3, dirAt: (p: Vec3) => (v: Vec3) => Vec3) => Vec3): void {
     const targets = this.buildTargets();
     if (targets.length === 0) return;
     const before = cloneSelection(this.selection);
@@ -1383,7 +1397,7 @@ export class MeshTool {
     const next: VertexSelection = new Map();
     for (const target of targets) {
       const dirAt = (p: Vec3): ((v: Vec3) => Vec3) => partOf(target, p).dir;
-      const outcome = operation(target.original, target.keys, dirAt);
+      const outcome = operation(target.original, target.keys, dirAt, target.parts);
       if (outcome === null) {
         // Sin cambios: la pieza y su selección se quedan como están.
         const kept = this.selection.get(target.original.id);
