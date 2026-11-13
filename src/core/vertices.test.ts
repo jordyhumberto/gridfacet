@@ -4,7 +4,7 @@ import { isConvex } from './convex';
 import { collapses } from './selfIntersect';
 import { floodFill, textureOfFace, withFaceTexture } from './pixels';
 import { FACE_DOUBLE, FACE_UNLIT, faceNormal, makePiece, volume, type Vec3 } from './piece';import { sampleTexture, pointOf, uvOf } from './texture';
-import { addMirrorPairOnFace, connectVertices, dissolveEdge, extrudeEdge, finFaces, flagFins, splitFacesAtCenter, addFace, deleteFaces, deleteVertices, extrudeFaces, facesWithin, flipFaces, mergeVertices, moveVertices, placeVertices, rotateAbout, scaleAbout, setFaceFlags, splitEdge, addVertexOnFace, taperPoint, twistPoint, bendPoint, uniqueVertices, vertexKey } from './vertices';
+import { addMirrorPairOnFace, connectVertices, dissolveEdge, slideSegment, extrudeEdge, finFaces, flagFins, splitFacesAtCenter, addFace, deleteFaces, deleteVertices, extrudeFaces, facesWithin, flipFaces, mergeVertices, moveVertices, placeVertices, rotateAbout, scaleAbout, setFaceFlags, splitEdge, addVertexOnFace, taperPoint, twistPoint, bendPoint, uniqueVertices, vertexKey } from './vertices';
 
 const cube = () => buildPiece(CATALOG[0], 0, 0, 0, 0, 0x336699);
 const topCorner = (piece = cube()): Vec3 => {
@@ -504,6 +504,37 @@ describe('connectVertices', () => {
     // (0,0)-(2,0) tiene el vértice (1,0) en medio.
     expect(connectVertices(piece, keysOf([0, 0, 0], [2, 0, 0]))).toBeNull();
     expect(connectVertices(piece, keysOf([1, 0, 0], [0, 1, 0]))).not.toBeNull();
+  });
+});
+
+describe('slideSegment', () => {
+  it('un vértice puesto en medio de una arista puede deslizarse por ella sin llegar a los extremos', () => {
+    const piece = cube();
+    const split = splitEdge(piece, [0, 0, 0], [1, 0, 0], 0.25)!;
+    const slide = slideSegment(split.piece, vertexKey(split.vertex))!;
+    expect(Math.abs(slide.dir[0])).toBeCloseTo(1, 9);
+    expect(slide.dir[1]).toBeCloseTo(0, 9);
+    // Está a ¼ del borde izquierdo: puede ir hacia atrás casi ¼ y hacia delante casi ¾ (menos el margen).
+    const lo = slide.dir[0] > 0 ? slide.min : -slide.max;
+    const hi = slide.dir[0] > 0 ? slide.max : -slide.min;
+    expect(lo).toBeCloseTo(-0.25 + 0.02, 9);
+    expect(hi).toBeCloseTo(0.75 - 0.02, 9);
+  });
+
+  it('una esquina y un punto dentro de una cara no se pueden deslizar', () => {
+    const piece = cube();
+    expect(slideSegment(piece, vertexKey([0, 0, 0]))).toBeNull();
+    const inFace = addVertexOnFace(piece, piece.faces.findIndex((f) => f.every((p) => p[2] === 0)), [0.3, 0.5, 0])!;
+    expect(slideSegment(inFace.piece, vertexKey(inFace.vertex))).toBeNull();
+  });
+
+  it('deslizar el vértice a lo largo de su dirección no deforma las caras que lo usan', () => {
+    const piece = cube();
+    const split = splitEdge(piece, [0, 0, 0], [1, 0, 0], 0.25)!;
+    const slide = slideSegment(split.piece, vertexKey(split.vertex))!;
+    const moved = moveVertices(split.piece, new Set([vertexKey(split.vertex)]), [slide.dir[0] * 0.3, slide.dir[1] * 0.3, slide.dir[2] * 0.3])!;
+    expect(volume(moved)).toBeCloseTo(volume(piece), 9);
+    expect(isConvex(moved)).toBe(true);
   });
 });
 

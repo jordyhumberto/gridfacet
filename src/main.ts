@@ -2155,6 +2155,7 @@ function syncMeshActions(): void {
   const count = meshTool.count;
   meshInfoEl.textContent = count === 0 ? 'Ningún vértice elegido' : `${count} vértice(s) elegidos`;
   document.getElementById('meshAdd')!.classList.toggle('active', meshTool.addMode);
+  document.getElementById('meshSlide')!.classList.toggle('active', meshTool.slideMode);
   meshActionsEl.querySelectorAll<HTMLButtonElement>('button[data-meshaxis]').forEach((button) => {
     const axis = button.dataset.meshaxis === 'free' ? null : Number(button.dataset.meshaxis);
     button.classList.toggle('active', axis === meshTool.axis);
@@ -2177,6 +2178,10 @@ const meshDensityEl = document.getElementById('meshDensity') as HTMLSelectElemen
 meshDensityEl.addEventListener('change', () => {
   meshTool.edgeDivisions = Number(meshDensityEl.value);
   meshDensityEl.blur();
+});
+document.getElementById('meshSlide')!.addEventListener('click', (event) => {
+  (event.currentTarget as HTMLButtonElement).blur();
+  meshTool.setSlideMode(!meshTool.slideMode);
 });
 document.getElementById('meshAdd')!.addEventListener('click', (event) => {
   (event.currentTarget as HTMLButtonElement).blur();
@@ -3841,6 +3846,7 @@ const GUIDE: Record<Mode, [string, string][]> = {
     ['U', 'unir vértices: con dos vértices elegidos de una misma cara traza el segmento entre ellos y parte la cara (lo mismo que el botón; con vértices elegidos sustituye a la U que refleja piezas en Y)'],
     ['F', 'crear cara con los vértices elegidos (tres o más; con tres, un triángulo), lo mismo que el botón; con vértices elegidos sustituye a la F que abre el modo Cara'],
     ['Mayús+Supr', 'borrar cara: quita las caras cuyos vértices están todos elegidos (la pieza queda abierta); Supr a secas quita los vértices'],
+    ['S', 'deslizar: enciende y apaga el modo (botón «Deslizar»); con él, el vértice que arrastras y que está en medio de un segmento solo se mueve por ese segmento, sin deformar la pieza; con vértices elegidos sustituye a la S que abre el modo Elegir'],
     ['Q', 'quitar segmento: con los dos vértices de un segmento que separa dos caras del mismo plano, las junta en una (lo contrario de Unir vértices; con vértices elegidos sustituye a la Q que baja las piezas)'],
     ['+ Vértice (panel)', 'activa el modo añadir: clic en una arista (en cuartos; Ctrl: donde pulses) o dentro de una cara le pone un vértice nuevo, que queda elegido para moverlo. Arrastrar sigue girando la cámara'],
     ['Alt+clic en una arista', 'ponerle un vértice nuevo sin activar el modo (en cuartos; Ctrl: donde hagas clic)'],
