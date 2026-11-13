@@ -4,7 +4,7 @@ import { isConvex } from './convex';
 import { collapses } from './selfIntersect';
 import { floodFill, textureOfFace, withFaceTexture } from './pixels';
 import { FACE_DOUBLE, FACE_UNLIT, faceNormal, makePiece, volume, type Vec3 } from './piece';import { sampleTexture, pointOf, uvOf } from './texture';
-import { addMirrorPairOnFace, connectVertices, dissolveEdge, slideSegment, straightenVertices, extrudeEdge, finFaces, flagFins, splitFacesAtCenter, addFace, deleteFaces, deleteVertices, extrudeFaces, facesWithin, flipFaces, mergeVertices, moveVertices, placeVertices, rotateAbout, scaleAbout, setFaceFlags, splitEdge, addVertexOnFace, taperPoint, twistPoint, bendPoint, uniqueVertices, vertexKey } from './vertices';
+import { addMirrorPairOnFace, connectVertices, dissolveEdge, slideSegment, straightenVertices, flattenVertices, fitPlane, extrudeEdge, finFaces, flagFins, splitFacesAtCenter, addFace, deleteFaces, deleteVertices, extrudeFaces, facesWithin, flipFaces, mergeVertices, moveVertices, placeVertices, rotateAbout, scaleAbout, setFaceFlags, splitEdge, addVertexOnFace, taperPoint, twistPoint, bendPoint, uniqueVertices, vertexKey } from './vertices';
 
 const cube = () => buildPiece(CATALOG[0], 0, 0, 0, 0, 0x336699);
 const topCorner = (piece = cube()): Vec3 => {
@@ -568,6 +568,27 @@ describe('straightenVertices', () => {
     const keys = new Set([vertexKey([0, 0, 0]), vertexKey([1, 0, 0])]);
     expect(straightenVertices(piece, keys, [0, 0, 0], [1, 0, 0])).toBeNull();
     expect(straightenVertices(piece, new Set([vertexKey([1, 1, 1])]), [0, 0, 0], [0, 0, 0])).toBeNull();
+  });
+});
+
+describe('flattenVertices', () => {
+  it('lleva los cuatro vértices de una cara chueca a un mismo plano', () => {
+    const quad = makePiece([[[0, 0, 0], [1, 0, 0], [1, 1, 0.2], [0, 1, 0]]], 0xffffff);
+    const keys = new Set(uniqueVertices(quad).map(vertexKey));
+    const { piece, landed } = flattenVertices(quad, keys)!;
+    expect(landed.size).toBeGreaterThan(0);
+    const [a, b, c, d] = piece.faces[0];
+    const n = faceNormal(piece.faces[0]);
+    for (const p of [a, b, c, d]) expect(Math.abs((p[0] - a[0]) * n[0] + (p[1] - a[1]) * n[1] + (p[2] - a[2]) * n[2])).toBeLessThan(1e-9);
+  });
+
+  it('no mueve nada si ya están en un plano, y falla con una línea', () => {
+    const piece = cube();
+    const face = new Set([[0, 0, 0], [1, 0, 0], [1, 1, 0], [0, 1, 0]].map((p) => vertexKey(p as Vec3)));
+    expect(flattenVertices(piece, face)).toBeNull();
+    const line = new Set([[0, 0, 0], [1, 0, 0], [0, 0, 1]].map((p) => vertexKey(p as Vec3)));
+    expect(flattenVertices(piece, line)).toBeNull();
+    expect(fitPlane([[0, 0, 0], [1, 1, 1], [2, 2, 2]])).toBeNull();
   });
 });
 

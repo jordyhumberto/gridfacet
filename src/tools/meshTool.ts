@@ -4,7 +4,7 @@ import type { Piece, Vec3 } from '../core/piece';
 import { pieceKey, reflectPiece, reflections, type Reflection, type Symmetry } from '../core/symmetry';
 import { triangulateFace } from '../core/convex';
 import { collapses } from '../core/selfIntersect';
-import { connectVertices, dissolveEdge, slideSegment, straightenVertices, finFaces, flagFins, splitFacesAtCenter, addFace, deleteFaces, deleteVertices, extrudeEdge, extrudeFaces, facesWithin, flipFaces, mergeVertices, placeVertices, rotateAbout, scaleAbout, setFaceFlags, splitEdge, addMirrorPairOnFace, addVertexOnFace, taperPoint, twistPoint, bendPoint, uniqueVertices, vertexKey } from '../core/vertices';
+import { connectVertices, dissolveEdge, slideSegment, straightenVertices, flattenVertices, finFaces, flagFins, splitFacesAtCenter, addFace, deleteFaces, deleteVertices, extrudeEdge, extrudeFaces, facesWithin, flipFaces, mergeVertices, placeVertices, rotateAbout, scaleAbout, setFaceFlags, splitEdge, addMirrorPairOnFace, addVertexOnFace, taperPoint, twistPoint, bendPoint, uniqueVertices, vertexKey } from '../core/vertices';
 import type { ModelScene } from '../scene';
 
 /** Paso de la rejilla de imán, en celdas. */
@@ -877,6 +877,11 @@ export class MeshTool {
       this.straightenSelected();
       return true;
     }
+    // P (de «plano») aplana los vértices elegidos, igual que el botón «Aplanar».
+    if (key === 'p' && !this.drag && !e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey) {
+      this.flattenSelected();
+      return true;
+    }
     // F (de «face») crea una cara con los vértices elegidos y Mayús+Supr quita las caras cuyos vértices están todos elegidos, igual que los botones.
     if (key === 'f' && !this.drag && !e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey) {
       this.createFace();
@@ -1302,6 +1307,45 @@ export class MeshTool {
         : flattened
           ? 'No se alineó: la línea dejaría la pieza aplastada o atravesada'
           : 'Ya estaban alineados (o no hay vértices de en medio que mover)',
+    );
+  }
+
+  /**
+   * Aplana los vértices elegidos: cada uno va al punto más cercano del plano que mejor se ajusta a todos (sirve para arreglar una cara chueca).
+   * Con simetría, el espejo se aplana igual.
+   */
+  flattenSelected(): void {
+    let flattened = 0;
+    let crushed = false;
+    this.change((piece, keys, _dirAt, parts) => {
+      let current = piece;
+      const landing = new Map<string, Vec3>();
+      for (const part of parts) {
+        const result = flattenVertices(current, part.full);
+        if (!result) continue;
+        // Un plano que deje la pieza aplastada o atravesada se descarta (como al arrastrar).
+        if (!collapses(piece) && collapses(result.piece)) {
+          crushed = true;
+          continue;
+        }
+        current = result.piece;
+        for (const [key, to] of result.landed) landing.set(key, to);
+      }
+      if (landing.size === 0) return null;
+      flattened += landing.size;
+      const select = new Set<string>();
+      for (const key of keys) {
+        const to = landing.get(key);
+        select.add(to ? vertexKey(to) : key);
+      }
+      return { piece: sameId(current, piece), select };
+    });
+    this.host.status(
+      flattened > 0
+        ? `Vértices aplanados: ${flattened} movidos al plano que mejor les queda`
+        : crushed
+          ? 'No se aplanó: ese plano dejaría la pieza aplastada o atravesada'
+          : 'Nada que aplanar: elige tres o más vértices que no estén ya en un mismo plano ni en una línea',
     );
   }
 

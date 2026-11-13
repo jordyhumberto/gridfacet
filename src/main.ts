@@ -2214,6 +2214,7 @@ meshActionsEl.querySelectorAll<HTMLButtonElement>('button[data-mesh]').forEach((
     else if (action === 'connect') meshTool.connectSelected();
     else if (action === 'dissolve') meshTool.dissolveSelected();
     else if (action === 'straighten') meshTool.straightenSelected();
+    else if (action === 'flatten') meshTool.flattenSelected();
   }),
 );
 
@@ -3850,6 +3851,7 @@ const GUIDE: Record<Mode, [string, string][]> = {
     ['S', 'deslizar: enciende y apaga el modo (botón «Deslizar»); con él, el vértice que arrastras y que está en medio de un segmento solo se mueve por ese segmento, sin deformar la pieza; con vértices elegidos sustituye a la S que abre el modo Elegir'],
     ['Q', 'quitar segmento: con los dos vértices de un segmento que separa dos caras del mismo plano, las junta en una (lo contrario de Unir vértices; con vértices elegidos sustituye a la Q que baja las piezas)'],
     ['L', 'alinear: con tres o más vértices elegidos, deja rectos los de en medio sobre la línea que une el primero y el último que elegiste (los extremos no se mueven; con vértices elegidos sustituye a la L que rellena)'],
+    ['P', 'aplanar: lleva los vértices elegidos (tres o más, por ejemplo los de una cara chueca) al plano que mejor se ajusta a todos; con vértices elegidos sustituye a la P que abre el modo Pintar'],
     ['+ Vértice (panel)', 'activa el modo añadir: clic en una arista (en cuartos; Ctrl: donde pulses) o dentro de una cara le pone un vértice nuevo, que queda elegido para moverlo. Arrastrar sigue girando la cámara'],
     ['Alt+clic en una arista', 'ponerle un vértice nuevo sin activar el modo (en cuartos; Ctrl: donde hagas clic)'],
     ['Panel', 'Todos · Fusionar (junta los elegidos en uno) · Borrar · A la rejilla'],

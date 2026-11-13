@@ -416,6 +416,48 @@ export function straightenVertices(piece: Piece, keys: ReadonlySet<string>, a: V
   return result && { piece: result, landed };
 }
 
+/** El plano que mejor se ajusta a los puntos (mínimos cuadrados): un punto y la normal unitaria. Null con menos de tres puntos o si están en una línea. */
+export function fitPlane(points: Vec3[]): { point: Vec3; normal: Vec3 } | null {
+  if (points.length < 3) return null;
+  const n = points.length;
+  const c: Vec3 = [0, 0, 0];
+  for (const p of points) for (let i = 0; i < 3; i++) c[i] += p[i] / n;
+  let xx = 0, xy = 0, xz = 0, yy = 0, yz = 0, zz = 0;
+  for (const p of points) {
+    const x = p[0] - c[0], y = p[1] - c[1], z = p[2] - c[2];
+    xx += x * x; xy += x * y; xz += x * z; yy += y * y; yz += y * z; zz += z * z;
+  }
+  // La normal es la dirección en que los puntos varían menos; se toma la más estable de las tres soluciones del sistema.
+  const candidates: { det: number; normal: Vec3 }[] = [
+    { det: yy * zz - yz * yz, normal: [yy * zz - yz * yz, xz * yz - xy * zz, xy * yz - xz * yy] },
+    { det: xx * zz - xz * xz, normal: [xz * yz - xy * zz, xx * zz - xz * xz, xy * xz - yz * xx] },
+    { det: xx * yy - xy * xy, normal: [xy * yz - xz * yy, xy * xz - yz * xx, xx * yy - xy * xy] },
+  ];
+  const best = candidates.reduce((a, b) => (b.det > a.det ? b : a));
+  const length = Math.hypot(...best.normal);
+  if (best.det <= 1e-12 || length < 1e-12) return null;
+  return { point: c, normal: [best.normal[0] / length, best.normal[1] / length, best.normal[2] / length] };
+}
+
+/**
+ * Aplana vértices: lleva cada uno de `keys` al punto más cercano del plano que mejor se ajusta a todos ellos.
+ * Devuelve la pieza nueva y a dónde fue cada vértice movido, o null si ya estaban en un plano, hay menos de tres o están en una línea.
+ */
+export function flattenVertices(piece: Piece, keys: ReadonlySet<string>): { piece: Piece; landed: Map<string, Vec3> } | null {
+  const chosen = uniqueVertices(piece).filter((p) => keys.has(vertexKey(p)));
+  const plane = fitPlane(chosen);
+  if (!plane) return null;
+  const landed = new Map<string, Vec3>();
+  for (const p of chosen) {
+    const d = (p[0] - plane.point[0]) * plane.normal[0] + (p[1] - plane.point[1]) * plane.normal[1] + (p[2] - plane.point[2]) * plane.normal[2];
+    const to: Vec3 = [p[0] - plane.normal[0] * d, p[1] - plane.normal[1] * d, p[2] - plane.normal[2] * d];
+    if (vertexKey(to) !== vertexKey(p)) landed.set(vertexKey(p), to);
+  }
+  if (landed.size === 0) return null;
+  const result = placeVertices(piece, new Set(landed.keys()), (p) => landed.get(vertexKey(p)) ?? p);
+  return result && { piece: result, landed };
+}
+
 /**
  * Por dónde puede deslizarse un vértice sin deformar la pieza: si está en medio de un segmento recto (entre dos vecinos suyos que quedan
  * a lados opuestos y alineados con él), devuelve la dirección unitaria del segmento y cuánto puede avanzar hacia cada lado (`min` negativo,
