@@ -90,6 +90,8 @@ const sameId = (made: Piece, old: Piece): Piece => ({ ...made, id: old.id });
 /** Lo que devuelve una operación de `change` cuando la pieza se queda sin caras y desaparece (distinto de `null`: no hacer nada). */
 const REMOVE = Symbol('remove');
 
+/** Cuánto puede quedar descentrada la pareja de un vértice respecto a su espejo exacto y aun así moverse con él. */
+const MIRROR_TOLERANCE = 0.03;
 const FIN_MESSAGE = 'Ese punto solo toca dos caras: queda como una aleta plana (sin volumen) y se ve por los dos lados. Añade el punto en una cara para tener volumen';
 const cloneSelection = (selection: VertexSelection): VertexSelection => new Map([...selection].map(([id, keys]) => [id, new Set(keys)]));
 /** Los vértices no se mueven: la selección se queda donde está. */
@@ -534,12 +536,26 @@ export class MeshTool {
       // Los vértices elegidos, antes de añadir imágenes (sobre estos se calculan todos los espejos).
       const chosen = targets.map((t) => ({ original: t.original, keys: new Set(t.keys) }));
       for (const reflection of mirrors) {
-        const images = new Set<string>();
+        const images: Vec3[] = [];
         for (const target of chosen) {
-          for (const position of uniqueVertices(target.original)) if (target.keys.has(vertexKey(position))) images.add(vertexKey(reflection.point(position)));
+          for (const position of uniqueVertices(target.original)) if (target.keys.has(vertexKey(position))) images.push(reflection.point(position));
         }
         for (const piece of this.host.model.editable()) {
-          const found = new Set(uniqueVertices(piece).map(vertexKey).filter((key) => images.has(key)));
+          const positions = uniqueVertices(piece);
+          const found = new Set<string>();
+          for (const image of images) {
+            // La pareja es el vértice que cae justo en la imagen o, si el modelo quedó apenas descentrado, el más cercano dentro de un margen.
+            let best: Vec3 | null = null;
+            let bestDistance = MIRROR_TOLERANCE;
+            for (const p of positions) {
+              const distance = Math.hypot(p[0] - image[0], p[1] - image[1], p[2] - image[2]);
+              if (distance <= bestDistance) {
+                best = p;
+                bestDistance = distance;
+              }
+            }
+            if (best) found.add(vertexKey(best));
+          }
           if (found.size > 0) add(piece, found, reflection.dir, reflection.point);
         }
       }
