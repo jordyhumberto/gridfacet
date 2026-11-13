@@ -3853,7 +3853,7 @@ const GUIDE: Record<Mode, [string, string][]> = {
     ['A', 'enciende y apaga el modo añadir vértice (lo mismo que el botón «+ Vértice»; en Malla sustituye a la A que oculta esta ayuda)'],
     ['U', 'unir vértices: con dos vértices elegidos de una misma cara traza el segmento entre ellos y parte la cara (lo mismo que el botón; con vértices elegidos sustituye a la U que refleja piezas en Y)'],
     ['F', 'crear cara con los vértices elegidos (tres o más; con tres, un triángulo), lo mismo que el botón; con vértices elegidos sustituye a la F que abre el modo Cara'],
-    ['Mayús+Supr', 'borrar cara: quita las caras cuyos vértices están todos elegidos (la pieza queda abierta); Supr a secas quita los vértices'],
+    ['B', 'borrar cara: quita las caras cuyos vértices están todos elegidos (la pieza queda abierta); Supr quita los vértices; con vértices elegidos sustituye a la B que abre el modo Borrar'],
     ['S', 'deslizar: enciende y apaga el modo (botón «Deslizar»); con él, el vértice que arrastras y que está en medio de un segmento solo se mueve por ese segmento, sin deformar la pieza; con vértices elegidos sustituye a la S que abre el modo Elegir'],
     ['Q', 'quitar segmento: con los dos vértices de un segmento que separa dos caras del mismo plano, las junta en una (lo contrario de Unir vértices; con vértices elegidos sustituye a la Q que baja las piezas)'],
     ['L', 'alinear: con tres o más vértices elegidos, deja rectos los de en medio sobre la línea que une el primero y el último que elegiste (los extremos no se mueven; con vértices elegidos sustituye a la L que rellena)'],
