@@ -3839,6 +3839,8 @@ const GUIDE: Record<Mode, [string, string][]> = {
     ['Doble cara · Sin sombra · Al fondo', 'casillas del panel: afectan a las caras cuyos vértices están todos elegidos'],
     ['A', 'enciende y apaga el modo añadir vértice (lo mismo que el botón «+ Vértice»; en Malla sustituye a la A que oculta esta ayuda)'],
     ['U', 'unir vértices: con dos vértices elegidos de una misma cara traza el segmento entre ellos y parte la cara (lo mismo que el botón; con vértices elegidos sustituye a la U que refleja piezas en Y)'],
+    ['F', 'crear cara con los vértices elegidos (tres o más; con tres, un triángulo), lo mismo que el botón; con vértices elegidos sustituye a la F que abre el modo Cara'],
+    ['Mayús+Supr', 'borrar cara: quita las caras cuyos vértices están todos elegidos (la pieza queda abierta); Supr a secas quita los vértices'],
     ['Q', 'quitar segmento: con los dos vértices de un segmento que separa dos caras del mismo plano, las junta en una (lo contrario de Unir vértices; con vértices elegidos sustituye a la Q que baja las piezas)'],
     ['+ Vértice (panel)', 'activa el modo añadir: clic en una arista (en cuartos; Ctrl: donde pulses) o dentro de una cara le pone un vértice nuevo, que queda elegido para moverlo. Arrastrar sigue girando la cámara'],
     ['Alt+clic en una arista', 'ponerle un vértice nuevo sin activar el modo (en cuartos; Ctrl: donde hagas clic)'],

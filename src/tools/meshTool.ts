@@ -834,6 +834,15 @@ export class MeshTool {
       this.dissolveSelected();
       return true;
     }
+    // F (de «face») crea una cara con los vértices elegidos y Mayús+Supr quita las caras cuyos vértices están todos elegidos, igual que los botones.
+    if (key === 'f' && !this.drag && !e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey) {
+      this.createFace();
+      return true;
+    }
+    if ((key === 'delete' || key === 'backspace') && e.shiftKey && !this.drag && !e.ctrlKey && !e.metaKey && !e.altKey) {
+      this.deleteFacesSelected();
+      return true;
+    }
     if (key === 'delete' || key === 'backspace') {
       this.deleteSelected();
       return true;
