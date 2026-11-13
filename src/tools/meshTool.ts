@@ -4,7 +4,7 @@ import type { Piece, Vec3 } from '../core/piece';
 import { pieceKey, reflectPiece, reflections, type Reflection, type Symmetry } from '../core/symmetry';
 import { triangulateFace } from '../core/convex';
 import { collapses } from '../core/selfIntersect';
-import { connectVertices, dissolveEdge, slideSegment, straightenVertices, flattenVertices, finFaces, flagFins, splitFacesAtCenter, addFace, deleteFaces, deleteVertices, extrudeEdge, extrudeFaces, facesWithin, flipFaces, mergeVertices, placeVertices, rotateAbout, scaleAbout, setFaceFlags, splitEdge, addMirrorPairOnFace, addVertexOnFace, taperPoint, twistPoint, bendPoint, uniqueVertices, vertexKey } from '../core/vertices';
+import { connectVertices, dissolveEdge, slideSegment, straightenVertices, flattenVertices, flattenWarped, warpedFaces, finFaces, flagFins, splitFacesAtCenter, addFace, deleteFaces, deleteVertices, extrudeEdge, extrudeFaces, facesWithin, flipFaces, mergeVertices, placeVertices, rotateAbout, scaleAbout, setFaceFlags, splitEdge, addMirrorPairOnFace, addVertexOnFace, taperPoint, twistPoint, bendPoint, uniqueVertices, vertexKey } from '../core/vertices';
 import type { ModelScene } from '../scene';
 
 /** Paso de la rejilla de imán, en celdas. */
@@ -37,6 +37,8 @@ const DRAG_THRESHOLD = 3;
 const NORMAL_COLOR = 0xe6e8ee;
 const SELECTED_COLOR = 0xffd34d;
 const HOVER_COLOR = 0x40e0ff;
+/** Contorno de las caras torcidas. */
+const WARN_COLOR = 0xff8a1f;
 
 export interface MeshToolHost {
   scene: THREE.Scene;
@@ -150,6 +152,12 @@ export class MeshTool {
   private points = new THREE.Points(new THREE.BufferGeometry(), new THREE.PointsMaterial({ size: 9, sizeAttenuation: false, vertexColors: true, depthTest: false, transparent: true }));
   /** Tres líneas (X rojo, Y verde, Z azul) que cruzan el vértice agarrado mientras se arrastra; la del eje bloqueado se ve más fuerte. */
   private guide = new THREE.LineSegments(new THREE.BufferGeometry(), new THREE.LineBasicMaterial({ vertexColors: true, depthTest: false, transparent: true }));
+  /** Contorno naranja de las caras torcidas. */
+  private warnLines = new THREE.LineSegments(new THREE.BufferGeometry(), new THREE.LineBasicMaterial({ color: WARN_COLOR, depthTest: false, transparent: true, opacity: 0.9 }));
+  private warpCache = new WeakMap<Piece, number[]>();
+  private warped = 0;
+  /** Al soltar un arrastre, las caras que hayan quedado torcidas se aplanan solas (opcional). */
+  flattenOnRelease = false;
   private shown: { piece: Piece; position: Vec3; key: string }[] = [];
   private hover: { piece: Piece; key: string } | null = null;
   private active = false;
@@ -217,6 +225,10 @@ export class MeshTool {
     this.guide.frustumCulled = false;
     this.guide.visible = false;
     this.overlay.add(this.guide);
+    this.warnLines.renderOrder = 997;
+    this.warnLines.frustumCulled = false;
+    this.warnLines.visible = false;
+    this.overlay.add(this.warnLines);
     this.overlay.visible = false;
     host.scene.add(this.overlay);
     const el = host.domElement;
@@ -340,8 +352,46 @@ export class MeshTool {
       for (const piece of chosen) for (const position of uniqueVertices(piece)) shown.push({ piece, position, key: vertexKey(position) });
     }
     this.shown = shown;
+    this.updateWarnings();
     this.paint();
     this.host.onSelectionChange();
+  }
+
+  /** Cuántas caras torcidas (de cuatro o más vértices fuera de su plano) hay en las piezas que se ven. */
+  get warpedCount(): number {
+    return this.warped;
+  }
+
+  /** Las caras torcidas de una pieza (se recuerdan por pieza: una pieza no cambia, se sustituye por otra). */
+  private warpedOf(piece: Piece): number[] {
+    let found = this.warpCache.get(piece);
+    if (!found) {
+      found = warpedFaces(piece);
+      this.warpCache.set(piece, found);
+    }
+    return found;
+  }
+
+  /** Dibuja en naranja el contorno de cada cara torcida y cuenta cuántas son. */
+  private updateWarnings(): void {
+    const positions: number[] = [];
+    const seen = new Set<Piece>();
+    let count = 0;
+    for (const { piece } of this.shown) {
+      if (seen.has(piece)) continue;
+      seen.add(piece);
+      for (const i of this.warpedOf(piece)) {
+        count++;
+        const face = piece.faces[i];
+        face.forEach((p, k) => {
+          const q = face[(k + 1) % face.length];
+          positions.push(p[0], p[1], p[2], q[0], q[1], q[2]);
+        });
+      }
+    }
+    this.warped = count;
+    this.warnLines.geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+    this.warnLines.visible = count > 0;
   }
 
   private showGuide(at: Vec3): void {
@@ -767,14 +817,30 @@ export class MeshTool {
     }
     const finals: Piece[] = [];
     const originals: Piece[] = [];
+    let flattened = 0;
     for (const target of drag.targets) {
-      const current = this.host.model.get(target.original.id);
+      let current = this.host.model.get(target.original.id);
+      if (current && this.flattenOnRelease) {
+        // Las caras que tocan los vértices movidos y quedaron torcidas se aplanan, salvo que eso aplaste o atraviese la pieza.
+        const before = new Set(uniqueVertices(target.original).map(vertexKey));
+        const touched = new Set(uniqueVertices(current).map(vertexKey).filter((key) => !before.has(key)));
+        const fixed = flattenWarped(current, touched);
+        if (fixed && (!collapses(fixed.piece) || collapses(target.original))) {
+          // El arrastre ya dejó la pieza en el modelo; se sustituye por la aplanada antes de anotar el cambio (commitPreview solo lo anota).
+          this.host.model.preview({ added: [fixed.piece], removed: [current] });
+          current = fixed.piece;
+          flattened += fixed.moved.size;
+          const chosen = this.selection.get(target.original.id);
+          if (chosen) this.selection.set(target.original.id, new Set([...chosen].map((key) => fixed.moved.get(key) ?? key)));
+        }
+      }
       if (current) finals.push(current);
       originals.push(target.original);
     }
     this.host.model.commitPreview({ added: finals, removed: originals });
     if (this.pendingBefore) this.record(this.pendingBefore);
     this.refresh();
+    if (flattened > 0) this.host.status(`Aplanar al soltar: ${flattened} vértice(s) ajustados para que las caras no queden torcidas`);
   }
 
   private restore(targets: Target[]): void {

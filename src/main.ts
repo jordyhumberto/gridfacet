@@ -2118,6 +2118,11 @@ selectAxisEl.querySelectorAll<HTMLButtonElement>('button[data-selaxis]').forEach
 syncSelectAxis();
 const meshInfoEl = document.getElementById('meshInfo')!;
 const meshDoubleEl = document.getElementById('meshDouble') as HTMLInputElement;
+const meshAutoFlatEl = document.getElementById('meshAutoFlat') as HTMLInputElement;
+meshAutoFlatEl.addEventListener('change', () => {
+  meshTool.flattenOnRelease = meshAutoFlatEl.checked;
+  statusEl.textContent = meshAutoFlatEl.checked ? 'Aplanar al soltar activado: al soltar un vértice, las caras que queden torcidas se aplanan solas' : 'Aplanar al soltar desactivado: las caras torcidas solo se marcan en naranja';
+});
 const meshUnlitEl = document.getElementById('meshUnlit') as HTMLInputElement;
 const meshBehindEl = document.getElementById('meshBehind') as HTMLInputElement;
 const meshTool = new MeshTool({
@@ -2153,7 +2158,8 @@ if (import.meta.env.DEV) (window as unknown as Record<string, unknown>).__mesh =
 function syncMeshActions(): void {
   meshActionsEl.hidden = mode !== 'mesh';
   const count = meshTool.count;
-  meshInfoEl.textContent = count === 0 ? 'Ningún vértice elegido' : `${count} vértice(s) elegidos`;
+  const warped = meshTool.warpedCount;
+  meshInfoEl.textContent = (count === 0 ? 'Ningún vértice elegido' : `${count} vértice(s) elegidos`) + (warped > 0 ? ` · ${warped} cara(s) torcida(s) en naranja` : '');
   document.getElementById('meshAdd')!.classList.toggle('active', meshTool.addMode);
   document.getElementById('meshSlide')!.classList.toggle('active', meshTool.slideMode);
   meshActionsEl.querySelectorAll<HTMLButtonElement>('button[data-meshaxis]').forEach((button) => {
