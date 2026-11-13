@@ -388,6 +388,40 @@ export function dissolveEdge(piece: Piece, keys: ReadonlySet<string>): Piece | n
   );
 }
 
+/**
+ * Por dónde puede deslizarse un vértice sin deformar la pieza: si está en medio de un segmento recto (entre dos vecinos suyos que quedan
+ * a lados opuestos y alineados con él), devuelve la dirección unitaria del segmento y cuánto puede avanzar hacia cada lado (`min` negativo,
+ * `max` positivo) sin llegar a los vecinos. Null si el vértice no está sobre un segmento recto (una esquina, o un punto dentro de una cara).
+ */
+export function slideSegment(piece: Piece, key: string, margin = 0.02): { dir: Vec3; min: number; max: number } | null {
+  const at = uniqueVertices(piece).find((p) => vertexKey(p) === key);
+  if (!at) return null;
+  const neighbours = new Map<string, Vec3>();
+  for (const original of piece.faces) {
+    const face = withoutRepeats(original);
+    face.forEach((p, k) => {
+      if (vertexKey(p) !== key) return;
+      for (const q of [face[(k + face.length - 1) % face.length], face[(k + 1) % face.length]]) if (vertexKey(q) !== key) neighbours.set(vertexKey(q), q);
+    });
+  }
+  const list = [...neighbours.values()];
+  for (let i = 0; i < list.length; i++) {
+    for (let j = i + 1; j < list.length; j++) {
+      const a: Vec3 = [list[i][0] - at[0], list[i][1] - at[1], list[i][2] - at[2]];
+      const b: Vec3 = [list[j][0] - at[0], list[j][1] - at[1], list[j][2] - at[2]];
+      const la = Math.hypot(...a);
+      const lb = Math.hypot(...b);
+      if (la < 1e-9 || lb < 1e-9) continue;
+      const cross: Vec3 = [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+      const straight = Math.hypot(...cross) / (la * lb) < 1e-4 && a[0] * b[0] + a[1] * b[1] + a[2] * b[2] < 0;
+      if (!straight || la <= 2 * margin || lb <= 2 * margin) continue;
+      const dir: Vec3 = [b[0] / lb, b[1] / lb, b[2] / lb];
+      return { dir, min: -(la - margin), max: lb - margin };
+    }
+  }
+  return null;
+}
+
 const centreOf = (points: Vec3[]): Vec3 => [0, 1, 2].map((k) => points.reduce((sum, p) => sum + p[k], 0) / points.length) as Vec3;
 
 /** Los vértices elegidos puestos en orden alrededor de su centro, en un plano que se ajusta a ellos. */

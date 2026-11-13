@@ -4,7 +4,7 @@ import type { Piece, Vec3 } from '../core/piece';
 import { pieceKey, reflectPiece, reflections, type Reflection, type Symmetry } from '../core/symmetry';
 import { triangulateFace } from '../core/convex';
 import { collapses } from '../core/selfIntersect';
-import { connectVertices, dissolveEdge, finFaces, flagFins, splitFacesAtCenter, addFace, deleteFaces, deleteVertices, extrudeEdge, extrudeFaces, facesWithin, flipFaces, mergeVertices, placeVertices, rotateAbout, scaleAbout, setFaceFlags, splitEdge, addMirrorPairOnFace, addVertexOnFace, taperPoint, twistPoint, bendPoint, uniqueVertices, vertexKey } from '../core/vertices';
+import { connectVertices, dissolveEdge, slideSegment, finFaces, flagFins, splitFacesAtCenter, addFace, deleteFaces, deleteVertices, extrudeEdge, extrudeFaces, facesWithin, flipFaces, mergeVertices, placeVertices, rotateAbout, scaleAbout, setFaceFlags, splitEdge, addMirrorPairOnFace, addVertexOnFace, taperPoint, twistPoint, bendPoint, uniqueVertices, vertexKey } from '../core/vertices';
 import type { ModelScene } from '../scene';
 
 /** Paso de la rejilla de imán, en celdas. */
@@ -165,7 +165,11 @@ export class MeshTool {
     startY: number;
     moved: boolean;
     delta: Vec3;
+    /** Con «Deslizar», el segmento por el que se mueve el vértice agarrado: dirección y cuánto puede avanzar hacia cada lado. */
+    slide?: { dir: Vec3; min: number; max: number };
   } | null = null;
+  /** Deslizar: el vértice agarrado solo se mueve a lo largo del segmento en que está (sin deformar la pieza), entre sus dos vecinos. */
+  private sliding = false;
   /** Eje al que se limita el movimiento (0 X, 1 Y, 2 Z); se mantiene entre arrastres hasta que se cambia. */
   private axisLock: AxisLock = null;
 
@@ -236,6 +240,16 @@ export class MeshTool {
     return total;
   }
 
+  get slideMode(): boolean {
+    return this.sliding;
+  }
+
+  setSlideMode(on: boolean): void {
+    this.sliding = on;
+    this.host.status(on ? 'Deslizar: arrastra un vértice puesto en un segmento y se mueve solo por él, sin deformar la pieza' : 'Deslizar desactivado: el vértice se mueve libre');
+    this.host.onSelectionChange();
+  }
+
   get addMode(): boolean {
     return this.adding;
   }
@@ -270,6 +284,7 @@ export class MeshTool {
     this.cancel();
     this.axisLock = null;
     this.adding = false;
+    this.sliding = false;
     this.pendingAdd = null;
     this.active = false;
     this.overlay.visible = false;
@@ -480,6 +495,14 @@ export class MeshTool {
     const grab = this.pointOnPlane(e, plane) ?? new THREE.Vector3(...anchor);
     this.pendingBefore = cloneSelection(this.selection);
     this.drag = { targets, anchor, plane, grab, startX: e.clientX, startY: e.clientY, moved: false, delta: [0, 0, 0] };
+    if (this.sliding) {
+      // El segmento se saca de la pieza donde está el vértice agarrado (no de su imagen en espejo, que lo sigue reflejado).
+      const key = vertexKey(anchor);
+      const owner = targets.find((t) => t.parts.some((part) => !part.mirror && part.keys.has(key)));
+      const line = owner && slideSegment(owner.original, key);
+      if (line) this.drag.slide = line;
+      else this.host.status('Ese vértice no está en medio de un segmento recto: se mueve libre (Deslizar solo vale para vértices puestos sobre una arista)');
+    }
     this.host.setOrbit(false);
     this.host.domElement.setPointerCapture(e.pointerId);
   }
@@ -559,9 +582,17 @@ export class MeshTool {
     const point = this.pointOnPlane(e, drag.plane);
     if (!point) return;
     let delta: Vec3 = [point.x - drag.grab.x, point.y - drag.grab.y, point.z - drag.grab.z];
-    if (this.axisLock !== null) delta = delta.map((v, i) => (axisAllowed(this.axisLock, i) ? v : 0)) as Vec3;
+    // Deslizar: el desplazamiento se proyecta sobre el segmento y se frena antes de llegar a los vecinos.
+    const slide = drag.slide;
+    const alongSegment = (v: Vec3): Vec3 => {
+      if (!slide) return v;
+      const s = Math.max(slide.min, Math.min(slide.max, v[0] * slide.dir[0] + v[1] * slide.dir[1] + v[2] * slide.dir[2]));
+      return [slide.dir[0] * s, slide.dir[1] * s, slide.dir[2] * s];
+    };
+    if (slide) delta = alongSegment(delta);
+    else if (this.axisLock !== null) delta = delta.map((v, i) => (axisAllowed(this.axisLock, i) ? v : 0)) as Vec3;
     // Con imán la posición final del vértice agarrado cae en la rejilla; sin él sigue al ratón. Ctrl invierte.
-    if (this.magnet !== (e.ctrlKey || e.metaKey)) {
+    if (!slide && this.magnet !== (e.ctrlKey || e.metaKey)) {
       delta = delta.map((v, i) => {
         if (!axisAllowed(this.axisLock, i)) return 0;
         return Math.round((drag.anchor[i] + v) / SNAP_STEP) * SNAP_STEP - drag.anchor[i];
@@ -580,6 +611,8 @@ export class MeshTool {
       const side = Math.sign(offset);
       if ((drag.anchor[i] + delta[i] - sym.center[i]) * side < 0) delta[i] = sym.center[i] - drag.anchor[i];
     });
+    // El tope de simetría de arriba mueve componentes sueltos: se vuelve a dejar el desplazamiento sobre el segmento.
+    if (slide) delta = alongSegment(delta);
     if (delta.every((v, i) => Math.abs(v - drag.delta[i]) < 1e-9)) return;
     // El cuerpo no se aplasta ni se atraviesa: si el desplazamiento lo hiciera, el vértice se queda en el último punto donde no pasaba.
     const from = drag.delta;
@@ -824,6 +857,11 @@ export class MeshTool {
       return true;
     }
     if (this.count === 0) return false;
+    // S (de «deslizar») enciende y apaga Deslizar, igual que el botón.
+    if (key === 's' && !this.drag && !e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey) {
+      this.setSlideMode(!this.sliding);
+      return true;
+    }
     // U (de «unir») traza el segmento entre dos vértices elegidos, igual que el botón «Unir vértices».
     if (key === 'u' && !this.drag && !e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey) {
       this.connectSelected();
