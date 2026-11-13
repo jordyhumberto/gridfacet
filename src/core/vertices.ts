@@ -458,6 +458,53 @@ export function flattenVertices(piece: Piece, keys: ReadonlySet<string>): { piec
   return result && { piece: result, landed };
 }
 
+/** Cuánto puede salirse un vértice de su cara del plano que mejor se ajusta antes de contarla como torcida (un cuarto de paso de la rejilla de 24). */
+export const WARP_TOLERANCE = 0.01;
+
+/** Cuánto está torcida la cara: la mayor distancia de uno de sus vértices al plano que mejor se ajusta. Un triángulo nunca se tuerce (0). */
+export function faceWarp(face: Vec3[]): number {
+  const unique = [...new Map(face.map((p) => [vertexKey(p), p] as const)).values()];
+  if (unique.length < 4) return 0;
+  const plane = fitPlane(unique);
+  if (!plane) return 0;
+  return Math.max(...unique.map((p) => Math.abs((p[0] - plane.point[0]) * plane.normal[0] + (p[1] - plane.point[1]) * plane.normal[1] + (p[2] - plane.point[2]) * plane.normal[2])));
+}
+
+/** Las caras de la pieza torcidas más de `tolerance`. */
+export function warpedFaces(piece: Piece, tolerance = WARP_TOLERANCE): number[] {
+  const out: number[] = [];
+  piece.faces.forEach((face, i) => {
+    if (faceWarp(face) > tolerance) out.push(i);
+  });
+  return out;
+}
+
+/**
+ * Aplana las caras torcidas que tocan los vértices `touched` (los que acaban de moverse): cada una va a su plano que mejor se ajusta.
+ * Si eso tuerce a una vecina (comparten vértices), también se aplana, hasta que no quede ninguna o se agoten los pasos.
+ * Devuelve la pieza nueva (con el mismo id) y a qué clave fue cada vértice de los que se movieron, o null si no había nada torcido.
+ */
+export function flattenWarped(piece: Piece, touched: ReadonlySet<string>, tolerance = WARP_TOLERANCE): { piece: Piece; moved: Map<string, string> } | null {
+  let current = piece;
+  const moved = new Map<string, string>();
+  const near = new Set(touched);
+  for (let step = 0; step < 64; step++) {
+    const index = warpedFaces(current, tolerance).find((i) => current.faces[i].some((p) => near.has(vertexKey(p))));
+    if (index === undefined) break;
+    const result = flattenVertices(current, new Set(current.faces[index].map(vertexKey)));
+    if (!result) break;
+    const landed = new Map([...result.landed].map(([key, to]) => [key, vertexKey(to)] as const));
+    const known = new Set(moved.values());
+    for (const [from, now] of moved) if (landed.has(now)) moved.set(from, landed.get(now)!);
+    for (const [key, now] of landed) {
+      if (!known.has(key)) moved.set(key, now);
+      near.add(now);
+    }
+    current = { ...result.piece, id: piece.id };
+  }
+  return moved.size > 0 ? { piece: current, moved } : null;
+}
+
 /**
  * Por dónde puede deslizarse un vértice sin deformar la pieza: si está en medio de un segmento recto (entre dos vecinos suyos que quedan
  * a lados opuestos y alineados con él), devuelve la dirección unitaria del segmento y cuánto puede avanzar hacia cada lado (`min` negativo,

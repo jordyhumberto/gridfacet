@@ -4,7 +4,7 @@ import { isConvex } from './convex';
 import { collapses } from './selfIntersect';
 import { floodFill, textureOfFace, withFaceTexture } from './pixels';
 import { FACE_DOUBLE, FACE_UNLIT, faceNormal, makePiece, volume, type Vec3 } from './piece';import { sampleTexture, pointOf, uvOf } from './texture';
-import { addMirrorPairOnFace, connectVertices, dissolveEdge, slideSegment, straightenVertices, flattenVertices, fitPlane, extrudeEdge, finFaces, flagFins, splitFacesAtCenter, addFace, deleteFaces, deleteVertices, extrudeFaces, facesWithin, flipFaces, mergeVertices, moveVertices, placeVertices, rotateAbout, scaleAbout, setFaceFlags, splitEdge, addVertexOnFace, taperPoint, twistPoint, bendPoint, uniqueVertices, vertexKey } from './vertices';
+import { addMirrorPairOnFace, connectVertices, dissolveEdge, slideSegment, straightenVertices, flattenVertices, fitPlane, faceWarp, warpedFaces, flattenWarped, WARP_TOLERANCE, extrudeEdge, finFaces, flagFins, splitFacesAtCenter, addFace, deleteFaces, deleteVertices, extrudeFaces, facesWithin, flipFaces, mergeVertices, moveVertices, placeVertices, rotateAbout, scaleAbout, setFaceFlags, splitEdge, addVertexOnFace, taperPoint, twistPoint, bendPoint, uniqueVertices, vertexKey } from './vertices';
 
 const cube = () => buildPiece(CATALOG[0], 0, 0, 0, 0, 0x336699);
 const topCorner = (piece = cube()): Vec3 => {
@@ -589,6 +589,32 @@ describe('flattenVertices', () => {
     const line = new Set([[0, 0, 0], [1, 0, 0], [0, 0, 1]].map((p) => vertexKey(p as Vec3)));
     expect(flattenVertices(piece, line)).toBeNull();
     expect(fitPlane([[0, 0, 0], [1, 1, 1], [2, 2, 2]])).toBeNull();
+  });
+});
+
+describe('caras torcidas', () => {
+  const warpedQuad = () => makePiece([[[0, 0, 0], [1, 0, 0], [1, 1, 0.2], [0, 1, 0]]], 0xffffff);
+
+  it('un triángulo y un cuadrado plano no están torcidos; un cuadrado con un vértice fuera, sí', () => {
+    expect(faceWarp([[0, 0, 0], [1, 0, 0], [0, 1, 5]])).toBe(0);
+    expect(faceWarp([[0, 0, 0], [1, 0, 0], [1, 1, 0], [0, 1, 0]])).toBeLessThan(1e-9);
+    expect(faceWarp(warpedQuad().faces[0])).toBeGreaterThan(WARP_TOLERANCE);
+    expect(warpedFaces(warpedQuad())).toEqual([0]);
+    expect(warpedFaces(cube())).toEqual([]);
+  });
+
+  it('flattenWarped aplana la cara torcida que toca los vértices movidos y mantiene el id', () => {
+    const quad = warpedQuad();
+    const touched = new Set([vertexKey([1, 1, 0.2])]);
+    const result = flattenWarped(quad, touched)!;
+    expect(result.piece.id).toBe(quad.id);
+    expect(warpedFaces(result.piece)).toEqual([]);
+    expect(result.moved.size).toBeGreaterThan(0);
+  });
+
+  it('flattenWarped no toca nada si la cara no tiene vértices movidos o ya está plana', () => {
+    expect(flattenWarped(warpedQuad(), new Set())).toBeNull();
+    expect(flattenWarped(cube(), new Set(uniqueVertices(cube()).map(vertexKey)))).toBeNull();
   });
 });
 
