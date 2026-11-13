@@ -388,6 +388,34 @@ export function dissolveEdge(piece: Piece, keys: ReadonlySet<string>): Piece | n
   );
 }
 
+/** El punto de la recta que pasa por `a` y `b` más cercano a `p` (null si `a` y `b` coinciden y no hay recta). */
+export function projectOnLine(p: Vec3, a: Vec3, b: Vec3): Vec3 | null {
+  const d: Vec3 = [b[0] - a[0], b[1] - a[1], b[2] - a[2]];
+  const length2 = d[0] * d[0] + d[1] * d[1] + d[2] * d[2];
+  if (length2 < 1e-10) return null;
+  const t = ((p[0] - a[0]) * d[0] + (p[1] - a[1]) * d[1] + (p[2] - a[2]) * d[2]) / length2;
+  return [a[0] + d[0] * t, a[1] + d[1] * t, a[2] + d[2] * t];
+}
+
+/**
+ * Endereza vértices: lleva cada uno de `keys` (menos los extremos `a` y `b`, que se quedan) al punto más cercano de la recta que une `a` y `b`.
+ * Devuelve la pieza nueva y a dónde fue cada vértice movido (clave de antes → posición de ahora), o null si ya estaban rectos o `a` y `b` coinciden.
+ */
+export function straightenVertices(piece: Piece, keys: ReadonlySet<string>, a: Vec3, b: Vec3): { piece: Piece; landed: Map<string, Vec3> } | null {
+  const ends = new Set([vertexKey(a), vertexKey(b)]);
+  const landed = new Map<string, Vec3>();
+  for (const p of uniqueVertices(piece)) {
+    const key = vertexKey(p);
+    if (!keys.has(key) || ends.has(key)) continue;
+    const to = projectOnLine(p, a, b);
+    if (!to) return null;
+    if (vertexKey(to) !== key) landed.set(key, to);
+  }
+  if (landed.size === 0) return null;
+  const result = placeVertices(piece, new Set(landed.keys()), (p) => landed.get(vertexKey(p)) ?? p);
+  return result && { piece: result, landed };
+}
+
 /**
  * Por dónde puede deslizarse un vértice sin deformar la pieza: si está en medio de un segmento recto (entre dos vecinos suyos que quedan
  * a lados opuestos y alineados con él), devuelve la dirección unitaria del segmento y cuánto puede avanzar hacia cada lado (`min` negativo,

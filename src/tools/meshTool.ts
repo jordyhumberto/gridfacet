@@ -4,7 +4,7 @@ import type { Piece, Vec3 } from '../core/piece';
 import { pieceKey, reflectPiece, reflections, type Reflection, type Symmetry } from '../core/symmetry';
 import { triangulateFace } from '../core/convex';
 import { collapses } from '../core/selfIntersect';
-import { connectVertices, dissolveEdge, slideSegment, finFaces, flagFins, splitFacesAtCenter, addFace, deleteFaces, deleteVertices, extrudeEdge, extrudeFaces, facesWithin, flipFaces, mergeVertices, placeVertices, rotateAbout, scaleAbout, setFaceFlags, splitEdge, addMirrorPairOnFace, addVertexOnFace, taperPoint, twistPoint, bendPoint, uniqueVertices, vertexKey } from '../core/vertices';
+import { connectVertices, dissolveEdge, slideSegment, straightenVertices, finFaces, flagFins, splitFacesAtCenter, addFace, deleteFaces, deleteVertices, extrudeEdge, extrudeFaces, facesWithin, flipFaces, mergeVertices, placeVertices, rotateAbout, scaleAbout, setFaceFlags, splitEdge, addMirrorPairOnFace, addVertexOnFace, taperPoint, twistPoint, bendPoint, uniqueVertices, vertexKey } from '../core/vertices';
 import type { ModelScene } from '../scene';
 
 /** Paso de la rejilla de imán, en celdas. */
@@ -872,6 +872,11 @@ export class MeshTool {
       this.dissolveSelected();
       return true;
     }
+    // L (de «línea») endereza los vértices elegidos entre el primero y el último, igual que el botón «Alinear».
+    if (key === 'l' && !this.drag && !e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey) {
+      this.straightenSelected();
+      return true;
+    }
     // F (de «face») crea una cara con los vértices elegidos y Mayús+Supr quita las caras cuyos vértices están todos elegidos, igual que los botones.
     if (key === 'f' && !this.drag && !e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey) {
       this.createFace();
@@ -1234,6 +1239,69 @@ export class MeshTool {
           ? `Segmento quitado: ${joined} pares de caras juntados (el espejo también)`
           : 'Segmento quitado: las dos caras pasan a ser una'
         : 'No se quitó nada: elige los dos vértices de un segmento que separe dos caras del mismo plano (no un borde de la pieza ni un ángulo)',
+    );
+  }
+
+  /**
+   * Con tres o más vértices elegidos, deja rectos los de en medio sobre la línea que une el primero y el último que elegiste
+   * (los dos extremos no se mueven; cada uno de los demás va al punto más cercano de esa línea). Con simetría, el espejo se endereza igual.
+   */
+  straightenSelected(): void {
+    const order: Vec3[] = [];
+    for (const [id, keys] of this.selection) {
+      const piece = this.host.model.get(id);
+      if (!piece) continue;
+      const positions = new Map(uniqueVertices(piece).map((p) => [vertexKey(p), p] as const));
+      for (const key of keys) {
+        const p = positions.get(key);
+        if (p) order.push(p);
+      }
+    }
+    if (order.length < 3) {
+      this.host.status('Elige al menos tres vértices: el primero y el último que elijas marcan la línea, y los de en medio se enderezan sobre ella');
+      return;
+    }
+    const first = order[0];
+    const last = order[order.length - 1];
+    if (vertexKey(first) === vertexKey(last)) {
+      this.host.status('El primer y el último vértice elegidos son el mismo punto: no hay línea. Elige otro como último');
+      return;
+    }
+    let straightened = 0;
+    let flattened = false;
+    this.change((piece, keys, _dirAt, parts) => {
+      let current = piece;
+      const landing = new Map<string, Vec3>();
+      for (const part of parts) {
+        // Los extremos de cada grupo: los elegidos o, en el espejo, sus imágenes.
+        const a = part.mirror ? part.mirror(first) : first;
+        const b = part.mirror ? part.mirror(last) : last;
+        const result = straightenVertices(current, part.full, a, b);
+        if (!result) continue;
+        // Una línea que deje la pieza aplastada o atravesada se descarta (como al arrastrar).
+        if (!collapses(piece) && collapses(result.piece)) {
+          flattened = true;
+          continue;
+        }
+        current = result.piece;
+        for (const [key, to] of result.landed) landing.set(key, to);
+      }
+      if (landing.size === 0) return null;
+      straightened += landing.size;
+      // La selección sigue a los vértices a su sitio nuevo.
+      const select = new Set<string>();
+      for (const key of keys) {
+        const to = landing.get(key);
+        select.add(to ? vertexKey(to) : key);
+      }
+      return { piece: sameId(current, piece), select };
+    });
+    this.host.status(
+      straightened > 0
+        ? `Vértices alineados: ${straightened} movidos a la línea entre el primero y el último`
+        : flattened
+          ? 'No se alineó: la línea dejaría la pieza aplastada o atravesada'
+          : 'Ya estaban alineados (o no hay vértices de en medio que mover)',
     );
   }
 

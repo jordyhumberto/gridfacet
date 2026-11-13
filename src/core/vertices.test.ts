@@ -4,7 +4,7 @@ import { isConvex } from './convex';
 import { collapses } from './selfIntersect';
 import { floodFill, textureOfFace, withFaceTexture } from './pixels';
 import { FACE_DOUBLE, FACE_UNLIT, faceNormal, makePiece, volume, type Vec3 } from './piece';import { sampleTexture, pointOf, uvOf } from './texture';
-import { addMirrorPairOnFace, connectVertices, dissolveEdge, slideSegment, extrudeEdge, finFaces, flagFins, splitFacesAtCenter, addFace, deleteFaces, deleteVertices, extrudeFaces, facesWithin, flipFaces, mergeVertices, moveVertices, placeVertices, rotateAbout, scaleAbout, setFaceFlags, splitEdge, addVertexOnFace, taperPoint, twistPoint, bendPoint, uniqueVertices, vertexKey } from './vertices';
+import { addMirrorPairOnFace, connectVertices, dissolveEdge, slideSegment, straightenVertices, extrudeEdge, finFaces, flagFins, splitFacesAtCenter, addFace, deleteFaces, deleteVertices, extrudeFaces, facesWithin, flipFaces, mergeVertices, moveVertices, placeVertices, rotateAbout, scaleAbout, setFaceFlags, splitEdge, addVertexOnFace, taperPoint, twistPoint, bendPoint, uniqueVertices, vertexKey } from './vertices';
 
 const cube = () => buildPiece(CATALOG[0], 0, 0, 0, 0, 0x336699);
 const topCorner = (piece = cube()): Vec3 => {
@@ -535,6 +535,39 @@ describe('slideSegment', () => {
     const moved = moveVertices(split.piece, new Set([vertexKey(split.vertex)]), [slide.dir[0] * 0.3, slide.dir[1] * 0.3, slide.dir[2] * 0.3])!;
     expect(volume(moved)).toBeCloseTo(volume(piece), 9);
     expect(isConvex(moved)).toBe(true);
+  });
+});
+
+describe('straightenVertices', () => {
+  it('lleva los vértices de en medio a la línea entre los extremos y deja quietos los extremos', () => {
+    const piece = cube();
+    const a: Vec3 = [0, 0, 0];
+    const b: Vec3 = [1, 0, 0];
+    const mid = splitEdge(piece, a, b, 0.5)!;
+    // El vértice de en medio se sube un poco y hay que volver a ponerlo recto.
+    const bumped = moveVertices(mid.piece, new Set([vertexKey(mid.vertex)]), [0, 0.2, 0.1])!;
+    const raised = uniqueVertices(bumped).find((p) => Math.abs(p[1] - 0.2) < 1e-9 && Math.abs(p[2] - 0.1) < 1e-9)!;
+    const result = straightenVertices(bumped, new Set([vertexKey(a), vertexKey(raised), vertexKey(b)]), a, b)!;
+    const positions = uniqueVertices(result.piece).map(vertexKey);
+    expect(positions).toContain(vertexKey(a));
+    expect(positions).toContain(vertexKey(b));
+    expect(positions).toContain(vertexKey([0.5, 0, 0]));
+    expect(positions).not.toContain(vertexKey(raised));
+    expect(result.landed.get(vertexKey(raised))).toEqual([0.5, 0, 0]);
+  });
+
+  it('cada vértice va al punto más cercano de la línea (conserva su sitio a lo largo de ella)', () => {
+    const piece = cube();
+    const key = vertexKey([1, 1, 1]);
+    const result = straightenVertices(piece, new Set([key]), [0, 0, 0], [4, 0, 0])!;
+    expect(result.landed.get(key)).toEqual([1, 0, 0]);
+  });
+
+  it('devuelve null si ya están rectos o si los dos extremos coinciden', () => {
+    const piece = cube();
+    const keys = new Set([vertexKey([0, 0, 0]), vertexKey([1, 0, 0])]);
+    expect(straightenVertices(piece, keys, [0, 0, 0], [1, 0, 0])).toBeNull();
+    expect(straightenVertices(piece, new Set([vertexKey([1, 1, 1])]), [0, 0, 0], [0, 0, 0])).toBeNull();
   });
 });
 
