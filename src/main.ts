@@ -2119,8 +2119,27 @@ selectAxisEl.querySelectorAll<HTMLButtonElement>('button[data-selaxis]').forEach
 syncSelectAxis();
 const meshInfoEl = document.getElementById('meshInfo')!;
 const meshDoubleEl = document.getElementById('meshDouble') as HTMLInputElement;
+/** Lo que se deja elegido en el panel de Malla se recuerda entre sesiones (sin fallar si el navegador no deja guardar). */
+const meshPref = {
+  get: (name: string): string | null => {
+    try {
+      return localStorage.getItem(`gridfacet.mesh.${name}`);
+    } catch {
+      return null;
+    }
+  },
+  set: (name: string, value: string): void => {
+    try {
+      localStorage.setItem(`gridfacet.mesh.${name}`, value);
+    } catch {
+      // Sin almacenamiento la opción vale solo para esta sesión.
+    }
+  },
+};
 const meshAutoFlatEl = document.getElementById('meshAutoFlat') as HTMLInputElement;
+meshAutoFlatEl.checked = meshPref.get('autoFlat') === '1';
 meshAutoFlatEl.addEventListener('change', () => {
+  meshPref.set('autoFlat', meshAutoFlatEl.checked ? '1' : '0');
   meshTool.flattenOnRelease = meshAutoFlatEl.checked;
   statusEl.textContent = meshAutoFlatEl.checked ? 'Aplanar al soltar activado: al soltar un vértice, las caras que queden torcidas se aplanan solas' : 'Aplanar al soltar desactivado: las caras torcidas solo se marcan en naranja';
 });
@@ -2196,15 +2215,27 @@ document.getElementById('meshRemove')!.addEventListener('click', (event) => {
   meshTool.setRemoveMode(!meshTool.removeMode);
 });
 const meshGrowAmountEl = document.getElementById('meshGrowAmount') as HTMLInputElement;
+{
+  const saved = Number(meshPref.get('grow'));
+  if (saved > 0 && saved <= gridSize) {
+    meshGrowAmountEl.value = String(saved);
+    meshTool.growDistance = saved;
+  }
+}
 meshGrowAmountEl.addEventListener('input', () => {
   const value = Number(meshGrowAmountEl.value);
-  if (value > 0 && value <= gridSize) meshTool.growDistance = value;
+  if (value > 0 && value <= gridSize) {
+    meshTool.growDistance = value;
+    meshPref.set('grow', String(value));
+  }
 });
 const meshSeeBehindEl = document.getElementById('meshSeeBehind') as HTMLInputElement;
-// El navegador puede devolver la casilla a como se dejó antes de recargar la página: la herramienta arranca igual que ella, si no se veían los vértices al revés.
+// La casilla arranca con lo último que se eligió y la herramienta con ella (si no, se veían los vértices al revés).
+meshSeeBehindEl.checked = meshPref.get('seeBehind') !== '0';
 meshTool.setSeeBehind(meshSeeBehindEl.checked, false);
 meshTool.flattenOnRelease = meshAutoFlatEl.checked;
 meshSeeBehindEl.addEventListener('change', () => {
+  meshPref.set('seeBehind', meshSeeBehindEl.checked ? '1' : '0');
   meshTool.setSeeBehind(meshSeeBehindEl.checked);
   meshSeeBehindEl.blur();
 });
