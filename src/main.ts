@@ -2195,6 +2195,11 @@ document.getElementById('meshRemove')!.addEventListener('click', (event) => {
   (event.currentTarget as HTMLButtonElement).blur();
   meshTool.setRemoveMode(!meshTool.removeMode);
 });
+const meshGrowAmountEl = document.getElementById('meshGrowAmount') as HTMLInputElement;
+meshGrowAmountEl.addEventListener('input', () => {
+  const value = Number(meshGrowAmountEl.value);
+  if (value > 0 && value <= gridSize) meshTool.growDistance = value;
+});
 const meshSeeBehindEl = document.getElementById('meshSeeBehind') as HTMLInputElement;
 meshSeeBehindEl.addEventListener('change', () => {
   meshTool.setSeeBehind(meshSeeBehindEl.checked);
