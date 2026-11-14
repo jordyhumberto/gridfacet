@@ -518,7 +518,7 @@ export class MeshTool {
     }
     this.refresh();
     const lonely = this.unpaired.size;
-    const tail = lonely > 0 ? ` · ${lonely} vértice(s) sin gemelo (en rosa): no tienen con quién igualarse` : '';
+    const tail = lonely > 0 ? ` · ${lonely} vértice(s) sin gemelo (en rosa): o no tienen par al otro lado o están casi encima de otro vértice (Fusionar vértices los junta)` : '';
     this.host.status(result.fixed > 0 ? `Simetrizar: ${result.fixed} vértice(s) ajustados${tail}` : `Simetrizar: ya era simétrico${tail}`);
   }
 
@@ -690,7 +690,7 @@ export class MeshTool {
       // Se anota el clic: al soltar sin haber movido el ratón se añade el vértice; si se arrastró, la cámara gira como siempre.
       this.pendingAdd = { x: e.clientX, y: e.clientY, ctrl: e.ctrlKey || e.metaKey };
     }
-    if (!hit && !this.adding && !this.removing && !(e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey) this.pendingEdge = { x: e.clientX, y: e.clientY };
+    this.pendingEdge = !hit && !this.adding && !this.removing && !(e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey ? { x: e.clientX, y: e.clientY } : null;
     if (!hit && e.shiftKey && !(e.ctrlKey || e.metaKey)) {
       // Shift+clic sobre una cara elige todos sus vértices (se suman a los que ya había).
       const face = this.faceAt(e.clientX, e.clientY);
@@ -1861,6 +1861,8 @@ export class MeshTool {
 
   /** Clic sobre un segmento: elige sus dos vértices; segundo clic seguido en el mismo, también todo lo que continúa recto. */
   private clickEdge(x: number, y: number): boolean {
+    // Con varias piezas a la vista y ninguna elegida, el clic sigue sirviendo para elegir una pieza (así solo se ven sus vértices); los segmentos se eligen ya dentro de ella.
+    if (this.host.selectedPieces().length === 0 && new Set(this.shown.map((entry) => entry.piece.id)).size > 1) return false;
     const edge = this.edgeAt(x, y);
     if (!edge) {
       this.lastEdgeClick = null;
