@@ -4,7 +4,7 @@ import type { Piece, Vec3 } from '../core/piece';
 import { MIRROR_TOLERANCE, pieceKey, reflectPiece, reflections, symmetrize, type Reflection, type Symmetry } from '../core/symmetry';
 import { triangulateFace } from '../core/convex';
 import { collapses } from '../core/selfIntersect';
-import { fillHoles, connectVertices, dissolveEdge, slideSegment, straightenVertices, flattenVertices, flattenWarped, warpedFaces, finFaces, flagFins, splitFacesAtCenter, addFace, deleteFaces, deleteVertices, extrudeEdge, extrudeFaces, facesWithin, flipFaces, mergeVertices, placeVertices, rotateAbout, scaleAbout, setFaceFlags, splitEdge, addMirrorPairOnFace, addVertexOnFace, taperPoint, twistPoint, bendPoint, uniqueVertices, vertexKey } from '../core/vertices';
+import { edgeLoop, pieceEdges, fillHoles, connectVertices, dissolveEdge, slideSegment, straightenVertices, flattenVertices, flattenWarped, warpedFaces, finFaces, flagFins, splitFacesAtCenter, addFace, deleteFaces, deleteVertices, extrudeEdge, extrudeFaces, facesWithin, flipFaces, mergeVertices, placeVertices, rotateAbout, scaleAbout, setFaceFlags, splitEdge, addMirrorPairOnFace, addVertexOnFace, taperPoint, twistPoint, bendPoint, uniqueVertices, vertexKey } from '../core/vertices';
 import type { ModelScene } from '../scene';
 
 /** Paso de la rejilla de imán, en celdas. */
@@ -22,6 +22,8 @@ const EDGE_RADIUS = 8;
 /** Con Ctrl se empuja con pasos más finos. */
 /** Distancia en pantalla (px) a la que el cursor "agarra" un vértice. */
 const PICK_RADIUS = 12;
+/** Tiempo máximo entre dos clics para que cuenten como doble clic. */
+const DOUBLE_CLICK_MS = 400;
 /** Con más vértices que estos no se dibujan todos (solo los de la selección). */
 const MAX_VISIBLE = 4000;
 /** Con imán, el giro avanza de 15° en 15° y la escala de 0,05 en 0,05. */
@@ -241,6 +243,9 @@ export class MeshTool {
   private seeBehind = true;
   /** Dónde se pulsó en modo añadir: si el ratón no se movió al soltar, es un clic y se añade; si se movió, era girar la cámara. */
   private pendingAdd: { x: number; y: number; ctrl: boolean } | null = null;
+  /** Clic anotado al pulsar en vacío: si se suelta sin arrastrar y hay un segmento a mano, se eligen sus vértices. */
+  private pendingEdge: { x: number; y: number } | null = null;
+  private lastEdgeClick: { time: number; a: string; b: string; id: number } | null = null;
 
   /** Giro o escala en curso: se maneja moviendo el ratón (sin pulsar) y se confirma con un clic o Intro. */
   private modal: {
@@ -677,6 +682,7 @@ export class MeshTool {
       // Se anota el clic: al soltar sin haber movido el ratón se añade el vértice; si se arrastró, la cámara gira como siempre.
       this.pendingAdd = { x: e.clientX, y: e.clientY, ctrl: e.ctrlKey || e.metaKey };
     }
+    if (!hit && !this.adding && !this.removing && !(e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey) this.pendingEdge = { x: e.clientX, y: e.clientY };
     if (!hit && e.shiftKey && !(e.ctrlKey || e.metaKey)) {
       // Shift+clic sobre una cara elige todos sus vértices (se suman a los que ya había).
       const face = this.faceAt(e.clientX, e.clientY);
@@ -954,6 +960,17 @@ export class MeshTool {
 
   private up(e: PointerEvent): void {
     if (!this.active) return;
+    if (this.pendingEdge) {
+      const { x, y } = this.pendingEdge;
+      this.pendingEdge = null;
+      // Un clic sin arrastrar sobre un segmento elige sus dos vértices; un doble clic sigue el segmento en línea recta.
+      if (Math.hypot(e.clientX - x, e.clientY - y) < DRAG_THRESHOLD && this.clickEdge(x, y)) {
+        e.stopImmediatePropagation();
+        // Como al añadir un vértice: la cámara recibió el pulsar pero no recibirá el soltar, y el clic no debe cambiar la pieza elegida.
+        this.host.domElement.dispatchEvent(new PointerEvent('pointercancel', { pointerId: e.pointerId, bubbles: true }));
+      }
+      return;
+    }
     if (this.pendingAdd) {
       const { x, y, ctrl } = this.pendingAdd;
       this.pendingAdd = null;
@@ -1704,6 +1721,54 @@ export class MeshTool {
       const result = faces.length ? setFaceFlags(piece, new Set(faces), flag, on) : null;
       return result ? sameId(result, piece) : null;
     }, keepPosition);
+  }
+
+  /** El segmento más cercano al punto de la pantalla (a menos de `EDGE_RADIUS` píxeles y a la vista, salvo que se vean los de atrás). */
+  private edgeAt(x: number, y: number): { piece: Piece; a: Vec3; b: Vec3 } | null {
+    let best: { piece: Piece; a: Vec3; b: Vec3 } | null = null;
+    let bestDistance = EDGE_RADIUS;
+    const seen = new Set<number>();
+    for (const { piece } of this.shown) {
+      if (seen.has(piece.id)) continue;
+      seen.add(piece.id);
+      for (const [a, b] of pieceEdges(piece)) {
+        const sa = this.screenOf(a);
+        const sb = this.screenOf(b);
+        if (sa.behind || sb.behind) continue;
+        const dx = sb.x - sa.x;
+        const dy = sb.y - sa.y;
+        const len2 = dx * dx + dy * dy;
+        const t = len2 === 0 ? 0 : Math.max(0, Math.min(1, ((x - sa.x) * dx + (y - sa.y) * dy) / len2));
+        const d = Math.hypot(sa.x + dx * t - x, sa.y + dy * t - y);
+        if (d >= bestDistance) continue;
+        const at: Vec3 = [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t];
+        if (!this.seeBehind && this.occluded(at)) continue;
+        bestDistance = d;
+        best = { piece, a, b };
+      }
+    }
+    return best;
+  }
+
+  /** Clic sobre un segmento: elige sus dos vértices; segundo clic seguido en el mismo, también todo lo que continúa recto. */
+  private clickEdge(x: number, y: number): boolean {
+    const edge = this.edgeAt(x, y);
+    if (!edge) {
+      this.lastEdgeClick = null;
+      return false;
+    }
+    const a = vertexKey(edge.a);
+    const b = vertexKey(edge.b);
+    const last = this.lastEdgeClick;
+    const now = performance.now();
+    const again = last !== null && last.id === edge.piece.id && last.a === a && last.b === b && now - last.time < DOUBLE_CLICK_MS;
+    this.lastEdgeClick = again ? null : { time: now, a, b, id: edge.piece.id };
+    const keys = again ? edgeLoop(edge.piece, edge.a, edge.b) : new Set([a, b]);
+    this.selection = new Map([[edge.piece.id, keys]]);
+    this.paint();
+    this.host.onSelectionChange();
+    this.host.status(again ? `Segmento seguido en línea recta: ${keys.size} vértices elegidos` : 'Segmento elegido (doble clic: seguirlo en línea recta)');
+    return true;
   }
 
   /** La cara más cercana bajo el cursor (se cuentan también las vistas por detrás). */

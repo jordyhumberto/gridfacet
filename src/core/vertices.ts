@@ -933,3 +933,73 @@ export function fillHoles(piece: Piece, keys: ReadonlySet<string> | null): { pie
   );
   return { piece: result, filled: loops.length };
 }
+
+/** Los segmentos de la pieza (aristas de sus caras, sin repetir) como pares de claves de vértice. */
+export function pieceEdges(piece: Piece): [Vec3, Vec3][] {
+  const seen = new Set<string>();
+  const out: [Vec3, Vec3][] = [];
+  for (const face of piece.faces) {
+    face.forEach((p, i) => {
+      const q = face[(i + 1) % face.length];
+      const a = vertexKey(p);
+      const b = vertexKey(q);
+      if (a === b) return;
+      const id = a < b ? `${a}|${b}` : `${b}|${a}`;
+      if (seen.has(id)) return;
+      seen.add(id);
+      out.push([p, q]);
+    });
+  }
+  return out;
+}
+
+/**
+ * Sigue un segmento en línea recta por los dos lados: en cada vértice sigue por el segmento que más continúa la dirección (hasta `maxTurn`
+ * grados de desvío) y se para donde no hay ninguno o al volver al principio. Devuelve las claves de los vértices del recorrido, empezando por los dos dados.
+ */
+export function edgeLoop(piece: Piece, from: Vec3, to: Vec3, maxTurn = 30): Set<string> {
+  const position = new Map<string, Vec3>();
+  const neighbours = new Map<string, Set<string>>();
+  for (const [p, q] of pieceEdges(piece)) {
+    const a = vertexKey(p);
+    const b = vertexKey(q);
+    position.set(a, p);
+    position.set(b, q);
+    (neighbours.get(a) ?? neighbours.set(a, new Set()).get(a)!).add(b);
+    (neighbours.get(b) ?? neighbours.set(b, new Set()).get(b)!).add(a);
+  }
+  const start = vertexKey(from);
+  const end = vertexKey(to);
+  const result = new Set<string>([start, end]);
+  const limit = Math.cos((maxTurn * Math.PI) / 180);
+  const direction = (a: Vec3, b: Vec3): Vec3 => {
+    const d: Vec3 = [b[0] - a[0], b[1] - a[1], b[2] - a[2]];
+    const len = Math.hypot(...d) || 1;
+    return [d[0] / len, d[1] / len, d[2] / len];
+  };
+  const walk = (behind: string, at: string): void => {
+    while (true) {
+      const heading = direction(position.get(behind)!, position.get(at)!);
+      let best: string | null = null;
+      let bestDot = limit;
+      for (const next of neighbours.get(at) ?? []) {
+        if (next === behind) continue;
+        const d = direction(position.get(at)!, position.get(next)!);
+        const dot = heading[0] * d[0] + heading[1] * d[1] + heading[2] * d[2];
+        if (dot >= bestDot) {
+          bestDot = dot;
+          best = next;
+        }
+      }
+      if (best === null || result.has(best)) return;
+      result.add(best);
+      behind = at;
+      at = best;
+    }
+  };
+  if (position.has(start) && position.has(end)) {
+    walk(start, end);
+    walk(end, start);
+  }
+  return result;
+}

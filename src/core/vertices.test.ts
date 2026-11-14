@@ -745,3 +745,26 @@ describe('tapar huecos', () => {
     expect(fillHoles(piece, new Set([vertexKey(top)]))!.filled).toBe(1);
   });
 });
+
+describe('segmentos y recorrido recto', () => {
+  it('un cubo tiene doce segmentos', async () => {
+    const { pieceEdges } = await import('./vertices');
+    expect(pieceEdges(cube())).toHaveLength(12);
+  });
+
+  it('sigue un segmento recto por varias caras', async () => {
+    const { edgeLoop } = await import('./vertices');
+    // Tres cuadrados en fila: el segmento de abajo continúa recto de punta a punta.
+    const quad = (x: number) => [[x, 0, 0], [x + 1, 0, 0], [x + 1, 1, 0], [x, 1, 0]] as Vec3[];
+    const piece = makePiece([quad(0), quad(1), quad(2)], 0xffffff);
+    const loop = edgeLoop(piece, [1, 0, 0], [2, 0, 0]);
+    expect([...loop].sort()).toEqual(['0,0,0', '100000,0,0', '200000,0,0', '300000,0,0']);
+  });
+
+  it('se para en una esquina que gira de golpe', async () => {
+    const { edgeLoop } = await import('./vertices');
+    const c = cube();
+    const [a, b] = [uniqueVertices(c)[0], uniqueVertices(c).find((p) => p !== uniqueVertices(c)[0] && Math.hypot(p[0] - uniqueVertices(c)[0][0], p[1] - uniqueVertices(c)[0][1], p[2] - uniqueVertices(c)[0][2]) < 1.01 * Math.min(...uniqueVertices(c).filter((q) => q !== uniqueVertices(c)[0]).map((q) => Math.hypot(q[0] - uniqueVertices(c)[0][0], q[1] - uniqueVertices(c)[0][1], q[2] - uniqueVertices(c)[0][2]))))!];
+    expect(edgeLoop(c, a, b).size).toBe(2);
+  });
+});
