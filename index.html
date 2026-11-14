@@ -183,7 +183,7 @@
             <button data-sel="ungroup" title="Ctrl+Alt+G">Desagrupar</button>
             <button data-sel="connected" title="K">Conectadas (K)</button>
             <button data-sel="excavate" title="Resta la selección de las piezas que toca (cráteres, agujeros)">Excavar</button>
-            <button data-sel="merge" title="Une las piezas en una sola: si la unión es convexa queda un solo cuerpo limpio; si no, se juntan con todas sus caras en un solo bloque">Fusionar</button>
+            <button data-sel="merge" title="Une las piezas en una sola: si la unión es convexa queda un solo cuerpo limpio; si no, se juntan con todas sus caras en un solo bloque">Fusionar vértices</button>
             <button data-sel="copy" title="Ctrl+C">Copiar</button>
             <button data-sel="paste" title="Ctrl+V">Pegar</button>
             <button data-sel="mirror-x" title="M">Espejo X (M)</button>
@@ -353,7 +353,7 @@
               <button data-meshaxis="5" title="Mezcla Y con Z: X queda fijo (Mayús+X)">YZ</button>
             </div>
             <button id="meshAdd" title="Añadir vértice: con el modo activo, un clic sobre una arista (según la cantidad de vértices elegida; Ctrl donde pulses) o dentro de una cara le pone un vértice nuevo, que queda elegido para moverlo. Alt+clic en una arista sigue funcionando. Atajo: tecla A">+ Vértice (A)</button>
-            <button id="meshSlide" title="Deslizar: con el modo activo, el vértice que arrastras (puesto en medio de un segmento) solo se mueve por ese segmento, sin deformar la pieza ni llegar a los vértices vecinos. Atajo: tecla S (con vértices elegidos)">Deslizar (S)</button>
+            <button id="meshSlide" title="Deslizar: con el modo activo, el vértice que arrastras (puesto en medio de un segmento) solo se mueve por ese segmento, sin deformar la pieza ni llegar a los vértices vecinos. Atajo: tecla S (con vértices elegidos)">Deslizar vértice (S)</button>
             <button id="meshRemove" title="Quitar vértice: con el modo activo, un clic en un vértice lo quita. Las caras que lo usaban se quedan con uno menos (un triángulo desaparece); con el espejo activo quita también el de enfrente. Atajo: tecla D">− Vértice (D)</button>
             <label title="Con la casilla marcada se ven y se pueden elegir todos los vértices, también los que quedan detrás de una cara. Sin marcar, solo los que dan a la cámara"><input type="checkbox" id="meshSeeBehind" checked /> Ver vértices de atrás</label>
             <select id="meshDensity" title="Cantidad de vértices: en cuántas partes se divide una arista al añadir un vértice (Ctrl siempre lo pone donde pulses)">
@@ -363,10 +363,10 @@
               <option value="16">Muy alto (dieciseisavos)</option>
               <option value="0">Libre (donde pulses)</option>
             </select>
-            <button data-mesh="all" title="Elige todos los vértices que se ven">Todos</button>
-            <button data-mesh="merge" title="Junta los vértices elegidos de cada pieza en uno solo, en su centro">Fusionar</button>
-            <button data-mesh="delete" title="Quita los vértices elegidos (Supr)">Borrar</button>
-            <button data-mesh="snap" title="Lleva los vértices elegidos a la rejilla de ¼ de celda">A la rejilla</button>
+            <button data-mesh="all" title="Elige todos los vértices que se ven">Elegir todos</button>
+            <button data-mesh="merge" title="Junta los vértices elegidos de cada pieza en uno solo, en su centro">Fusionar vértices</button>
+            <button data-mesh="delete" title="Quita los vértices elegidos (Supr)">Borrar vértices (Supr)</button>
+            <button data-mesh="snap" title="Lleva los vértices elegidos a la rejilla de ¼ de celda">Vértices a la rejilla</button>
             <button data-mesh="rotate" title="Gira los vértices elegidos alrededor de su centro moviendo el ratón (R). X/Y/Z fija el eje, clic confirma">Girar</button>
             <button data-mesh="scale" title="Escala los vértices elegidos desde su centro moviendo el ratón (T). X/Y/Z escala solo en ese eje, clic confirma">Escalar</button>
             <button data-mesh="taper" title="Estrecha o ensancha los extremos de los vértices elegidos a lo largo de un eje (por defecto Y): mueve el ratón a los lados, clic confirma">Afinar</button>
@@ -375,10 +375,10 @@
             <button data-mesh="face" title="Crea una cara con los vértices elegidos (tres o más, de la misma pieza). Atajo: tecla F">Crear cara (F)</button>
             <button data-mesh="delface" title="Quita las caras cuyos vértices están todos elegidos: la pieza queda abierta. Atajo: tecla B">Borrar cara (B)</button>
             <button data-mesh="flip" title="Da la vuelta a las caras cuyos vértices están todos elegidos">Invertir cara</button>
-            <button data-mesh="connect" title="Con dos vértices elegidos de una misma cara (no vecinos, con el camino libre entre ellos), traza el segmento que los une: la cara se parte en dos. Con el espejo activo también parte la cara espejo. Atajo: tecla U">Unir vértices (U)</button>
-            <button data-mesh="dissolve" title="Quita el segmento entre dos vértices elegidos: las dos caras que separa, si están en el mismo plano, pasan a ser una (lo contrario de Unir vértices). No borra vértices. Atajo: tecla Q">Quitar segmento (Q)</button>
-            <button data-mesh="straighten" title="Con tres o más vértices elegidos, deja rectos los de en medio sobre la línea que une el primero y el último que elegiste: los dos extremos no se mueven y cada otro vértice va al punto más cercano de esa línea. Atajo: tecla L">Alinear (L)</button>
-            <button data-mesh="flatten" title="Aplana los vértices elegidos (tres o más, por ejemplo los de una cara chueca): cada uno va al punto más cercano del plano que mejor se ajusta a todos. Atajo: tecla P">Aplanar (P)</button>
+            <button data-mesh="connect" title="Con dos vértices elegidos de una misma cara (no vecinos, con el camino libre entre ellos), traza el segmento que los une: la cara se parte en dos. Con el espejo activo también parte la cara espejo. Atajo: tecla U">Trazar segmento (U)</button>
+            <button data-mesh="dissolve" title="Quita el segmento entre dos vértices elegidos: las dos caras que separa, si están en el mismo plano, pasan a ser una (lo contrario de Trazar segmento). No borra vértices. Atajo: tecla Q">Quitar segmento (Q)</button>
+            <button data-mesh="straighten" title="Con tres o más vértices elegidos, deja rectos los de en medio sobre la línea que une el primero y el último que elegiste: los dos extremos no se mueven y cada otro vértice va al punto más cercano de esa línea. Atajo: tecla L">Alinear en línea (L)</button>
+            <button data-mesh="flatten" title="Aplana los vértices elegidos (tres o más, por ejemplo los de una cara chueca): cada uno va al punto más cercano del plano que mejor se ajusta a todos. Atajo: tecla P">Aplanar en plano (P)</button>
             <button data-mesh="growedge" title="Con dos vértices elegidos, hace crecer una cara desde su segmento, perpendicular a él (hacia fuera si el segmento es una arista de la pieza); los dos vértices nuevos quedan elegidos para moverlos">Cara desde segmento</button>
             <button data-mesh="extrude" title="Extruye las caras cuyos vértices están todos elegidos y deja elegidos los vértices de arriba para moverlos">Extruir cara</button>
             <label title="Las caras de cuatro o más vértices que se salgan de su plano se marcan en naranja. Con esta casilla, al soltar un vértice las caras que toque y queden torcidas se aplanan solas (como Aplanar, tecla P): el vértice puede asentarse un poco y mover a sus vecinos"><input type="checkbox" id="meshAutoFlat" /> Aplanar al soltar</label>
