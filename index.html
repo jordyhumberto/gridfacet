@@ -15,6 +15,8 @@
       #hud .axisGroup { display: flex; gap: 4px; align-items: center; flex: 1 1 100%; }
       #hud .axisGroup > span { flex: 0 0 4.2em; opacity: 0.75; }
       #hud .axisGroup > button { flex: 1 1 0; min-width: 0; }
+      #hud .meshGroup { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; flex: 1 1 100%; padding-top: 4px; border-top: 1px solid rgba(255,255,255,0.12); }
+      #hud .meshGroup > .groupTitle { flex: 1 1 100%; font-size: 0.8em; opacity: 0.65; text-transform: uppercase; letter-spacing: 0.04em; }
       #hud button, #hud select { background: #2a2f3a; color: inherit; border: 1px solid #3d4452; border-radius: 6px; padding: 4px 8px; font-size: 12px; cursor: pointer; }
       #hud button.active { background: #3b6fd4; border-color: #6c98ee; }
       #hud input[type="color"] { width: 28px; height: 24px; padding: 0; border: 1px solid #3d4452; border-radius: 6px; background: none; cursor: pointer; }
@@ -352,6 +354,8 @@
               <button data-meshaxis="4" title="Mezcla X con Z: Y queda fijo (Mayús+Y)">XZ</button>
               <button data-meshaxis="5" title="Mezcla Y con Z: X queda fijo (Mayús+X)">YZ</button>
             </div>
+            <div class="meshGroup">
+              <span class="groupTitle">Modos</span>
             <button id="meshAdd" title="Añadir vértice: con el modo activo, un clic sobre una arista (según la cantidad de vértices elegida; Ctrl donde pulses) o dentro de una cara le pone un vértice nuevo, que queda elegido para moverlo. Alt+clic en una arista sigue funcionando. Atajo: tecla A">+ Vértice (A)</button>
             <button id="meshSlide" title="Deslizar: con el modo activo, el vértice que arrastras (puesto en medio de un segmento) solo se mueve por ese segmento, sin deformar la pieza ni llegar a los vértices vecinos. Atajo: tecla S (con vértices elegidos)">Deslizar vértice (S)</button>
             <button id="meshRemove" title="Quitar vértice: con el modo activo, un clic en un vértice lo quita. Las caras que lo usaban se quedan con uno menos (un triángulo desaparece); con el espejo activo quita también el de enfrente. Atajo: tecla D">− Vértice (D)</button>
@@ -363,30 +367,49 @@
               <option value="16">Muy alto (dieciseisavos)</option>
               <option value="0">Libre (donde pulses)</option>
             </select>
+            </div>
+            <div class="meshGroup">
+              <span class="groupTitle">Elegir y borrar</span>
             <button data-mesh="all" title="Elige todos los vértices que se ven">Elegir todos</button>
             <button data-mesh="merge" title="Junta los vértices elegidos de cada pieza en uno solo, en su centro">Fusionar vértices</button>
             <button data-mesh="delete" title="Quita los vértices elegidos (Supr)">Borrar vértices (Supr)</button>
             <button data-mesh="snap" title="Lleva los vértices elegidos a la rejilla de ¼ de celda">Vértices a la rejilla</button>
+            </div>
+            <div class="meshGroup">
+              <span class="groupTitle">Transformar</span>
             <button data-mesh="rotate" title="Gira los vértices elegidos alrededor de su centro moviendo el ratón (R). X/Y/Z fija el eje, clic confirma">Girar</button>
             <button data-mesh="scale" title="Escala los vértices elegidos desde su centro moviendo el ratón (T). X/Y/Z escala solo en ese eje, clic confirma">Escalar</button>
             <button data-mesh="taper" title="Estrecha o ensancha los extremos de los vértices elegidos a lo largo de un eje (por defecto Y): mueve el ratón a los lados, clic confirma">Afinar</button>
             <button data-mesh="twist" title="Tuerce los vértices elegidos a lo largo de un eje (por defecto Y): cada altura gira un poco más. Mueve el ratón a los lados, clic confirma">Torcer</button>
             <button data-mesh="bend" title="Curva los vértices elegidos a lo largo de un eje (por defecto Y) hacia el eje siguiente (Y→Z, X→Y, Z→X): mueve el ratón a los lados, clic confirma">Curvar</button>
+            </div>
+            <div class="meshGroup">
+              <span class="groupTitle">Caras</span>
             <button data-mesh="face" title="Crea una cara con los vértices elegidos (tres o más, de la misma pieza). Atajo: tecla F">Crear cara (F)</button>
             <button data-mesh="delface" title="Quita las caras cuyos vértices están todos elegidos: la pieza queda abierta. Atajo: tecla B">Borrar cara (B)</button>
             <button data-mesh="flip" title="Da la vuelta a las caras cuyos vértices están todos elegidos">Invertir cara</button>
-            <button data-mesh="connect" title="Con dos vértices elegidos de una misma cara (no vecinos, con el camino libre entre ellos), traza el segmento que los une: la cara se parte en dos. Con el espejo activo también parte la cara espejo. Atajo: tecla U">Trazar segmento (U)</button>
-            <button data-mesh="dissolve" title="Quita el segmento entre dos vértices elegidos: las dos caras que separa, si están en el mismo plano, pasan a ser una (lo contrario de Trazar segmento). No borra vértices. Atajo: tecla Q">Quitar segmento (Q)</button>
-            <button data-mesh="straighten" title="Con tres o más vértices elegidos, deja rectos los de en medio sobre la línea que une el primero y el último que elegiste: los dos extremos no se mueven y cada otro vértice va al punto más cercano de esa línea. Atajo: tecla L">Alinear en línea (L)</button>
-            <button data-mesh="flatten" title="Aplana los vértices elegidos (tres o más, por ejemplo los de una cara chueca): cada uno va al punto más cercano del plano que mejor se ajusta a todos. Atajo: tecla P">Aplanar en plano (P)</button>
-            <button data-mesh="symmetrize" title="Con la simetría activa, deja exactamente iguales los dos lados: cada vértice se promedia con el espejo de su gemelo y los que están casi sobre el plano quedan sobre él. Actúa sobre las piezas elegidas (o todas). Los vértices que no tienen gemelo se marcan en rosa">Simetrizar</button>
             <label title="Cuánto crece la cara al usar «Cara desde segmento» o «Extruir cara» (en celdas; 1 = el ancho de un cubo). Después puedes mover los vértices nuevos para ajustarla"><input type="number" id="meshGrowAmount" min="0.05" step="0.05" value="0.5" style="width:56px" /> Cuánto crece</label>
             <button data-mesh="growedge" title="Con dos vértices elegidos, hace crecer una cara desde su segmento, perpendicular a él (hacia fuera si el segmento es una arista de la pieza); los dos vértices nuevos quedan elegidos para moverlos">Cara desde segmento</button>
             <button data-mesh="extrude" title="Extruye las caras cuyos vértices están todos elegidos y deja elegidos los vértices de arriba para moverlos">Extruir cara</button>
+            </div>
+            <div class="meshGroup">
+              <span class="groupTitle">Segmentos</span>
+            <button data-mesh="connect" title="Con dos vértices elegidos de una misma cara (no vecinos, con el camino libre entre ellos), traza el segmento que los une: la cara se parte en dos. Con el espejo activo también parte la cara espejo. Atajo: tecla U">Trazar segmento (U)</button>
+            <button data-mesh="dissolve" title="Quita el segmento entre dos vértices elegidos: las dos caras que separa, si están en el mismo plano, pasan a ser una (lo contrario de Trazar segmento). No borra vértices. Atajo: tecla Q">Quitar segmento (Q)</button>
+            </div>
+            <div class="meshGroup">
+              <span class="groupTitle">Ordenar</span>
+            <button data-mesh="straighten" title="Con tres o más vértices elegidos, deja rectos los de en medio sobre la línea que une el primero y el último que elegiste: los dos extremos no se mueven y cada otro vértice va al punto más cercano de esa línea. Atajo: tecla L">Alinear en línea (L)</button>
+            <button data-mesh="flatten" title="Aplana los vértices elegidos (tres o más, por ejemplo los de una cara chueca): cada uno va al punto más cercano del plano que mejor se ajusta a todos. Atajo: tecla P">Aplanar en plano (P)</button>
+            <button data-mesh="symmetrize" title="Con la simetría activa, deja exactamente iguales los dos lados: cada vértice se promedia con el espejo de su gemelo y los que están casi sobre el plano quedan sobre él. Actúa sobre las piezas elegidas (o todas). Los vértices que no tienen gemelo se marcan en rosa">Simetrizar</button>
             <label title="Las caras de cuatro o más vértices que se salgan de su plano se marcan en naranja. Con esta casilla, al soltar un vértice las caras que toque y queden torcidas se aplanan solas (como Aplanar, tecla P): el vértice puede asentarse un poco y mover a sus vecinos"><input type="checkbox" id="meshAutoFlat" autocomplete="off" /> Aplanar al soltar</label>
+            </div>
+            <div class="meshGroup">
+              <span class="groupTitle">Aspecto de las caras elegidas</span>
             <label title="Las caras cuyos vértices están todos elegidos se ven también por detrás (hojas, cartulinas, ropa)"><input type="checkbox" id="meshDouble" /> Doble cara</label>
             <label title="Las caras cuyos vértices están todos elegidos no reciben luz ni sombra: se ven con su color tal cual"><input type="checkbox" id="meshUnlit" /> Sin sombra</label>
             <label title="Las caras cuyos vértices están todos elegidos se dibujan siempre por debajo de todo lo demás (huellas, sombras pintadas, fondos). Solo se ve así en el editor: el GLB no guarda el orden de dibujo"><input type="checkbox" id="meshBehind" /> Al fondo</label>
+            </div>
             <small id="meshInfo"></small>
             <small>R: girar · T: escalar (mueve el ratón, clic confirma) · Shift+clic en una cara: elige sus vértices · Alt+clic en una arista: vértice nuevo · Arrastra un vértice · X/Y/Z fija el eje · flechas empujan (Ctrl: fino) · Ctrl+arrastrar en vacío: recuadro · Ctrl al arrastrar: sin imán</small>
           </div>
