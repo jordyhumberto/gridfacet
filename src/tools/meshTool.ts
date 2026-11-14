@@ -37,6 +37,17 @@ const DRAG_THRESHOLD = 3;
 const NORMAL_COLOR = 0xe6e8ee;
 const SELECTED_COLOR = 0xffd34d;
 const HOVER_COLOR = 0x40e0ff;
+/** Qué dice cada tecla de acción de Malla cuando no hay vértices elegidos. */
+const NEEDS_SELECTION: Record<string, string> = {
+  u: 'Trazar segmento (U): elige dos vértices de una misma cara',
+  q: 'Quitar segmento (Q): elige los dos vértices de un segmento',
+  l: 'Alinear en línea (L): elige tres o más vértices; el primero y el último marcan la línea',
+  p: 'Aplanar en plano (P): elige tres o más vértices',
+  f: 'Crear cara (F): elige tres o más vértices',
+  b: 'Borrar cara (B): elige todos los vértices de la cara',
+  r: 'Girar (R): elige los vértices que quieres girar',
+  t: 'Escalar (T): elige los vértices que quieres escalar',
+};
 /** Cuánto se acercan los vértices a la cámara al ocultar los de atrás (fracción de su distancia): al dibujarlos y al decidir si uno está tapado. */
 const VERTEX_BIAS = 0.006;
 /** Contorno de las caras torcidas. */
@@ -1040,11 +1051,19 @@ export class MeshTool {
       this.finishDrag(false);
       return true;
     }
-    if (this.count === 0) return false;
-    // S (de «deslizar») enciende y apaga Deslizar, igual que el botón.
+    // S (de «deslizar») enciende y apaga Deslizar, igual que el botón; es un modo de arrastre y no necesita vértices elegidos.
     if (key === 's' && !this.drag && !e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey) {
       this.setSlideMode(!this.sliding);
       return true;
+    }
+    if (this.count === 0) {
+      // Sin vértices elegidos estas teclas no hacen nada en Malla (antes pasaban a las de las otras herramientas, como F = Cara, y se salía de Malla sin querer).
+      const needs = NEEDS_SELECTION[key];
+      if (needs && !this.drag && !e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey) {
+        this.host.status(needs);
+        return true;
+      }
+      return false;
     }
     // U (de «unir») traza el segmento entre dos vértices elegidos, igual que el botón «Trazar segmento».
     if (key === 'u' && !this.drag && !e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey) {
@@ -1115,6 +1134,14 @@ export class MeshTool {
     const name = { rotate: 'Girar', scale: 'Escalar', taper: 'Afinar', twist: 'Torcer', bend: 'Curvar' }[kind];
     const hint = kind === 'taper' || kind === 'twist' || kind === 'bend' ? 'mueve el ratón a los lados · X/Y/Z cambia el eje (por defecto Y)' : 'mueve el ratón · X/Y/Z fija el eje';
     this.host.status(`${name}: ${hint} · Ctrl invierte el imán · clic o Intro confirma · Esc cancela`);
+    // Afinar, Torcer y Curvar trabajan a lo largo de un eje: si la selección es plana en el eje por defecto, se dice ya, con los ejes que sí sirven.
+    if (kind === 'taper' || kind === 'twist' || kind === 'bend') {
+      const axis = this.modal!.axis ?? 1;
+      if (half[axis] < 1e-6) {
+        const useful = [0, 1, 2].filter((k) => half[k] >= 1e-6).map((k) => 'XYZ'[k]);
+        this.host.status(`${name}: la selección es plana en ${'XYZ'[axis]} y no hay nada que ${{ taper: 'afinar', twist: 'torcer', bend: 'curvar' }[kind]} en ese eje: pulsa ${useful.join(' o ')} para usar otro`);
+      }
+    }
   }
 
   /** Eje de giro: el del mundo elegido, o el más parecido a la dirección de la cámara. */
@@ -1279,7 +1306,12 @@ export class MeshTool {
 
   snapToGrid(): void {
     const onGrid = (p: Vec3): Vec3 => p.map((v) => Math.round(v / SNAP_STEP) * SNAP_STEP) as Vec3;
-    this.change((piece, keys) => placeVertices(piece, keys, onGrid, true) ?? REMOVE, onGrid);
+    let moved = 0;
+    this.change((piece, keys) => {
+      moved += uniqueVertices(piece).filter((p) => keys.has(vertexKey(p)) && vertexKey(onGrid(p)) !== vertexKey(p)).length;
+      return placeVertices(piece, keys, onGrid, true) ?? REMOVE;
+    }, onGrid);
+    this.host.status(moved > 0 ? `A la rejilla: ${moved} vértice(s) movidos al punto de rejilla más cercano` : 'A la rejilla: los vértices elegidos ya estaban en ella');
   }
 
   mergeSelected(): void {
@@ -1287,6 +1319,7 @@ export class MeshTool {
       this.host.status('Elige al menos dos vértices de la misma pieza para fusionarlos');
       return;
     }
+    let merged = 0;
     this.change((piece, _keys, _dirAt, parts) => {
       // Con simetría cada lado se funde en su propio punto: mezclar los elegidos con sus imágenes los llevaría a todos al centro.
       // Solo se juntan los grupos que comparten algún vértice (uno puesto sobre el plano del espejo es de los dos lados).
@@ -1295,19 +1328,24 @@ export class MeshTool {
       for (const group of vertexGroups(parts)) {
         if (uniqueVertices(current).filter((p) => group.has(vertexKey(p))).length < 2) continue;
         any = true;
+        merged++;
         current = mergeVertices(current, group);
         // Con dos o más vértices y sin resultado, la pieza se quedó sin caras.
         if (!current) return REMOVE;
       }
       return any ? sameId(current, piece) : null;
     });
+    this.host.status(merged > 0 ? `Fusionar: ${merged === 1 ? 'los vértices elegidos pasan a ser uno' : `${merged} grupos de vértices fusionados (el espejo también)`}` : 'Fusionar: elige al menos dos vértices de la misma pieza');
   }
 
   deleteSelected(): void {
+    let removed = 0;
     this.change((piece, keys) => {
+      removed += uniqueVertices(piece).filter((p) => keys.has(vertexKey(p))).length;
       const result = deleteVertices(piece, keys);
       return result ? sameId(result, piece) : REMOVE;
     });
+    if (removed > 0) this.host.status(`Borrar: ${removed} vértice(s) quitados (las caras que los usaban se quedan con menos; un triángulo desaparece)`);
   }
 
   /**
@@ -1331,47 +1369,54 @@ export class MeshTool {
       }
       return current === piece ? null : sameId(current, piece);
     }, keepPosition);
-    if (made === 0) this.host.status(`No se creó ninguna cara: elige tres o más vértices de una misma pieza que no formen ya una cara${this.seeBehind ? '' : ' (si te faltan vértices, están tapados: marca «Ver vértices de atrás»)'}`);
+    if (made > 0) this.host.status(made > 1 ? `Cara creada: ${made} (la del espejo también)` : 'Cara creada');
+    else this.host.status(`No se creó ninguna cara: elige tres o más vértices de una misma pieza que no formen ya una cara${this.seeBehind ? '' : ' (si te faltan vértices, están tapados: marca «Ver vértices de atrás»)'}`);
   }
 
   /** Quita las caras cuyos vértices están todos elegidos. */
   deleteFacesSelected(): void {
     let any = false;
+    let count = 0;
     this.change((piece, _keys, _dirAt, parts) => {
       const faces = facesOfParts(piece, parts);
       if (faces.length === 0) return null;
       any = true;
+      count += faces.length;
       const result = deleteFaces(piece, new Set(faces));
       return result ? sameId(result, piece) : REMOVE;
     }, keepPosition);
-    if (!any) this.host.status('Elige todos los vértices de una cara para borrarla');
+    this.host.status(any ? `Borrar cara: ${count} cara(s) quitadas, la pieza queda abierta por ahí` : 'Borrar cara: elige todos los vértices de la cara');
   }
 
   /** Da la vuelta a las caras cuyos vértices están todos elegidos. */
   flipSelected(): void {
     let any = false;
+    let count = 0;
     this.change((piece, _keys, _dirAt, parts) => {
       const faces = facesOfParts(piece, parts);
       if (faces.length === 0) return null;
       any = true;
+      count += faces.length;
       const result = flipFaces(piece, new Set(faces));
       return result ? sameId(result, piece) : null;
     }, keepPosition);
-    if (!any) this.host.status('Elige todos los vértices de una cara para invertirla');
+    this.host.status(any ? `Invertir cara: ${count} cara(s) dadas la vuelta` : 'Invertir cara: elige todos los vértices de la cara');
   }
 
   /** Extruye las caras cuyos vértices están todos elegidos; los vértices de arriba quedan elegidos para seguir moviéndolos. */
   extrudeSelected(distance = this.growDistance): void {
     let any = false;
+    let count = 0;
     this.change((piece, _keys, _dirAt, parts) => {
       const faces = facesOfParts(piece, parts);
       if (faces.length === 0) return null;
       const result = extrudeFaces(piece, new Set(faces), distance);
       if (!result) return null;
       any = true;
+      count += faces.length;
       return { piece: sameId(result.piece, piece), select: result.keys };
     });
-    if (!any) this.host.status('Elige todos los vértices de una cara para extruirla');
+    this.host.status(any ? `Extruir cara: ${count} cara(s) subidas ${+distance.toFixed(3)}; los vértices de arriba quedan elegidos para moverlos` : 'Extruir cara: elige todos los vértices de la cara');
   }
 
   /**
@@ -1393,7 +1438,7 @@ export class MeshTool {
       any = true;
       return { piece: sameId(current, piece), select };
     });
-    if (!any) this.host.status('Elige exactamente dos vértices de una pieza para hacer crecer una cara desde su segmento');
+    this.host.status(any ? `Cara desde segmento: creció ${+distance.toFixed(3)}; mueve los dos vértices nuevos, que quedan elegidos` : 'Cara desde segmento: elige exactamente dos vértices de una pieza');
   }
 
   /** Con dos vértices elegidos de una misma cara, traza el segmento entre ellos: la cara se parte en dos. Los vértices siguen elegidos. */
