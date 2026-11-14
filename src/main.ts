@@ -2765,6 +2765,11 @@ renderer.domElement.addEventListener('pointerup', (e) => {
     return;
   }
   if (mode === 'mesh') {
+    // Shift+clic que no da en ningún vértice ni cara (un fallo al ir sumando vértices) no suelta lo que ya estaba elegido.
+    if (e.shiftKey && meshTool.count > 0) {
+      statusEl.textContent = 'Shift+clic en vacío: la elección se queda como estaba (clic sin Shift en vacío la suelta)';
+      return;
+    }
     // Clic en una pieza la elige (sus vértices son los que se muestran); en vacío suelta todo.
     const id = pieceIdOf(castRay(e, false));
     meshTool.clearSelection();

@@ -50,7 +50,7 @@ const NEEDS_SELECTION: Record<string, string> = {
   q: 'Quitar segmento (Q): elige los dos vértices de un segmento',
   l: 'Alinear en línea (L): elige tres o más vértices; el primero y el último marcan la línea',
   p: 'Aplanar en plano (P): elige tres o más vértices',
-  f: 'Crear cara (F): elige tres o más vértices',
+  f: 'Crear cara (F): no hay ningún vértice elegido; elige tres o más con Shift+clic (un clic sin Shift en vacío suelta la elección)',
   b: 'Borrar cara (B): elige todos los vértices de la cara',
   n: 'Empujar cara (N): elige todos los vértices de una o más caras',
   k: 'Tapar hueco (K): elige un vértice del borde abierto que quieres cerrar',
@@ -1492,7 +1492,11 @@ export class MeshTool {
    */
   createFace(): void {
     if (this.count < 3) {
-      this.host.status('Elige al menos tres vértices de la misma pieza para crear una cara');
+      this.host.status(`Crear cara: hay ${this.count} vértice(s) elegido(s); elige al menos tres de la misma pieza (Shift+clic para sumar)`);
+      return;
+    }
+    if (this.mostInOnePiece < 3) {
+      this.host.status(`Crear cara: hay ${this.count} vértices elegidos pero repartidos en ${this.selection.size} piezas (como mucho ${this.mostInOnePiece} en una): una cara necesita tres de la misma pieza`);
       return;
     }
     let made = 0;
