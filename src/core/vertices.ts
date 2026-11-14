@@ -868,3 +868,68 @@ export function splitFacesAtCenter(piece: Piece, faces: ReadonlySet<number>): Pi
   }
   return any ? current : null;
 }
+
+/**
+ * Los contornos abiertos de la pieza: cada arista que solo usa una cara (nadie la recorre al revés) es borde. Los bordes se encadenan en
+ * anillos, ya en el sentido que tendría una cara que los cierre (al revés que las caras vecinas). Un anillo que se cruza o no cierra se descarta.
+ */
+export function openLoops(piece: Piece): Vec3[][] {
+  const edges = new Set<string>();
+  for (const face of piece.faces) face.forEach((p, i) => edges.add(`${vertexKey(p)}>${vertexKey(face[(i + 1) % face.length])}`));
+  // Arista de cierre y→x por cada borde x→y.
+  const next = new Map<string, Vec3[]>();
+  const position = new Map<string, Vec3>();
+  for (const face of piece.faces) {
+    face.forEach((p, i) => {
+      const q = face[(i + 1) % face.length];
+      const a = vertexKey(p);
+      const b = vertexKey(q);
+      if (a === b || edges.has(`${b}>${a}`)) return;
+      position.set(a, p);
+      position.set(b, q);
+      const list = next.get(b) ?? [];
+      list.push(p);
+      next.set(b, list);
+    });
+  }
+  const loops: Vec3[][] = [];
+  const done = new Set<string>();
+  for (const start of next.keys()) {
+    if (done.has(start)) continue;
+    const loop: Vec3[] = [];
+    const seen = new Set<string>();
+    let at = start;
+    let closed = false;
+    while (true) {
+      const options = next.get(at);
+      if (!options || options.length !== 1 || seen.has(at)) break;
+      seen.add(at);
+      loop.push(position.get(at)!);
+      at = vertexKey(options[0]);
+      if (at === start) {
+        closed = true;
+        break;
+      }
+    }
+    for (const key of seen) done.add(key);
+    if (closed && loop.length >= 3) loops.push(loop);
+  }
+  return loops;
+}
+
+/**
+ * Cierra con una cara cada contorno abierto que toque alguno de los vértices dados (o todos si `keys` es null).
+ * Devuelve la pieza y cuántos huecos cerró; null si no había ninguno que cerrar.
+ */
+export function fillHoles(piece: Piece, keys: ReadonlySet<string> | null): { piece: Piece; filled: number } | null {
+  const loops = openLoops(piece).filter((loop) => keys === null || loop.some((p) => keys.has(vertexKey(p))));
+  if (loops.length === 0) return null;
+  const result = withFaces(
+    piece,
+    [...piece.faces, ...loops],
+    [...piece.faces.map((_, i) => piece.faceColors?.[i] ?? piece.color), ...loops.map(() => piece.color)],
+    [...(piece.faceTextures ?? piece.faces.map(() => null)), ...loops.map(() => null)],
+    [...piece.faces.map((_, i) => piece.faceFlags?.[i] ?? 0), ...loops.map(() => 0)],
+  );
+  return { piece: result, filled: loops.length };
+}

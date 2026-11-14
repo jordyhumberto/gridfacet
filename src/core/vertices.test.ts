@@ -700,3 +700,48 @@ describe('extrudeEdge', () => {
     expect(extrudeEdge(piece, new Set([vertexKey([0, 0, 0])]), 0.5)).toBeNull();
   });
 });
+
+describe('tapar huecos', () => {
+  const open = () => {
+    // Un cubo al que se le quitó la cara de arriba.
+    const cube = buildPiece(CATALOG[0], 0, 0, 0, 0, 0x336699);
+    const top = Math.max(...uniqueVertices(cube).map((p) => p[1]));
+    const faces = cube.faces.filter((face) => !face.every((p) => p[1] === top));
+    return { cube, piece: makePiece(faces, cube.color), top };
+  };
+
+  it('encuentra el contorno abierto', async () => {
+    const { openLoops } = await import('./vertices');
+    const { piece } = open();
+    const loops = openLoops(piece);
+    expect(loops).toHaveLength(1);
+    expect(loops[0]).toHaveLength(4);
+  });
+
+  it('una pieza cerrada no tiene huecos', async () => {
+    const { openLoops, fillHoles } = await import('./vertices');
+    const { cube } = open();
+    expect(openLoops(cube)).toHaveLength(0);
+    expect(fillHoles(cube, null)).toBeNull();
+  });
+
+  it('la cara que lo cierra mira hacia fuera, como las vecinas', async () => {
+    const { fillHoles } = await import('./vertices');
+    const { cube, piece, top } = open();
+    const filled = fillHoles(piece, null)!;
+    expect(filled.filled).toBe(1);
+    expect(filled.piece.faces).toHaveLength(cube.faces.length);
+    const cap = filled.piece.faces[filled.piece.faces.length - 1];
+    expect(cap.every((p) => p[1] === top)).toBe(true);
+    expect(faceNormal(cap)[1]).toBeGreaterThan(0.9);
+  });
+
+  it('solo cierra los huecos que tocan la selección', async () => {
+    const { fillHoles, vertexKey } = await import('./vertices');
+    const { piece } = open();
+    const bottom = uniqueVertices(piece).find((p) => p[1] === Math.min(...uniqueVertices(piece).map((q) => q[1])))!;
+    expect(fillHoles(piece, new Set([vertexKey(bottom)]))).toBeNull();
+    const top = uniqueVertices(piece).find((p) => p[1] === Math.max(...uniqueVertices(piece).map((q) => q[1])))!;
+    expect(fillHoles(piece, new Set([vertexKey(top)]))!.filled).toBe(1);
+  });
+});

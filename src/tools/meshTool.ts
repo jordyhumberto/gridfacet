@@ -4,7 +4,7 @@ import type { Piece, Vec3 } from '../core/piece';
 import { MIRROR_TOLERANCE, pieceKey, reflectPiece, reflections, symmetrize, type Reflection, type Symmetry } from '../core/symmetry';
 import { triangulateFace } from '../core/convex';
 import { collapses } from '../core/selfIntersect';
-import { connectVertices, dissolveEdge, slideSegment, straightenVertices, flattenVertices, flattenWarped, warpedFaces, finFaces, flagFins, splitFacesAtCenter, addFace, deleteFaces, deleteVertices, extrudeEdge, extrudeFaces, facesWithin, flipFaces, mergeVertices, placeVertices, rotateAbout, scaleAbout, setFaceFlags, splitEdge, addMirrorPairOnFace, addVertexOnFace, taperPoint, twistPoint, bendPoint, uniqueVertices, vertexKey } from '../core/vertices';
+import { fillHoles, connectVertices, dissolveEdge, slideSegment, straightenVertices, flattenVertices, flattenWarped, warpedFaces, finFaces, flagFins, splitFacesAtCenter, addFace, deleteFaces, deleteVertices, extrudeEdge, extrudeFaces, facesWithin, flipFaces, mergeVertices, placeVertices, rotateAbout, scaleAbout, setFaceFlags, splitEdge, addMirrorPairOnFace, addVertexOnFace, taperPoint, twistPoint, bendPoint, uniqueVertices, vertexKey } from '../core/vertices';
 import type { ModelScene } from '../scene';
 
 /** Paso de la rejilla de imán, en celdas. */
@@ -47,6 +47,7 @@ const NEEDS_SELECTION: Record<string, string> = {
   p: 'Aplanar en plano (P): elige tres o más vértices',
   f: 'Crear cara (F): elige tres o más vértices',
   b: 'Borrar cara (B): elige todos los vértices de la cara',
+  k: 'Tapar hueco (K): elige un vértice del borde abierto que quieres cerrar',
   r: 'Girar (R): elige los vértices que quieres girar',
   t: 'Escalar (T): elige los vértices que quieres escalar',
 };
@@ -1156,6 +1157,11 @@ export class MeshTool {
       this.deleteFacesSelected();
       return true;
     }
+    // K (de «cerrar») tapa el hueco que toquen los vértices elegidos, igual que el botón «Tapar hueco».
+    if (key === 'k' && !this.drag && !e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey) {
+      this.fillHolesSelected();
+      return true;
+    }
     if (key === 'delete' || key === 'backspace') {
       this.deleteSelected();
       return true;
@@ -1433,6 +1439,23 @@ export class MeshTool {
     }, keepPosition);
     if (made > 0) this.host.status(made > 1 ? `Cara creada: ${made} (la del espejo también)` : 'Cara creada');
     else this.host.status(`No se creó ninguna cara: elige tres o más vértices de una misma pieza que no formen ya una cara${this.seeBehind ? '' : ' (si te faltan vértices, están tapados: marca «Ver vértices de atrás»)'}`);
+  }
+
+  /** Cierra con una cara cada hueco (borde abierto) que toque algún vértice elegido; basta con elegir uno de los del contorno. */
+  fillHolesSelected(): void {
+    let filled = 0;
+    this.change((piece, _keys, _dirAt, parts) => {
+      let current = piece;
+      for (const part of parts) {
+        const result = fillHoles(current, part.full);
+        if (result) {
+          current = result.piece;
+          filled += result.filled;
+        }
+      }
+      return current === piece ? null : sameId(current, piece);
+    }, keepPosition);
+    this.host.status(filled > 0 ? `Tapar hueco: ${filled} hueco(s) cerrados con una cara` : 'Tapar hueco: elige algún vértice del borde abierto (ese contorno tiene que dar la vuelta completa)');
   }
 
   /** Quita las caras cuyos vértices están todos elegidos. */

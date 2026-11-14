@@ -93,6 +93,21 @@ describe('Malla con simetría y una pieza que cruza el espejo', () => {
     expect(isSymmetric(model.all())).toBe(true);
   });
 
+  it('tapar hueco cierra el hueco y también su espejo', () => {
+    const { model, tool, choose } = setup();
+    const faces = model.all()[0].faces.length;
+    const right = Math.max(...uniqueVertices(model.all()[0]).map((p) => p[0]));
+    // Se quitan las dos caras de los lados (la de la derecha y su espejo) y se vuelve a cerrar eligiendo un solo vértice.
+    choose((p) => p[0] === right);
+    tool.deleteFacesSelected();
+    expect(model.all()[0].faces.length).toBe(faces - 2);
+    expect(isSymmetric(model.all())).toBe(true);
+    choose((p) => p[0] === right && p[1] === Math.max(...uniqueVertices(model.all()[0]).map((q) => q[1])) && p[2] === Math.max(...uniqueVertices(model.all()[0]).map((q) => q[2])));
+    tool.fillHolesSelected();
+    expect(model.all()[0].faces.length).toBe(faces);
+    expect(isSymmetric(model.all())).toBe(true);
+  });
+
   it('Simetrizar arregla un modelo que se descuadró y se deshace de un paso', () => {
     const { model, tool, choose } = setup();
     const piece = model.all()[0];
