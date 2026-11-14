@@ -295,6 +295,13 @@ export class MeshTool {
     return this.drag !== null || this.marquee !== null || this.modal !== null;
   }
 
+  /** Cuántos vértices hay elegidos en la pieza que más tiene (las acciones que unen vértices necesitan que sean de una misma pieza). */
+  get mostInOnePiece(): number {
+    let most = 0;
+    for (const keys of this.selection.values()) most = Math.max(most, keys.size);
+    return most;
+  }
+
   get count(): number {
     let total = 0;
     for (const keys of this.selection.values()) total += keys.size;

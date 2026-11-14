@@ -2175,10 +2175,13 @@ magnetEl.addEventListener('change', () => {
   statusEl.textContent = magnet ? 'Imán activado: piezas y vértices caen en la rejilla' : 'Imán desactivado: piezas y vértices siguen al ratón';
 });
 if (import.meta.env.DEV) (window as unknown as Record<string, unknown>).__mesh = meshTool;
+/** Cuántos vértices (de una misma pieza) pide cada acción de Malla para poder usarse; «face» pide al menos una cara con todos sus vértices elegidos. */
+const NEEDS: Record<string, number | 'face'> = { merge: 2, face: 3, delface: 'face', flip: 'face', extrude: 'face', connect: 2, dissolve: 2, growedge: 2, straighten: 3, flatten: 3, taper: 2, twist: 2, bend: 2 };
 function syncMeshActions(): void {
   meshActionsEl.hidden = mode !== 'mesh';
   const count = meshTool.count;
   const warped = meshTool.warpedCount;
+  const fullFaces = meshTool.faceFlagCount(FACE_DOUBLE).total;
   const unpaired = meshTool.unpairedCount;
   meshInfoEl.textContent = (count === 0 ? 'Ningún vértice elegido' : `${count} vértice(s) elegidos`) + (warped > 0 ? ` · ${warped} cara(s) torcida(s) en naranja` : '') + (unpaired > 0 ? ` · ${unpaired} vértice(s) sin gemelo en rosa (Simetrizar)` : '');
   document.getElementById('meshAdd')!.classList.toggle('active', meshTool.addMode);
@@ -2189,7 +2192,10 @@ function syncMeshActions(): void {
     button.classList.toggle('active', axis === meshTool.axis);
   });
   meshActionsEl.querySelectorAll<HTMLButtonElement>('button[data-mesh]').forEach((button) => {
-    button.disabled = button.dataset.mesh !== 'all' && button.dataset.mesh !== 'symmetrize' && count === 0;
+    const action = button.dataset.mesh!;
+    const need = NEEDS[action];
+    const symmetric = symmetry.x || symmetry.y || symmetry.z;
+    button.disabled = action === 'symmetrize' ? !symmetric : action === 'all' ? false : need === 'face' ? fullFaces === 0 : count < (need ?? 1) || (need !== undefined && meshTool.mostInOnePiece < need);
   });
   // Las casillas reflejan las caras elegidas (todos sus vértices): marcadas si todas la tienen, a medias si solo algunas.
   for (const [input, flag] of [[meshDoubleEl, FACE_DOUBLE], [meshUnlitEl, FACE_UNLIT], [meshBehindEl, FACE_BEHIND]] as const) {
