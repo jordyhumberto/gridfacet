@@ -118,6 +118,17 @@ describe('Malla con simetría y una pieza que cruza el espejo', () => {
     expect(model.all()[0].faces).toHaveLength(6);
   });
 
+  it('biselar una arista de un lado bisela también la del otro', () => {
+    const { model, tool, choose } = setup();
+    const verts = uniqueVertices(model.all()[0]);
+    const right = Math.max(...verts.map((p) => p[0]));
+    const top = Math.max(...verts.map((p) => p[1]));
+    choose((p) => p[0] === right && p[1] === top);
+    tool.bevelSelected();
+    expect(model.all()[0].faces).toHaveLength(8);
+    expect(isSymmetric(model.all())).toBe(true);
+  });
+
   it('Simetrizar arregla un modelo que se descuadró y se deshace de un paso', () => {
     const { model, tool, choose } = setup();
     const piece = model.all()[0];

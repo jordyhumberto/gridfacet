@@ -4,7 +4,7 @@ import { faceNormal, type Piece, type Vec3 } from '../core/piece';
 import { MIRROR_TOLERANCE, pieceKey, reflectPiece, reflections, symmetrize, type Reflection, type Symmetry } from '../core/symmetry';
 import { triangulateFace } from '../core/convex';
 import { collapses } from '../core/selfIntersect';
-import { triangulateFaces, edgeLoop, pieceEdges, fillHoles, connectVertices, dissolveEdge, slideSegment, straightenVertices, flattenVertices, flattenWarped, warpedFaces, finFaces, flagFins, splitFacesAtCenter, addFace, deleteFaces, deleteVertices, extrudeEdge, extrudeFaces, facesWithin, flipFaces, mergeVertices, placeVertices, rotateAbout, scaleAbout, setFaceFlags, splitEdge, addMirrorPairOnFace, addVertexOnFace, taperPoint, twistPoint, bendPoint, uniqueVertices, vertexKey } from '../core/vertices';
+import { bevelEdge, triangulateFaces, edgeLoop, pieceEdges, fillHoles, connectVertices, dissolveEdge, slideSegment, straightenVertices, flattenVertices, flattenWarped, warpedFaces, finFaces, flagFins, splitFacesAtCenter, addFace, deleteFaces, deleteVertices, extrudeEdge, extrudeFaces, facesWithin, flipFaces, mergeVertices, placeVertices, rotateAbout, scaleAbout, setFaceFlags, splitEdge, addMirrorPairOnFace, addVertexOnFace, taperPoint, twistPoint, bendPoint, uniqueVertices, vertexKey } from '../core/vertices';
 import type { ModelScene } from '../scene';
 
 /** Paso de la rejilla de imán, en celdas. */
@@ -239,6 +239,8 @@ export class MeshTool {
 
   /** Cuánto crecen «Cara desde segmento» y «Extruir cara» (en unidades del modelo); se cambia desde el panel. */
   growDistance = EXTRUDE_DISTANCE;
+  /** Cuánto se corta la esquina al biselar una arista (en celdas, sobre los segmentos vecinos). */
+  bevelSize = 0.25;
   /** Con el modo «Añadir vértice», un clic sobre una arista o una cara le pone un vértice nuevo (sin Alt). */
   private adding = false;
   /** Con el modo «Quitar vértice», un clic sobre un vértice lo quita (con su espejo si hay simetría). */
@@ -1554,6 +1556,26 @@ export class MeshTool {
       return result ? sameId(result, piece) : null;
     }, keepPosition);
     this.host.status(any ? `Invertir cara: ${count} cara(s) dadas la vuelta` : 'Invertir cara: elige todos los vértices de la cara');
+  }
+
+  /** Bisela la arista entre dos vértices elegidos (con el espejo, también la suya); los cuatro vértices nuevos quedan elegidos para ajustarlos. */
+  bevelSelected(): void {
+    let done = 0;
+    this.change((piece, _keys, _dirAt, parts) => {
+      let current = piece;
+      const select = new Set<string>();
+      for (const part of parts) {
+        const pair = uniqueVertices(current).filter((p) => part.full.has(vertexKey(p)));
+        if (pair.length !== 2) continue;
+        const result = bevelEdge(current, pair[0], pair[1], this.bevelSize);
+        if (!result) continue;
+        current = result.piece;
+        done++;
+        for (const key of result.created) select.add(key);
+      }
+      return current === piece ? null : { piece: sameId(current, piece), select };
+    });
+    this.host.status(done > 0 ? `Biselar: ${done} arista(s) biseladas (los vértices nuevos quedan elegidos)` : 'Biselar: elige los dos vértices de una arista que acaben en esquinas de tres caras, y un tamaño menor que los segmentos vecinos');
   }
 
   /** Parte en triángulos las caras de cuatro o más vértices cuyos vértices están todos elegidos (los vértices no se mueven; el contorno de cada cara queda igual). */
