@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { PLANE_XY, PLANE_XZ, PLANE_YZ, axisAllowed, lockLabel, type AxisLock } from '../core/axisLock';
-import type { Piece, Vec3 } from '../core/piece';
+import { faceNormal, type Piece, type Vec3 } from '../core/piece';
 import { MIRROR_TOLERANCE, pieceKey, reflectPiece, reflections, symmetrize, type Reflection, type Symmetry } from '../core/symmetry';
 import { triangulateFace } from '../core/convex';
 import { collapses } from '../core/selfIntersect';
@@ -31,8 +31,11 @@ const ROTATE_STEP = Math.PI / 12;
 const SCALE_STEP = 0.05;
 /** Píxeles de movimiento horizontal que valen 1 al afinar o torcer. */
 const DEFORM_PIXELS = 150;
+/** Empujar cara: por debajo de estos píxeles por celda la normal casi apunta a la cámara y se usa el movimiento vertical (con esta escala). */
+const PUSH_MIN_PIXELS = 12;
+const PUSH_FALLBACK_PIXELS = 120;
 
-export type TransformKind = 'rotate' | 'scale' | 'taper' | 'twist' | 'bend';
+export type TransformKind = 'rotate' | 'scale' | 'taper' | 'twist' | 'bend' | 'push';
 /** Lo que hay que mover el cursor antes de que un clic pase a ser un arrastre. */
 const DRAG_THRESHOLD = 3;
 
@@ -49,6 +52,7 @@ const NEEDS_SELECTION: Record<string, string> = {
   p: 'Aplanar en plano (P): elige tres o más vértices',
   f: 'Crear cara (F): elige tres o más vértices',
   b: 'Borrar cara (B): elige todos los vértices de la cara',
+  n: 'Empujar cara (N): elige todos los vértices de una o más caras',
   k: 'Tapar hueco (K): elige un vértice del borde abierto que quieres cerrar',
   r: 'Girar (R): elige los vértices que quieres girar',
   t: 'Escalar (T): elige los vértices que quieres escalar',
@@ -255,6 +259,8 @@ export class MeshTool {
     /** Mitad del largo de los vértices elegidos a lo largo de cada eje (para afinar y torcer). */
     half: Vec3;
     axis: number | null;
+    /** Dirección en la que se empuja (solo «push»): la normal media de las caras elegidas. */
+    normal?: Vec3;
     /** Posición del cursor al empezar (se fija con el primer movimiento) y lo que valía entonces. */
     start: { x: number; y: number; angle: number; distance: number } | null;
     last: { x: number; y: number; free: boolean } | null;
@@ -1174,6 +1180,11 @@ export class MeshTool {
       this.deleteFacesSelected();
       return true;
     }
+    // N (de «normal») empuja las caras elegidas a lo largo de su normal, igual que el botón «Empujar cara».
+    if (key === 'n' && !this.drag && !e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey) {
+      this.beginTransform('push');
+      return true;
+    }
     // K (de «cerrar») tapa el hueco que toquen los vértices elegidos, igual que el botón «Tapar hueco».
     if (key === 'k' && !this.drag && !e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey) {
       this.fillHolesSelected();
@@ -1208,16 +1219,24 @@ export class MeshTool {
       }
     }
     const pivot = [0, 1, 2].map((k) => (min[k] + max[k]) / 2) as Vec3;
+    let normal: Vec3 | undefined;
+    if (kind === 'push') {
+      normal = this.chosenFacesNormal(targets) ?? undefined;
+      if (!normal) {
+        this.host.status('Empujar cara (N): elige todos los vértices de una o más caras');
+        return;
+      }
+    }
     const half = [0, 1, 2].map((k) => (max[k] - min[k]) / 2) as Vec3;
     if ((kind === 'taper' || kind === 'twist' || kind === 'bend') && half.every((h) => h < 1e-6)) {
       this.host.status('Elige vértices que ocupen algo de espacio para afinar, torcer o curvar');
       return;
     }
     this.pendingBefore = cloneSelection(this.selection);
-    this.modal = { kind, targets, pivot, half, axis: this.axisLock !== null && this.axisLock < 3 ? this.axisLock : null, start: null, last: null, value: kind === 'scale' ? 1 : 0, valid: kind === 'scale' ? 1 : 0, moved: false };
+    this.modal = { kind, targets, pivot, half, normal, axis: this.axisLock !== null && this.axisLock < 3 ? this.axisLock : null, start: null, last: null, value: kind === 'scale' ? 1 : 0, valid: kind === 'scale' ? 1 : 0, moved: false };
     this.host.setOrbit(false);
-    const name = { rotate: 'Girar', scale: 'Escalar', taper: 'Afinar', twist: 'Torcer', bend: 'Curvar' }[kind];
-    const hint = kind === 'taper' || kind === 'twist' || kind === 'bend' ? 'mueve el ratón a los lados · X/Y/Z cambia el eje (por defecto Y)' : 'mueve el ratón · X/Y/Z fija el eje';
+    const name = { rotate: 'Girar', scale: 'Escalar', taper: 'Afinar', twist: 'Torcer', bend: 'Curvar', push: 'Empujar cara' }[kind];
+    const hint = kind === 'push' ? 'mueve el ratón en la dirección de la flecha de la cara (adelante empuja, atrás jala)' : kind === 'taper' || kind === 'twist' || kind === 'bend' ? 'mueve el ratón a los lados · X/Y/Z cambia el eje (por defecto Y)' : 'mueve el ratón · X/Y/Z fija el eje';
     this.host.status(`${name}: ${hint} · Ctrl invierte el imán · clic o Intro confirma · Esc cancela`);
     // Afinar, Torcer y Curvar trabajan a lo largo de un eje: si la selección es plana en el eje por defecto, se dice ya, con los ejes que sí sirven.
     if (kind === 'taper' || kind === 'twist' || kind === 'bend') {
@@ -1236,6 +1255,20 @@ export class MeshTool {
     const direction = this.host.camera.getWorldDirection(new THREE.Vector3());
     const axis = this.worldAxis(direction);
     return axis;
+  }
+
+  /** La normal media (hacia fuera) de las caras cuyos vértices están todos elegidos, o null si no hay ninguna. */
+  private chosenFacesNormal(targets: Target[]): Vec3 | null {
+    const sum: Vec3 = [0, 0, 0];
+    for (const target of targets) {
+      const chosen = chosenKeys(target);
+      for (const i of facesWithin(target.original, chosen)) {
+        const n = faceNormal(target.original.faces[i]);
+        for (let k = 0; k < 3; k++) sum[k] += n[k];
+      }
+    }
+    const length = Math.hypot(...sum);
+    return length < 1e-9 ? null : [sum[0] / length, sum[1] / length, sum[2] / length];
   }
 
   private updateModal(): void {
@@ -1268,6 +1301,24 @@ export class MeshTool {
       const point = { taper: taperPoint, twist: twistPoint, bend: bendPoint }[modal.kind];
       mapAt = (v) => (p) => point(p, modal.pivot, axis, half, v);
       this.host.status(`${{ taper: 'Afinar', twist: 'Torcer', bend: 'Curvar' }[modal.kind]} ${amount >= 0 ? '+' : ''}${amount.toFixed(2)} en ${'XYZ'[axis]}`);
+    } else if (modal.kind === 'push') {
+      const normal = modal.normal!;
+      // Cuántos píxeles mide una celda a lo largo de la normal: el ratón se mueve en esa dirección de pantalla. Si la normal apunta a la cámara, vale el movimiento vertical.
+      const from = this.screenOf(modal.pivot);
+      const to = this.screenOf([modal.pivot[0] + normal[0], modal.pivot[1] + normal[1], modal.pivot[2] + normal[2]]);
+      let dx = to.x - from.x;
+      let dy = to.y - from.y;
+      let perCell = Math.hypot(dx, dy);
+      if (perCell < PUSH_MIN_PIXELS) {
+        dx = 0;
+        dy = -PUSH_FALLBACK_PIXELS;
+        perCell = PUSH_FALLBACK_PIXELS;
+      }
+      let amount = ((x - modal.start.x) * dx + (y - modal.start.y) * dy) / (perCell * perCell);
+      if (!free) amount = Math.round(amount / SNAP_STEP) * SNAP_STEP;
+      value = amount;
+      mapAt = (v) => (p) => [p[0] + normal[0] * v, p[1] + normal[1] * v, p[2] + normal[2] * v];
+      this.host.status(`Empujar cara ${amount >= 0 ? '+' : ''}${amount.toFixed(2)} (${amount >= 0 ? 'hacia fuera' : 'hacia dentro'})`);
     } else if (modal.kind === 'rotate') {
       const axis = this.rotationAxis();
       const toward = this.host.camera.getWorldDirection(new THREE.Vector3());
@@ -1377,7 +1428,7 @@ export class MeshTool {
     this.host.model.commitPreview({ added: finals, removed: originals });
     if (this.pendingBefore) this.record(this.pendingBefore);
     this.refresh();
-    this.host.status({ rotate: 'Giro aplicado', scale: 'Escala aplicada', taper: 'Afinado aplicado', twist: 'Torcido aplicado', bend: 'Curvado aplicado' }[modal.kind]);
+    this.host.status({ rotate: 'Giro aplicado', scale: 'Escala aplicada', taper: 'Afinado aplicado', twist: 'Torcido aplicado', bend: 'Curvado aplicado', push: 'Cara empujada' }[modal.kind]);
   }
 
   /** Eje del mundo que más se parece a una dirección de pantalla. */
