@@ -1,5 +1,6 @@
 import { makePiece, type Piece, type Vec3 } from './piece';
 import { remapTexture } from './texture';
+import { uniqueVertices, vertexKey } from './vertices';
 
 /** Ejes con simetría activa y posición del plano de espejo en cada uno. */
 export interface Symmetry {
@@ -90,4 +91,82 @@ export function withSymmetry(pieces: Piece[], sym: Symmetry): Piece[] {
     }
   }
   return out;
+}
+
+/** Hasta dónde se busca el vértice gemelo de otro al otro lado del espejo. */
+export const MIRROR_TOLERANCE = 0.03;
+
+export interface Symmetrized {
+  /** Por pieza, la posición nueva de cada vértice que cambia (por su clave). */
+  moves: Map<number, Map<string, Vec3>>;
+  /** Vértices que se movieron. */
+  fixed: number;
+  /** `idPieza:clave` de los vértices sin gemelo en alguno de los espejos activos. */
+  unpaired: Set<string>;
+  /** Cuántos vértices hay en total. */
+  total: number;
+}
+
+/**
+ * Calcula cómo dejar las piezas exactamente simétricas: cada vértice se promedia con las imágenes en espejo de sus gemelos
+ * (el vértice más cercano a su reflejo, a menos de `tolerance`); los que están casi sobre un plano quedan sobre él.
+ */
+export function symmetrize(pieces: Piece[], sym: Symmetry, tolerance = MIRROR_TOLERANCE): Symmetrized {
+  const mirrors = reflections(sym);
+  const entries: { id: number; key: string; position: Vec3 }[] = [];
+  for (const piece of pieces) for (const position of uniqueVertices(piece)) entries.push({ id: piece.id, key: vertexKey(position), position });
+  const result: Symmetrized = { moves: new Map(), fixed: 0, unpaired: new Set(), total: entries.length };
+  if (mirrors.length === 0) return result;
+
+  const grid = new Map<string, number[]>();
+  entries.forEach((entry, i) => {
+    const k = entry.position.map((v) => Math.floor(v / tolerance)).join(',');
+    const list = grid.get(k);
+    if (list) list.push(i);
+    else grid.set(k, [i]);
+  });
+  const nearest = (target: Vec3): number => {
+    const base = target.map((v) => Math.floor(v / tolerance));
+    let best = -1;
+    let bestDistance = tolerance;
+    for (let dx = -1; dx <= 1; dx++) {
+      for (let dy = -1; dy <= 1; dy++) {
+        for (let dz = -1; dz <= 1; dz++) {
+          for (const i of grid.get(`${base[0] + dx},${base[1] + dy},${base[2] + dz}`) ?? []) {
+            const q = entries[i].position;
+            const d = Math.hypot(q[0] - target[0], q[1] - target[1], q[2] - target[2]);
+            if (d <= bestDistance) {
+              bestDistance = d;
+              best = i;
+            }
+          }
+        }
+      }
+    }
+    return best;
+  };
+
+  for (const entry of entries) {
+    const sum: Vec3 = [...entry.position];
+    let count = 1;
+    let lonely = false;
+    for (const mirror of mirrors) {
+      const partner = nearest(mirror.point(entry.position));
+      if (partner < 0) {
+        lonely = true;
+        continue;
+      }
+      const back = mirror.point(entries[partner].position);
+      for (let i = 0; i < 3; i++) sum[i] += back[i];
+      count++;
+    }
+    if (lonely) result.unpaired.add(`${entry.id}:${entry.key}`);
+    const average = sum.map((v) => v / count) as Vec3;
+    if (Math.hypot(average[0] - entry.position[0], average[1] - entry.position[1], average[2] - entry.position[2]) < 1e-6) continue;
+    let moves = result.moves.get(entry.id);
+    if (!moves) result.moves.set(entry.id, (moves = new Map()));
+    moves.set(entry.key, average);
+    result.fixed++;
+  }
+  return result;
 }
