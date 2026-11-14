@@ -149,7 +149,7 @@ function edgeThrough(piece: Piece, point: Vec3): { a: Vec3; b: Vec3; t: number }
 export class MeshTool {
   private selection: VertexSelection = new Map();
   private overlay = new THREE.Group();
-  private points = new THREE.Points(new THREE.BufferGeometry(), new THREE.PointsMaterial({ size: 9, sizeAttenuation: false, vertexColors: true, depthTest: false, transparent: true }));
+  private points = new THREE.Points(new THREE.BufferGeometry(), new THREE.PointsMaterial({ size: 9, sizeAttenuation: false, vertexColors: true, depthTest: false, depthWrite: false, transparent: true }));
   /** Tres líneas (X rojo, Y verde, Z azul) que cruzan el vértice agarrado mientras se arrastra; la del eje bloqueado se ve más fuerte. */
   private guide = new THREE.LineSegments(new THREE.BufferGeometry(), new THREE.LineBasicMaterial({ vertexColors: true, depthTest: false, transparent: true }));
   /** Contorno naranja de las caras torcidas. */
@@ -197,6 +197,10 @@ export class MeshTool {
 
   /** Con el modo «Añadir vértice», un clic sobre una arista o una cara le pone un vértice nuevo (sin Alt). */
   private adding = false;
+  /** Con el modo «Quitar vértice», un clic sobre un vértice lo quita (con su espejo si hay simetría). */
+  private removing = false;
+  /** Ver (y poder elegir) también los vértices que quedan detrás de una cara. Apagado, solo los que se ven desde la cámara. */
+  private seeBehind = true;
   /** Dónde se pulsó en modo añadir: si el ratón no se movió al soltar, es un clic y se añade; si se movió, era girar la cámara. */
   private pendingAdd: { x: number; y: number; ctrl: boolean } | null = null;
 
@@ -218,6 +222,10 @@ export class MeshTool {
   } | null = null;
 
   constructor(private readonly host: MeshToolHost) {
+    // Los vértices están justo sobre la superficie: se acercan un pelo a la cámara para que no los tape su propia cara al ocultar los de atrás.
+    (this.points.material as THREE.PointsMaterial).onBeforeCompile = (shader) => {
+      shader.vertexShader = shader.vertexShader.replace('#include <project_vertex>', '#include <project_vertex>\n  gl_Position.z -= 0.0015 * gl_Position.w;');
+    };
     this.points.renderOrder = 999;
     this.points.frustumCulled = false;
     this.overlay.add(this.points);
@@ -270,8 +278,36 @@ export class MeshTool {
 
   setAddMode(on: boolean): void {
     this.adding = on;
+    if (on) this.removing = false;
     this.pendingAdd = null;
     this.host.status(on ? 'Añadir vértice: clic en una arista (según la cantidad elegida; Ctrl donde pulses) o en una cara' : 'Añadir vértice desactivado');
+    this.host.onSelectionChange();
+  }
+
+  get removeMode(): boolean {
+    return this.removing;
+  }
+
+  setRemoveMode(on: boolean): void {
+    this.removing = on;
+    if (on) {
+      this.adding = false;
+      this.pendingAdd = null;
+    }
+    this.host.status(on ? 'Quitar vértice: clic en un vértice para quitarlo (la cara que lo usaba se queda con uno menos; un triángulo desaparece)' : 'Quitar vértice desactivado');
+    this.host.onSelectionChange();
+  }
+
+  get seesBehind(): boolean {
+    return this.seeBehind;
+  }
+
+  /** Con `on` se ven y se pueden elegir los vértices de detrás de las caras; sin él, solo los que se ven desde la cámara. */
+  setSeeBehind(on: boolean): void {
+    this.seeBehind = on;
+    (this.points.material as THREE.PointsMaterial).depthTest = !on;
+    this.paint();
+    this.host.status(on ? 'Se ven todos los vértices, también los de detrás' : 'Solo se ven los vértices que dan a la cámara');
     this.host.onSelectionChange();
   }
 
@@ -298,6 +334,7 @@ export class MeshTool {
     this.cancel();
     this.axisLock = null;
     this.adding = false;
+    this.removing = false;
     this.sliding = false;
     this.pendingAdd = null;
     this.active = false;
@@ -441,18 +478,43 @@ export class MeshTool {
   }
 
   private vertexAt(x: number, y: number): { piece: Piece; key: string; position: Vec3 } | null {
-    let best: { piece: Piece; key: string; position: Vec3 } | null = null;
-    let bestDistance = PICK_RADIUS;
+    const candidates: { entry: { piece: Piece; key: string; position: Vec3 }; d: number }[] = [];
     for (const entry of this.shown) {
       const s = this.screenOf(entry.position);
       if (s.behind) continue;
       const d = Math.hypot(s.x - x, s.y - y);
-      if (d < bestDistance) {
-        bestDistance = d;
-        best = entry;
+      if (d < PICK_RADIUS) candidates.push({ entry, d });
+    }
+    candidates.sort((a, b) => a.d - b.d);
+    // Sin «ver los de atrás», un vértice tapado por una cara no se puede agarrar.
+    return candidates.find(({ entry }) => this.seeBehind || !this.occluded(entry.position))?.entry ?? null;
+  }
+
+  /** ¿Hay una cara entre la cámara y este punto? (No cuenta la cara en la que el punto está.) */
+  private occluded(position: Vec3): boolean {
+    const origin = this.host.camera.getWorldPosition(new THREE.Vector3());
+    const target = new THREE.Vector3(...position);
+    const distance = origin.distanceTo(target);
+    const ray = new THREE.Ray(origin, target.clone().sub(origin).normalize());
+    const margin = 1e-3 + distance * 2e-3;
+    const point = new THREE.Vector3();
+    const a = new THREE.Vector3();
+    const b = new THREE.Vector3();
+    const c = new THREE.Vector3();
+    const seen = new Set<number>();
+    for (const { piece } of this.shown) {
+      if (seen.has(piece.id)) continue;
+      seen.add(piece.id);
+      for (const face of piece.faces) {
+        for (const [i, j, k] of triangulateFace(face)) {
+          a.set(...face[i]);
+          b.set(...face[j]);
+          c.set(...face[k]);
+          if (ray.intersectTriangle(a, b, c, false, point) && point.distanceTo(origin) < distance - margin) return true;
+        }
       }
     }
-    return best;
+    return false;
   }
 
   private isSelected(piece: Piece, key: string): boolean {
@@ -503,6 +565,13 @@ export class MeshTool {
       return;
     }
     const hit = this.vertexAt(e.clientX, e.clientY);
+    if (this.removing && hit && !e.shiftKey && !e.ctrlKey && !e.metaKey) {
+      // Quitar vértice: el vértice del clic es el único elegido y se quita (con simetría, su espejo también); un solo paso de deshacer.
+      e.stopImmediatePropagation();
+      this.selection = new Map([[hit.piece.id, new Set([hit.key])]]);
+      this.deleteSelected();
+      return;
+    }
     if (this.adding && !hit && !e.shiftKey) {
       // Se anota el clic: al soltar sin haber movido el ratón se añade el vértice; si se arrastró, la cámara gira como siempre.
       this.pendingAdd = { x: e.clientX, y: e.clientY, ctrl: e.ctrlKey || e.metaKey };
@@ -894,6 +963,7 @@ export class MeshTool {
     for (const { piece, position, key } of this.shown) {
       const s = this.screenOf(position);
       if (s.behind || s.x < x0 || s.x > x1 || s.y < y0 || s.y > y1) continue;
+      if (!this.seeBehind && this.occluded(position)) continue;
       const keys = this.selection.get(piece.id) ?? new Set<string>();
       keys.add(key);
       this.selection.set(piece.id, keys);
@@ -924,6 +994,11 @@ export class MeshTool {
     // A (de «añadir») enciende y apaga el modo añadir vértice, igual que el botón «+ Vértice».
     if (!this.drag && !e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey && key === 'a') {
       this.setAddMode(!this.adding);
+      return true;
+    }
+    // D (de «deshacerse de un vértice») enciende y apaga el modo quitar vértice, igual que el botón «− Vértice».
+    if (!this.drag && !e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey && key === 'd') {
+      this.setRemoveMode(!this.removing);
       return true;
     }
     // En Malla, X / Y / Z fijan el eje (como los botones «Mover en») y no tocan la simetría, que se cambia con sus casillas.
