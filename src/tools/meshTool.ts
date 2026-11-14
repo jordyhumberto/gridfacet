@@ -4,7 +4,7 @@ import { faceNormal, type Piece, type Vec3 } from '../core/piece';
 import { MIRROR_TOLERANCE, pieceKey, reflectPiece, reflections, symmetrize, type Reflection, type Symmetry } from '../core/symmetry';
 import { triangulateFace } from '../core/convex';
 import { collapses } from '../core/selfIntersect';
-import { edgeLoop, pieceEdges, fillHoles, connectVertices, dissolveEdge, slideSegment, straightenVertices, flattenVertices, flattenWarped, warpedFaces, finFaces, flagFins, splitFacesAtCenter, addFace, deleteFaces, deleteVertices, extrudeEdge, extrudeFaces, facesWithin, flipFaces, mergeVertices, placeVertices, rotateAbout, scaleAbout, setFaceFlags, splitEdge, addMirrorPairOnFace, addVertexOnFace, taperPoint, twistPoint, bendPoint, uniqueVertices, vertexKey } from '../core/vertices';
+import { triangulateFaces, edgeLoop, pieceEdges, fillHoles, connectVertices, dissolveEdge, slideSegment, straightenVertices, flattenVertices, flattenWarped, warpedFaces, finFaces, flagFins, splitFacesAtCenter, addFace, deleteFaces, deleteVertices, extrudeEdge, extrudeFaces, facesWithin, flipFaces, mergeVertices, placeVertices, rotateAbout, scaleAbout, setFaceFlags, splitEdge, addMirrorPairOnFace, addVertexOnFace, taperPoint, twistPoint, bendPoint, uniqueVertices, vertexKey } from '../core/vertices';
 import type { ModelScene } from '../scene';
 
 /** Paso de la rejilla de imán, en celdas. */
@@ -1554,6 +1554,20 @@ export class MeshTool {
       return result ? sameId(result, piece) : null;
     }, keepPosition);
     this.host.status(any ? `Invertir cara: ${count} cara(s) dadas la vuelta` : 'Invertir cara: elige todos los vértices de la cara');
+  }
+
+  /** Parte en triángulos las caras de cuatro o más vértices cuyos vértices están todos elegidos (los vértices no se mueven; el contorno de cada cara queda igual). */
+  triangulateSelected(): void {
+    let split = 0;
+    this.change((piece, _keys, _dirAt, parts) => {
+      const faces = facesOfParts(piece, parts);
+      if (faces.length === 0) return null;
+      const result = triangulateFaces(piece, new Set(faces));
+      if (!result) return null;
+      split += result.split;
+      return sameId(result.piece, piece);
+    }, keepPosition);
+    this.host.status(split > 0 ? `Triangular: ${split} cara(s) partidas en triángulos (para juntarlos: Quitar segmento, Q)` : 'Triangular: elige todos los vértices de una cara con cuatro o más lados');
   }
 
   /** Extruye las caras cuyos vértices están todos elegidos; los vértices de arriba quedan elegidos para seguir moviéndolos. */

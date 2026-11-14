@@ -108,6 +108,16 @@ describe('Malla con simetría y una pieza que cruza el espejo', () => {
     expect(isSymmetric(model.all())).toBe(true);
   });
 
+  it('triangular parte las caras y se deshace (una cara que cruza el espejo no puede quedar con diagonales simétricas)', () => {
+    const { model, tool, choose } = setup();
+    choose(() => true);
+    tool.triangulateSelected();
+    expect(model.all()[0].faces).toHaveLength(12);
+    expect(uniqueVertices(model.all()[0])).toHaveLength(8);
+    model.undo();
+    expect(model.all()[0].faces).toHaveLength(6);
+  });
+
   it('Simetrizar arregla un modelo que se descuadró y se deshace de un paso', () => {
     const { model, tool, choose } = setup();
     const piece = model.all()[0];
