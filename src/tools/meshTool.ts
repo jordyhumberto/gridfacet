@@ -222,9 +222,11 @@ export class MeshTool {
   } | null = null;
 
   constructor(private readonly host: MeshToolHost) {
-    // Los vértices están justo sobre la superficie: se acercan un pelo a la cámara para que no los tape su propia cara al ocultar los de atrás.
+    // Los vértices están justo sobre la superficie: se acercan a la cámara un 0,6 % de su distancia, sobre el mismo rayo (no se mueven en pantalla),
+    // para que no los tape su propia cara al ocultar los de atrás. Se mide en distancia y no en profundidad de pantalla: a lo lejos esa profundidad
+    // está tan comprimida que el desplazamiento antes sacaba a la vista vértices de la cara de atrás.
     (this.points.material as THREE.PointsMaterial).onBeforeCompile = (shader) => {
-      shader.vertexShader = shader.vertexShader.replace('#include <project_vertex>', '#include <project_vertex>\n  gl_Position.z -= 0.0015 * gl_Position.w;');
+      shader.vertexShader = shader.vertexShader.replace('#include <project_vertex>', '#include <project_vertex>\n  mvPosition.xyz *= 0.994;\n  gl_Position = projectionMatrix * mvPosition;');
     };
     this.points.renderOrder = 999;
     this.points.frustumCulled = false;
