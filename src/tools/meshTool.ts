@@ -91,6 +91,26 @@ const partOf = (target: Target, p: Vec3): Part => target.parts.find((part) => pa
 const chosenKeys = (target: Target): Set<string> => target.parts.find((part) => !part.mirror)?.keys ?? new Set();
 
 const sameId = (made: Piece, old: Piece): Piece => ({ ...made, id: old.id });
+/**
+ * Las caras cuyos vértices están todos elegidos, grupo por grupo (los elegidos por un lado, cada imagen en espejo por otro).
+ * Mezclar los grupos haría pasar por elegida una cara que cruza el espejo con solo un borde elegido (sus dos vértices más sus dos imágenes).
+ */
+const facesOfParts = (piece: Piece, parts: Part[]): number[] => [...new Set(parts.flatMap((part) => facesWithin(piece, part.full)))];
+/** Los grupos de vértices de una pieza, juntando los que comparten alguno (un vértice sobre el plano del espejo es de los dos lados). */
+function vertexGroups(parts: Part[]): Set<string>[] {
+  const groups: Set<string>[] = [];
+  for (const part of parts) {
+    let group = new Set(part.full);
+    for (let i = groups.length - 1; i >= 0; i--) {
+      if ([...groups[i]].some((key) => group.has(key))) {
+        group = new Set([...group, ...groups[i]]);
+        groups.splice(i, 1);
+      }
+    }
+    groups.push(group);
+  }
+  return groups;
+}
 /** Lo que devuelve una operación de `change` cuando la pieza se queda sin caras y desaparece (distinto de `null`: no hacer nada). */
 const REMOVE = Symbol('remove');
 
@@ -1267,11 +1287,19 @@ export class MeshTool {
       this.host.status('Elige al menos dos vértices de la misma pieza para fusionarlos');
       return;
     }
-    this.change((piece, keys) => {
-      const merged = mergeVertices(piece, keys);
-      if (merged) return sameId(merged, piece);
-      // Con menos de dos vértices elegidos en esta pieza no hay nada que fusionar; con dos o más y sin resultado, se quedó sin caras.
-      return uniqueVertices(piece).filter((p) => keys.has(vertexKey(p))).length < 2 ? null : REMOVE;
+    this.change((piece, _keys, _dirAt, parts) => {
+      // Con simetría cada lado se funde en su propio punto: mezclar los elegidos con sus imágenes los llevaría a todos al centro.
+      // Solo se juntan los grupos que comparten algún vértice (uno puesto sobre el plano del espejo es de los dos lados).
+      let current: Piece | null = piece;
+      let any = false;
+      for (const group of vertexGroups(parts)) {
+        if (uniqueVertices(current).filter((p) => group.has(vertexKey(p))).length < 2) continue;
+        any = true;
+        current = mergeVertices(current, group);
+        // Con dos o más vértices y sin resultado, la pieza se quedó sin caras.
+        if (!current) return REMOVE;
+      }
+      return any ? sameId(current, piece) : null;
     });
   }
 
@@ -1309,8 +1337,8 @@ export class MeshTool {
   /** Quita las caras cuyos vértices están todos elegidos. */
   deleteFacesSelected(): void {
     let any = false;
-    this.change((piece, keys) => {
-      const faces = facesWithin(piece, keys);
+    this.change((piece, _keys, _dirAt, parts) => {
+      const faces = facesOfParts(piece, parts);
       if (faces.length === 0) return null;
       any = true;
       const result = deleteFaces(piece, new Set(faces));
@@ -1322,8 +1350,8 @@ export class MeshTool {
   /** Da la vuelta a las caras cuyos vértices están todos elegidos. */
   flipSelected(): void {
     let any = false;
-    this.change((piece, keys) => {
-      const faces = facesWithin(piece, keys);
+    this.change((piece, _keys, _dirAt, parts) => {
+      const faces = facesOfParts(piece, parts);
       if (faces.length === 0) return null;
       any = true;
       const result = flipFaces(piece, new Set(faces));
@@ -1335,8 +1363,8 @@ export class MeshTool {
   /** Extruye las caras cuyos vértices están todos elegidos; los vértices de arriba quedan elegidos para seguir moviéndolos. */
   extrudeSelected(distance = this.growDistance): void {
     let any = false;
-    this.change((piece, keys) => {
-      const faces = facesWithin(piece, keys);
+    this.change((piece, _keys, _dirAt, parts) => {
+      const faces = facesOfParts(piece, parts);
       if (faces.length === 0) return null;
       const result = extrudeFaces(piece, new Set(faces), distance);
       if (!result) return null;
@@ -1527,7 +1555,8 @@ export class MeshTool {
   faceFlagCount(flag: number): { total: number; on: number } {
     let total = 0;
     let on = 0;
-    for (const { piece } of this.shown) {
+    // `shown` trae una entrada por vértice: cada pieza se cuenta una sola vez.
+    for (const piece of new Set(this.shown.map((entry) => entry.piece))) {
       const keys = this.selection.get(piece.id);
       if (!keys) continue;
       for (const i of facesWithin(piece, keys)) {
@@ -1540,8 +1569,8 @@ export class MeshTool {
 
   /** Pone o quita una propiedad (`FACE_DOUBLE`, `FACE_UNLIT`) a las caras cuyos vértices están todos elegidos. */
   setFaceFlag(flag: number, on: boolean): void {
-    this.change((piece, keys) => {
-      const faces = facesWithin(piece, keys);
+    this.change((piece, _keys, _dirAt, parts) => {
+      const faces = facesOfParts(piece, parts);
       const result = faces.length ? setFaceFlags(piece, new Set(faces), flag, on) : null;
       return result ? sameId(result, piece) : null;
     }, keepPosition);
