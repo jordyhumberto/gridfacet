@@ -95,6 +95,8 @@ export function withSymmetry(pieces: Piece[], sym: Symmetry): Piece[] {
 
 /** Hasta dónde se busca el vértice gemelo de otro al otro lado del espejo. */
 export const MIRROR_TOLERANCE = 0.03;
+/** Cuántas vueltas como máximo da `symmetrize` para que todos los gemelos se pongan de acuerdo. */
+const MAX_PASSES = 12;
 
 export interface Symmetrized {
   /** Por pieza, la posición nueva de cada vértice que cambia (por su clave). */
@@ -118,55 +120,78 @@ export function symmetrize(pieces: Piece[], sym: Symmetry, tolerance = MIRROR_TO
   const result: Symmetrized = { moves: new Map(), fixed: 0, unpaired: new Set(), total: entries.length };
   if (mirrors.length === 0) return result;
 
-  const grid = new Map<string, number[]>();
-  entries.forEach((entry, i) => {
-    const k = entry.position.map((v) => Math.floor(v / tolerance)).join(',');
-    const list = grid.get(k);
-    if (list) list.push(i);
-    else grid.set(k, [i]);
-  });
-  const nearest = (target: Vec3): number => {
-    const base = target.map((v) => Math.floor(v / tolerance));
-    let best = -1;
-    let bestDistance = tolerance;
-    for (let dx = -1; dx <= 1; dx++) {
-      for (let dy = -1; dy <= 1; dy++) {
-        for (let dz = -1; dz <= 1; dz++) {
-          for (const i of grid.get(`${base[0] + dx},${base[1] + dy},${base[2] + dz}`) ?? []) {
-            const q = entries[i].position;
-            const d = Math.hypot(q[0] - target[0], q[1] - target[1], q[2] - target[2]);
-            if (d <= bestDistance) {
-              bestDistance = d;
-              best = i;
+  const original = entries.map((entry) => entry.position);
+  let current = original;
+  // Los gemelos se emparejan de uno en uno, de los más cercanos a los más lejanos: así dos vértices vecinos no se disputan el mismo gemelo.
+  // Con las posiciones ya promediadas se repite hasta que nada se mueva.
+  for (let pass = 0; pass < MAX_PASSES; pass++) {
+    const grid = new Map<string, number[]>();
+    current.forEach((position, i) => {
+      const k = position.map((v) => Math.floor(v / tolerance)).join(',');
+      const list = grid.get(k);
+      if (list) list.push(i);
+      else grid.set(k, [i]);
+    });
+    const partners = mirrors.map((mirror) => {
+      const candidates: { d: number; i: number; j: number }[] = [];
+      current.forEach((position, i) => {
+        const target = mirror.point(position);
+        const base = target.map((v) => Math.floor(v / tolerance));
+        for (let dx = -1; dx <= 1; dx++) {
+          for (let dy = -1; dy <= 1; dy++) {
+            for (let dz = -1; dz <= 1; dz++) {
+              for (const j of grid.get(`${base[0] + dx},${base[1] + dy},${base[2] + dz}`) ?? []) {
+                if (j < i) continue;
+                const q = current[j];
+                const d = Math.hypot(q[0] - target[0], q[1] - target[1], q[2] - target[2]);
+                if (d <= tolerance) candidates.push({ d, i, j });
+              }
             }
           }
         }
+      });
+      candidates.sort((a, b) => a.d - b.d || a.i - b.i || a.j - b.j);
+      const partner = new Array<number>(current.length).fill(-1);
+      for (const { i, j } of candidates) {
+        if (partner[i] >= 0 || partner[j] >= 0) continue;
+        partner[i] = j;
+        partner[j] = i;
       }
-    }
-    return best;
-  };
-
-  for (const entry of entries) {
-    const sum: Vec3 = [...entry.position];
-    let count = 1;
-    let lonely = false;
-    for (const mirror of mirrors) {
-      const partner = nearest(mirror.point(entry.position));
-      if (partner < 0) {
-        lonely = true;
-        continue;
-      }
-      const back = mirror.point(entries[partner].position);
-      for (let i = 0; i < 3; i++) sum[i] += back[i];
-      count++;
-    }
-    if (lonely) result.unpaired.add(`${entry.id}:${entry.key}`);
-    const average = sum.map((v) => v / count) as Vec3;
-    if (Math.hypot(average[0] - entry.position[0], average[1] - entry.position[1], average[2] - entry.position[2]) < 1e-6) continue;
+      return partner;
+    });
+    const next: Vec3[] = [];
+    let moved = 0;
+    entries.forEach((entry, index) => {
+      const here = current[index];
+      const sum: Vec3 = [...here];
+      let count = 1;
+      let lonely = false;
+      mirrors.forEach((mirror, m) => {
+        const partner = partners[m][index];
+        if (partner < 0) {
+          lonely = true;
+          return;
+        }
+        const back = mirror.point(current[partner]);
+        for (let i = 0; i < 3; i++) sum[i] += back[i];
+        count++;
+      });
+      if (lonely && pass === 0) result.unpaired.add(`${entry.id}:${entry.key}`);
+      const average = sum.map((v) => v / count) as Vec3;
+      if (Math.hypot(average[0] - here[0], average[1] - here[1], average[2] - here[2]) > 1e-7) moved++;
+      next.push(average);
+    });
+    current = next;
+    if (moved === 0) break;
+  }
+  entries.forEach((entry, index) => {
+    const to = current[index];
+    const from = original[index];
+    if (Math.hypot(to[0] - from[0], to[1] - from[1], to[2] - from[2]) < 1e-6) return;
     let moves = result.moves.get(entry.id);
     if (!moves) result.moves.set(entry.id, (moves = new Map()));
-    moves.set(entry.key, average);
+    moves.set(entry.key, to);
     result.fixed++;
-  }
+  });
   return result;
 }

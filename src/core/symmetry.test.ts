@@ -95,6 +95,28 @@ describe('symmetrize', () => {
     expect(result.fixed).toBe(0);
   });
 
+  it('con muchos vértices juntos y descuadrados, una sola pasada lo deja simétrico', () => {
+    // Una malla densa (vértices cada 2 cm) con el lado derecho movido unos milímetros al azar (siempre igual).
+    let seed = 7;
+    const random = () => ((seed = (seed * 16807) % 2147483647) / 2147483647 - 0.5) * 0.008;
+    const faces: [number, number, number][][] = [];
+    const point = (x: number, y: number, jitter: boolean): [number, number, number] => [x + (jitter ? random() : 0), y + (jitter ? random() : 0), 0];
+    for (let ix = -10; ix < 10; ix++) {
+      for (let iy = 0; iy < 6; iy++) {
+        const x = ix * 0.02;
+        const y = iy * 0.02;
+        const right = ix >= 0;
+        faces.push([point(x, y, right), point(x + 0.02, y, right), point(x, y + 0.02, right)]);
+      }
+    }
+    const piece = makePiece(faces, 0xffffff);
+    const onX = sym(true, false, false);
+    const first = symmetrize([piece], onX);
+    expect(first.fixed).toBeGreaterThan(0);
+    const moved = makePiece(piece.faces.map((face) => face.map((p) => first.moves.get(piece.id)?.get(vertexKey(p)) ?? p)), 0xffffff);
+    expect(symmetrize([moved], onX).fixed).toBe(0);
+  });
+
   it('sin ejes activos no hace nada', () => {
     const piece = square();
     const result = symmetrize([piece], sym(false, false, false));
