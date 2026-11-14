@@ -2201,6 +2201,9 @@ meshGrowAmountEl.addEventListener('input', () => {
   if (value > 0 && value <= gridSize) meshTool.growDistance = value;
 });
 const meshSeeBehindEl = document.getElementById('meshSeeBehind') as HTMLInputElement;
+// El navegador puede devolver la casilla a como se dejó antes de recargar la página: la herramienta arranca igual que ella, si no se veían los vértices al revés.
+meshTool.setSeeBehind(meshSeeBehindEl.checked, false);
+meshTool.flattenOnRelease = meshAutoFlatEl.checked;
 meshSeeBehindEl.addEventListener('change', () => {
   meshTool.setSeeBehind(meshSeeBehindEl.checked);
   meshSeeBehindEl.blur();
