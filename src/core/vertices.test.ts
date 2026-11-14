@@ -768,3 +768,35 @@ describe('segmentos y recorrido recto', () => {
     expect(edgeLoop(c, a, b).size).toBe(2);
   });
 });
+
+describe('triangular caras', () => {
+  it('un cubo pasa de 6 caras a 12 triángulos y no cambia de forma', async () => {
+    const { triangulateFaces } = await import('./vertices');
+    const c = cube();
+    const result = triangulateFaces(c, new Set(c.faces.map((_, i) => i)))!;
+    expect(result.split).toBe(6);
+    expect(result.piece.faces).toHaveLength(12);
+    expect(result.piece.faces.every((f) => f.length === 3)).toBe(true);
+    expect(volume(result.piece)).toBeCloseTo(volume(c), 6);
+  });
+
+  it('solo parte las caras indicadas y deja las demás', async () => {
+    const { triangulateFaces } = await import('./vertices');
+    const c = cube();
+    const result = triangulateFaces(c, new Set([0]))!;
+    expect(result.piece.faces).toHaveLength(7);
+  });
+
+  it('los triángulos ya hechos no se tocan', async () => {
+    const { triangulateFaces } = await import('./vertices');
+    const tri = makePiece([[[0, 0, 0], [1, 0, 0], [0, 1, 0]]], 0xffffff);
+    expect(triangulateFaces(tri, new Set([0]))).toBeNull();
+  });
+
+  it('cada triángulo conserva el color de su cara', async () => {
+    const { triangulateFaces } = await import('./vertices');
+    const c = makePiece([[[0, 0, 0], [1, 0, 0], [1, 1, 0], [0, 1, 0]]], 0xffffff, [0xff0000]);
+    const result = triangulateFaces(c, new Set([0]))!;
+    expect(result.piece.faceColors).toEqual([0xff0000, 0xff0000]);
+  });
+});

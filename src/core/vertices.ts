@@ -1,5 +1,6 @@
 import { FACE_DOUBLE, faceNormal, makePiece, type Piece, type Vec3 } from './piece';
 import { remapTexture, type FaceTexture } from './texture';
+import { triangulateFace } from './convex';
 
 /** Clave de un vértice por su posición: los de varias caras que coinciden son el mismo vértice de la pieza. */
 export const vertexKey = (p: Vec3): string => p.map((v) => Math.round(v * 1e5)).join(',');
@@ -1002,4 +1003,38 @@ export function edgeLoop(piece: Piece, from: Vec3, to: Vec3, maxTurn = 30): Set<
     walk(end, start);
   }
   return result;
+}
+
+/**
+ * Parte en triángulos las caras indicadas (por su posición en `piece`) que tengan cuatro o más vértices. Cada triángulo conserva el color, las
+ * propiedades y la textura de su cara. Devuelve la pieza y cuántas caras partió; null si no había ninguna que partir.
+ */
+export function triangulateFaces(piece: Piece, faces: ReadonlySet<number>): { piece: Piece; split: number } | null {
+  const outFaces: Vec3[][] = [];
+  const colors: number[] = [];
+  const textures: (FaceTexture | null)[] = [];
+  const flags: number[] = [];
+  let split = 0;
+  piece.faces.forEach((face, i) => {
+    const color = piece.faceColors?.[i] ?? piece.color;
+    const texture = piece.faceTextures?.[i] ?? null;
+    const flag = piece.faceFlags?.[i] ?? 0;
+    const triangles = faces.has(i) && face.length >= 4 ? triangulateFace(face) : [];
+    if (triangles.length === 0) {
+      outFaces.push(face);
+      colors.push(color);
+      textures.push(texture);
+      flags.push(flag);
+      return;
+    }
+    split++;
+    for (const [a, b, c] of triangles) {
+      const triangle = [face[a], face[b], face[c]];
+      outFaces.push(triangle);
+      colors.push(color);
+      textures.push(texture ? remapTexture(texture, face, triangle, (p) => p) : null);
+      flags.push(flag);
+    }
+  });
+  return split === 0 ? null : { piece: withFaces(piece, outFaces, colors, textures, flags), split };
 }
