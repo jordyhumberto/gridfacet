@@ -2163,6 +2163,7 @@ function syncMeshActions(): void {
   meshInfoEl.textContent = (count === 0 ? 'Ningún vértice elegido' : `${count} vértice(s) elegidos`) + (warped > 0 ? ` · ${warped} cara(s) torcida(s) en naranja` : '');
   document.getElementById('meshAdd')!.classList.toggle('active', meshTool.addMode);
   document.getElementById('meshSlide')!.classList.toggle('active', meshTool.slideMode);
+  document.getElementById('meshRemove')!.classList.toggle('active', meshTool.removeMode);
   meshActionsEl.querySelectorAll<HTMLButtonElement>('button[data-meshaxis]').forEach((button) => {
     const axis = button.dataset.meshaxis === 'free' ? null : Number(button.dataset.meshaxis);
     button.classList.toggle('active', axis === meshTool.axis);
@@ -2189,6 +2190,15 @@ meshDensityEl.addEventListener('change', () => {
 document.getElementById('meshSlide')!.addEventListener('click', (event) => {
   (event.currentTarget as HTMLButtonElement).blur();
   meshTool.setSlideMode(!meshTool.slideMode);
+});
+document.getElementById('meshRemove')!.addEventListener('click', (event) => {
+  (event.currentTarget as HTMLButtonElement).blur();
+  meshTool.setRemoveMode(!meshTool.removeMode);
+});
+const meshSeeBehindEl = document.getElementById('meshSeeBehind') as HTMLInputElement;
+meshSeeBehindEl.addEventListener('change', () => {
+  meshTool.setSeeBehind(meshSeeBehindEl.checked);
+  meshSeeBehindEl.blur();
 });
 document.getElementById('meshAdd')!.addEventListener('click', (event) => {
   (event.currentTarget as HTMLButtonElement).blur();
@@ -3859,6 +3869,8 @@ const GUIDE: Record<Mode, [string, string][]> = {
     ['Q', 'quitar segmento: con los dos vértices de un segmento que separa dos caras del mismo plano, las junta en una (lo contrario de Unir vértices; con vértices elegidos sustituye a la Q que baja las piezas)'],
     ['L', 'alinear: con tres o más vértices elegidos, deja rectos los de en medio sobre la línea que une el primero y el último que elegiste (los extremos no se mueven; con vértices elegidos sustituye a la L que rellena)'],
     ['P', 'aplanar: lleva los vértices elegidos (tres o más, por ejemplo los de una cara chueca) al plano que mejor se ajusta a todos; con vértices elegidos sustituye a la P que abre el modo Pintar'],
+    ['D', 'quitar vértice: enciende y apaga el modo (botón «− Vértice»); con él, un clic en un vértice lo quita (con el espejo activo, también el de enfrente). En Malla sustituye a la D que hunde las piezas'],
+    ['Ver vértices de atrás (casilla)', 'marcada se ven y se pueden elegir todos los vértices; sin marcar, solo los que dan a la cámara'],
     ['+ Vértice (panel)', 'activa el modo añadir: clic en una arista (en cuartos; Ctrl: donde pulses) o dentro de una cara le pone un vértice nuevo, que queda elegido para moverlo. Arrastrar sigue girando la cámara'],
     ['Alt+clic en una arista', 'ponerle un vértice nuevo sin activar el modo (en cuartos; Ctrl: donde hagas clic)'],
     ['Panel', 'Todos · Fusionar (junta los elegidos en uno) · Borrar · A la rejilla'],
