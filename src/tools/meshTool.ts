@@ -195,6 +195,8 @@ export class MeshTool {
   /** En cuántas partes se divide una arista al añadir un vértice (2 = por la mitad, 4 = cuartos…); 0 es libre, donde se pulse. */
   edgeDivisions = 4;
 
+  /** Cuánto crecen «Cara desde segmento» y «Extruir cara» (en unidades del modelo); se cambia desde el panel. */
+  growDistance = EXTRUDE_DISTANCE;
   /** Con el modo «Añadir vértice», un clic sobre una arista o una cara le pone un vértice nuevo (sin Alt). */
   private adding = false;
   /** Con el modo «Quitar vértice», un clic sobre un vértice lo quita (con su espejo si hay simetría). */
@@ -1328,7 +1330,7 @@ export class MeshTool {
   }
 
   /** Extruye las caras cuyos vértices están todos elegidos; los vértices de arriba quedan elegidos para seguir moviéndolos. */
-  extrudeSelected(distance = EXTRUDE_DISTANCE): void {
+  extrudeSelected(distance = this.growDistance): void {
     let any = false;
     this.change((piece, keys) => {
       const faces = facesWithin(piece, keys);
@@ -1341,14 +1343,24 @@ export class MeshTool {
     if (!any) this.host.status('Elige todos los vértices de una cara para extruirla');
   }
 
-  /** Con dos vértices elegidos en una pieza, hace crecer una cara desde ese segmento; los dos vértices nuevos quedan elegidos para moverlos. */
-  growFaceFromEdge(distance = EXTRUDE_DISTANCE): void {
+  /**
+   * Con dos vértices elegidos en una pieza, hace crecer una cara desde ese segmento; los dos vértices nuevos quedan elegidos para moverlos.
+   * Con simetría, el espejo hace crecer la suya a la vez: cada grupo (los elegidos y cada espejo) usa sus dos vértices por separado.
+   */
+  growFaceFromEdge(distance = this.growDistance): void {
     let any = false;
-    this.change((piece, keys) => {
-      const result = extrudeEdge(piece, keys, distance);
-      if (!result) return null;
+    this.change((piece, _keys, _dirAt, parts) => {
+      let current = piece;
+      const select = new Set<string>();
+      for (const part of parts) {
+        const result = extrudeEdge(current, part.full, distance);
+        if (!result) continue;
+        current = result.piece;
+        for (const key of result.keys) select.add(key);
+      }
+      if (select.size === 0) return null;
       any = true;
-      return { piece: sameId(result.piece, piece), select: result.keys };
+      return { piece: sameId(current, piece), select };
     });
     if (!any) this.host.status('Elige exactamente dos vértices de una pieza para hacer crecer una cara desde su segmento');
   }
