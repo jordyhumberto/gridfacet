@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { PLANE_XY, PLANE_XZ, PLANE_YZ, axisAllowed, lockLabel, type AxisLock } from '../core/axisLock';
 import type { Piece, Vec3 } from '../core/piece';
-import { pieceKey, reflectPiece, reflections, type Reflection, type Symmetry } from '../core/symmetry';
+import { MIRROR_TOLERANCE, pieceKey, reflectPiece, reflections, symmetrize, type Reflection, type Symmetry } from '../core/symmetry';
 import { triangulateFace } from '../core/convex';
 import { collapses } from '../core/selfIntersect';
 import { connectVertices, dissolveEdge, slideSegment, straightenVertices, flattenVertices, flattenWarped, warpedFaces, finFaces, flagFins, splitFacesAtCenter, addFace, deleteFaces, deleteVertices, extrudeEdge, extrudeFaces, facesWithin, flipFaces, mergeVertices, placeVertices, rotateAbout, scaleAbout, setFaceFlags, splitEdge, addMirrorPairOnFace, addVertexOnFace, taperPoint, twistPoint, bendPoint, uniqueVertices, vertexKey } from '../core/vertices';
@@ -35,6 +35,8 @@ export type TransformKind = 'rotate' | 'scale' | 'taper' | 'twist' | 'bend';
 const DRAG_THRESHOLD = 3;
 
 const NORMAL_COLOR = 0xe6e8ee;
+/** Vértice sin gemelo al otro lado del espejo mientras la simetría está activa. */
+const UNPAIRED_COLOR = 0xff4fd8;
 const SELECTED_COLOR = 0xffd34d;
 const HOVER_COLOR = 0x40e0ff;
 /** Qué dice cada tecla de acción de Malla cuando no hay vértices elegidos. */
@@ -125,8 +127,6 @@ function vertexGroups(parts: Part[]): Set<string>[] {
 /** Lo que devuelve una operación de `change` cuando la pieza se queda sin caras y desaparece (distinto de `null`: no hacer nada). */
 const REMOVE = Symbol('remove');
 
-/** Cuánto puede quedar descentrada la pareja de un vértice respecto a su espejo exacto y aun así moverse con él. */
-const MIRROR_TOLERANCE = 0.03;
 const FIN_MESSAGE = 'Ese punto solo toca dos caras: queda como una aleta plana (sin volumen) y se ve por los dos lados. Añade el punto en una cara para tener volumen';
 const cloneSelection = (selection: VertexSelection): VertexSelection => new Map([...selection].map(([id, keys]) => [id, new Set(keys)]));
 /** Los vértices no se mueven: la selección se queda donde está. */
@@ -189,6 +189,8 @@ export class MeshTool {
   private warnLines = new THREE.LineSegments(new THREE.BufferGeometry(), new THREE.LineBasicMaterial({ color: WARN_COLOR, depthTest: false, transparent: true, opacity: 0.9 }));
   private warpCache = new WeakMap<Piece, number[]>();
   private warped = 0;
+  /** `idPieza:clave` de los vértices mostrados que no tienen gemelo en el espejo (con simetría activa). */
+  private unpaired = new Set<string>();
   /** Al soltar un arrastre, las caras que hayan quedado torcidas se aplanan solas (opcional). */
   flattenOnRelease = false;
   private shown: { piece: Piece; position: Vec3; key: string }[] = [];
@@ -427,6 +429,7 @@ export class MeshTool {
     }
     this.shown = shown;
     this.updateWarnings();
+    this.updateUnpaired();
     this.paint();
     this.host.onSelectionChange();
   }
@@ -444,6 +447,58 @@ export class MeshTool {
       this.warpCache.set(piece, found);
     }
     return found;
+  }
+
+  /** Cuántos vértices de los que se ven no tienen gemelo al otro lado del espejo (0 sin simetría activa). */
+  get unpairedCount(): number {
+    return this.unpaired.size;
+  }
+
+  /** Busca los vértices sin gemelo en las piezas que se ven; con simetría apagada no hay ninguno. */
+  private updateUnpaired(): void {
+    const pieces = [...new Map(this.shown.map(({ piece }) => [piece.id, piece])).values()];
+    this.unpaired = pieces.length > 0 ? symmetrize(pieces, this.host.symmetry()).unpaired : new Set();
+  }
+
+  /**
+   * Deja exactamente simétricas las piezas elegidas (o todas las que se ven si no hay ninguna): cada vértice se promedia con el espejo
+   * de su gemelo y los que están casi sobre un plano quedan sobre él. Un solo paso de deshacer.
+   */
+  symmetrizeAll(): void {
+    const sym = this.host.symmetry();
+    if (reflections(sym).length === 0) {
+      this.host.status('Simetrizar: activa antes la simetría en algún eje (X, Y o Z)');
+      return;
+    }
+    const pieces = [...new Map(this.shown.map(({ piece }) => [piece.id, piece])).values()];
+    const result = symmetrize(pieces, sym);
+    const removed: Piece[] = [];
+    const added: Piece[] = [];
+    const before = cloneSelection(this.selection);
+    const next: VertexSelection = new Map();
+    for (const piece of pieces) {
+      const moves = result.moves.get(piece.id);
+      const kept = this.selection.get(piece.id);
+      if (!moves) {
+        if (kept) next.set(piece.id, kept);
+        continue;
+      }
+      const fixed = placeVertices(piece, new Set(moves.keys()), (p) => moves.get(vertexKey(p)) ?? p);
+      if (!fixed) continue;
+      removed.push(piece);
+      added.push(fixed);
+      if (kept) next.set(fixed.id, new Set([...kept].map((key) => (moves.has(key) ? vertexKey(moves.get(key)!) : key))));
+    }
+    if (added.length > 0) {
+      const depthBefore = this.host.model.undoDepth;
+      this.host.model.apply({ added, removed });
+      this.selection = next;
+      if (this.host.model.undoDepth > depthBefore) this.record(before);
+    }
+    this.refresh();
+    const lonely = this.unpaired.size;
+    const tail = lonely > 0 ? ` · ${lonely} vértice(s) sin gemelo (en rosa): no tienen con quién igualarse` : '';
+    this.host.status(result.fixed > 0 ? `Simetrizar: ${result.fixed} vértice(s) ajustados${tail}` : `Simetrizar: ya era simétrico${tail}`);
   }
 
   /** Dibuja en naranja el contorno de cada cara torcida y cuenta cuántas son. */
@@ -495,7 +550,7 @@ export class MeshTool {
       positions.push(position[0], position[1], position[2]);
       const selected = this.selection.get(piece.id)?.has(key) ?? false;
       const hovered = this.hover?.piece.id === piece.id && this.hover.key === key;
-      color.set(hovered ? HOVER_COLOR : selected ? SELECTED_COLOR : NORMAL_COLOR);
+      color.set(hovered ? HOVER_COLOR : selected ? SELECTED_COLOR : this.unpaired.has(`${piece.id}:${key}`) ? UNPAIRED_COLOR : NORMAL_COLOR);
       colors.push(color.r, color.g, color.b);
     }
     const geometry = this.points.geometry;

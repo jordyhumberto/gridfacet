@@ -2179,7 +2179,8 @@ function syncMeshActions(): void {
   meshActionsEl.hidden = mode !== 'mesh';
   const count = meshTool.count;
   const warped = meshTool.warpedCount;
-  meshInfoEl.textContent = (count === 0 ? 'Ningún vértice elegido' : `${count} vértice(s) elegidos`) + (warped > 0 ? ` · ${warped} cara(s) torcida(s) en naranja` : '');
+  const unpaired = meshTool.unpairedCount;
+  meshInfoEl.textContent = (count === 0 ? 'Ningún vértice elegido' : `${count} vértice(s) elegidos`) + (warped > 0 ? ` · ${warped} cara(s) torcida(s) en naranja` : '') + (unpaired > 0 ? ` · ${unpaired} vértice(s) sin gemelo en rosa (Simetrizar)` : '');
   document.getElementById('meshAdd')!.classList.toggle('active', meshTool.addMode);
   document.getElementById('meshSlide')!.classList.toggle('active', meshTool.slideMode);
   document.getElementById('meshRemove')!.classList.toggle('active', meshTool.removeMode);
@@ -2188,7 +2189,7 @@ function syncMeshActions(): void {
     button.classList.toggle('active', axis === meshTool.axis);
   });
   meshActionsEl.querySelectorAll<HTMLButtonElement>('button[data-mesh]').forEach((button) => {
-    button.disabled = button.dataset.mesh !== 'all' && count === 0;
+    button.disabled = button.dataset.mesh !== 'all' && button.dataset.mesh !== 'symmetrize' && count === 0;
   });
   // Las casillas reflejan las caras elegidas (todos sus vértices): marcadas si todas la tienen, a medias si solo algunas.
   for (const [input, flag] of [[meshDoubleEl, FACE_DOUBLE], [meshUnlitEl, FACE_UNLIT], [meshBehindEl, FACE_BEHIND]] as const) {
@@ -2271,6 +2272,7 @@ meshActionsEl.querySelectorAll<HTMLButtonElement>('button[data-mesh]').forEach((
     else if (action === 'dissolve') meshTool.dissolveSelected();
     else if (action === 'straighten') meshTool.straightenSelected();
     else if (action === 'flatten') meshTool.flattenSelected();
+    else if (action === 'symmetrize') meshTool.symmetrizeAll();
   }),
 );
 
@@ -3908,6 +3910,7 @@ const GUIDE: Record<Mode, [string, string][]> = {
     ['Q', 'quitar segmento: con los dos vértices de un segmento que separa dos caras del mismo plano, las junta en una (lo contrario de Trazar segmento; con vértices elegidos sustituye a la Q que baja las piezas)'],
     ['L', 'alinear en línea: con tres o más vértices elegidos, deja rectos los de en medio sobre la línea que une el primero y el último que elegiste (los extremos no se mueven; con vértices elegidos sustituye a la L que rellena)'],
     ['P', 'aplanar en plano: lleva los vértices elegidos (tres o más, por ejemplo los de una cara chueca) al plano que mejor se ajusta a todos; con vértices elegidos sustituye a la P que abre el modo Pintar'],
+    ['Simetrizar (botón)', 'con la simetría activa, deja exactamente iguales los dos lados de las piezas elegidas (o de todas): promedia cada vértice con el espejo de su gemelo y pega al plano los que están casi sobre él. Los vértices sin gemelo se ven en rosa'],
     ['D', 'quitar vértice: enciende y apaga el modo (botón «− Vértice»); con él, un clic en un vértice lo quita (con el espejo activo, también el de enfrente). En Malla sustituye a la D que hunde las piezas'],
     ['Ver vértices de atrás (casilla)', 'marcada se ven y se pueden elegir todos los vértices; sin marcar, solo los que dan a la cámara'],
     ['+ Vértice (panel)', 'activa el modo añadir: clic en una arista (en cuartos; Ctrl: donde pulses) o dentro de una cara le pone un vértice nuevo, que queda elegido para moverlo. Arrastrar sigue girando la cámara'],
@@ -4108,6 +4111,7 @@ function syncSymmetry(): void {
     box.checked = symmetry[axis];
   }
   refreshGhost();
+  meshTool.refresh();
 }
 function toggleSymmetry(axis: 'x' | 'y' | 'z'): void {
   symmetry[axis] = !symmetry[axis];

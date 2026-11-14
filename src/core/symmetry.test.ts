@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { CATALOG, buildPiece } from './catalog';
-import { volume } from './piece';
+import { makePiece, volume } from './piece';
+import { vertexKey } from './vertices';
 import { translatePiece } from './transform';
-import { pieceKey, reflectPiece, reflections, withSymmetry, withSymmetryPoints, type Symmetry } from './symmetry';
+import { pieceKey, reflectPiece, reflections, symmetrize, withSymmetry, withSymmetryPoints, type Symmetry } from './symmetry';
 
 const sym = (x: boolean, y: boolean, z: boolean, center: [number, number, number] = [0, 0, 0]): Symmetry => ({ x, y, z, center });
 const cube = (x: number, y = 0, z = 0) => buildPiece(CATALOG[0], x, y * 3, z, 0, 0xff0000);
@@ -55,5 +56,57 @@ describe('simetría', () => {
   it('pieceKey reconoce piezas iguales', () => {
     expect(pieceKey(cube(2))).toBe(pieceKey(cube(2)));
     expect(pieceKey(cube(2))).not.toBe(pieceKey(cube(3)));
+  });
+});
+
+describe('symmetrize', () => {
+  const onX = sym(true, false, false);
+  // Un cuadrado que cruza el plano X=0, con el lado derecho ligeramente descuadrado.
+  const square = () =>
+    makePiece(
+      [
+        [[-1, 0, 0], [1.01, 0, 0.004], [1, 1, 0], [-1, 1, 0]],
+      ],
+      0xffffff,
+    );
+
+  it('deja la pieza exactamente simétrica', () => {
+    const piece = square();
+    const result = symmetrize([piece], onX);
+    expect(result.fixed).toBeGreaterThan(0);
+    expect(result.unpaired.size).toBe(0);
+    const moves = result.moves.get(piece.id)!;
+    const final = piece.faces[0].map((p) => moves.get(vertexKey(p)) ?? p);
+    const keys = new Set(final.map(vertexKey));
+    for (const p of final) expect(keys.has(vertexKey([-p[0], p[1], p[2]]))).toBe(true);
+  });
+
+  it('un vértice casi sobre el plano queda sobre él', () => {
+    const piece = makePiece([[[0.01, 0, 0], [1, 0, 0], [0, 1, 0]], [[-1, 0, 0], [0.01, 0, 0], [0, 1, 0]]], 0xffffff);
+    const result = symmetrize([piece], onX);
+    const moves = result.moves.get(piece.id)!;
+    expect(moves.get(vertexKey([0.01, 0, 0]))![0]).toBeCloseTo(0, 6);
+  });
+
+  it('cuenta los vértices sin gemelo y no los toca', () => {
+    const piece = makePiece([[[1, 0, 0], [2, 0, 0], [1, 1, 0]]], 0xffffff);
+    const result = symmetrize([piece], onX);
+    expect(result.unpaired.size).toBe(3);
+    expect(result.fixed).toBe(0);
+  });
+
+  it('sin ejes activos no hace nada', () => {
+    const piece = square();
+    const result = symmetrize([piece], sym(false, false, false));
+    expect(result.fixed).toBe(0);
+    expect(result.total).toBe(4);
+  });
+
+  it('empareja entre piezas distintas (cada lado en su pieza)', () => {
+    const left = makePiece([[[-1, 0, 0], [-2, 0, 0], [-1, 1, 0]]], 0xffffff);
+    const right = makePiece([[[1.01, 0, 0], [2, 0, 0], [1, 1, 0.005]]], 0xffffff);
+    const result = symmetrize([left, right], onX);
+    expect(result.unpaired.size).toBe(0);
+    expect(result.moves.size).toBeGreaterThan(0);
   });
 });
