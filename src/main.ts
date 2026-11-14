@@ -1,3 +1,4 @@
+import { panStep, type PanState } from './core/pan';
 import * as THREE from 'three';
 import { axisAllowed, lockLabel, planeNormal, type AxisLock } from './core/axisLock';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
@@ -4128,19 +4129,28 @@ const PAN_KEYS: Record<string, [number, number]> = {
 };
 const panKeys = new Set<string>();
 let panFast = false;
-const panVelocity = new THREE.Vector3();
-window.addEventListener('keyup', (e) => panKeys.delete(e.key.toLowerCase()));
-window.addEventListener('blur', () => panKeys.clear());
+/** Cuánto lleva pulsada la flecha (segundos): al principio la cámara avanza despacio, para poder ajustar de a poco, y acelera si se mantiene. */
+const panState: PanState = { held: 0, vx: 0, vy: 0 };
+window.addEventListener('keyup', (e) => {
+  panKeys.delete(e.key.toLowerCase());
+  // Soltar Ctrl con la flecha pulsada vuelve a la velocidad normal (antes se quedaba rápida hasta la siguiente pulsación).
+  panFast = panKeys.size > 0 && (e.ctrlKey || e.metaKey);
+});
+// Si el navegador pierde el foco o la pestaña se oculta se pierde el «soltar tecla»: sin esto la cámara seguía avanzando sola.
+const stopPan = (): void => {
+  panKeys.clear();
+  panFast = false;
+};
+window.addEventListener('blur', stopPan);
+document.addEventListener('visibilitychange', () => document.hidden && stopPan());
 
-/** Desplaza cámara y punto de mira juntos por el plano de la pantalla, con aceleración suave. */
+/** Desplaza cámara y punto de mira juntos por el plano de la pantalla: arranca lento, acelera si se mantiene pulsada y frena casi al soltar. */
 function updatePan(dt: number): void {
-  const want = new THREE.Vector3();
-  for (const key of panKeys) want.x += PAN_KEYS[key][0], want.y += PAN_KEYS[key][1];
-  const speed = camera.position.distanceTo(controls.target) * (panFast ? 1.6 : 0.7);
-  want.multiplyScalar(speed);
-  panVelocity.lerp(want, 1 - Math.exp(-dt * 10));
-  if (panVelocity.lengthSq() < 1e-6) return;
-  const move = new THREE.Vector3(panVelocity.x, panVelocity.y, 0).multiplyScalar(dt).applyQuaternion(camera.quaternion);
+  const want: [number, number] = [0, 0];
+  for (const key of panKeys) (want[0] += PAN_KEYS[key][0]), (want[1] += PAN_KEYS[key][1]);
+  const [x, y] = panStep(panState, want, dt, camera.position.distanceTo(controls.target), panFast);
+  if (x === 0 && y === 0) return;
+  const move = new THREE.Vector3(x, y, 0).applyQuaternion(camera.quaternion);
   camera.position.add(move);
   controls.target.add(move);
 }
