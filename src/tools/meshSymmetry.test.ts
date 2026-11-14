@@ -129,6 +129,18 @@ describe('Malla con simetría y una pieza que cruza el espejo', () => {
     expect(isSymmetric(model.all())).toBe(true);
   });
 
+  it('corte en anillo parte las caras de la vuelta y deja el modelo simétrico', () => {
+    const { model, tool, choose } = setup();
+    const verts = uniqueVertices(model.all()[0]);
+    const right = Math.max(...verts.map((p) => p[0]));
+    const front = Math.max(...verts.map((p) => p[2]));
+    // Arista vertical de la derecha y delante: el anillo da la vuelta por las cuatro caras laterales.
+    choose((p) => p[0] === right && p[2] === front);
+    tool.ringCutSelected();
+    expect(model.all()[0].faces).toHaveLength(6 - 4 + 8);
+    expect(isSymmetric(model.all())).toBe(true);
+  });
+
   it('Simetrizar arregla un modelo que se descuadró y se deshace de un paso', () => {
     const { model, tool, choose } = setup();
     const piece = model.all()[0];

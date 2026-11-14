@@ -846,3 +846,54 @@ describe('biselar una arista', () => {
     expect(bevelEdge(c, a, b, 0)).toBeNull();
   });
 });
+
+describe('corte en anillo', () => {
+  const edgeOf = (c = cube()) => {
+    const vs = uniqueVertices(c);
+    const a = vs[0];
+    const b = vs.find((p) => p !== a && [0, 1, 2].filter((k) => p[k] !== a[k]).length === 1)!;
+    return { c, a, b };
+  };
+
+  it('un cubo cortado por una arista da una vuelta de cuatro caras: 10 caras y 12 vértices', async () => {
+    const { ringCut } = await import('./vertices');
+    const { c, a, b } = edgeOf();
+    const result = ringCut(c, a, b)!;
+    expect(result.cut).toBe(4);
+    expect(result.piece.faces).toHaveLength(6 - 4 + 8);
+    expect(uniqueVertices(result.piece)).toHaveLength(12);
+    expect(result.created.size).toBe(4);
+  });
+
+  it('la forma y el volumen no cambian y el cuerpo sigue cerrado', async () => {
+    const { ringCut, openLoops } = await import('./vertices');
+    const { c, a, b } = edgeOf();
+    const result = ringCut(c, a, b)!;
+    expect(volume(result.piece)).toBeCloseTo(volume(c), 6);
+    expect(openLoops(result.piece)).toHaveLength(0);
+  });
+
+  it('los vértices nuevos están a la mitad de las aristas', async () => {
+    const { ringCut } = await import('./vertices');
+    const { c, a, b } = edgeOf();
+    const result = ringCut(c, a, b)!;
+    const mid = vertexKey([(a[0] + b[0]) / 2, (a[1] + b[1]) / 2, (a[2] + b[2]) / 2]);
+    expect(result.created.has(mid)).toBe(true);
+  });
+
+  it('en una tira de cuadrados abierta termina donde se acaba la tira', async () => {
+    const { ringCut } = await import('./vertices');
+    const quad = (x: number) => [[x, 0, 0], [x + 1, 0, 0], [x + 1, 1, 0], [x, 1, 0]] as Vec3[];
+    const strip = makePiece([quad(0), quad(1), quad(2)], 0xffffff);
+    // La arista vertical entre el primer y el segundo cuadrado (x=1).
+    const result = ringCut(strip, [1, 0, 0], [1, 1, 0])!;
+    expect(result.cut).toBe(3);
+    expect(result.piece.faces).toHaveLength(6);
+  });
+
+  it('una arista que no existe no corta nada', async () => {
+    const { ringCut } = await import('./vertices');
+    const c = cube();
+    expect(ringCut(c, [100, 100, 100], [101, 100, 100])).toBeNull();
+  });
+});

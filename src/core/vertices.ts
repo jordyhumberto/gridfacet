@@ -1115,3 +1115,91 @@ export function bevelEdge(piece: Piece, from: Vec3, to: Vec3, size: number): { p
   flags.push(0);
   return { piece: withFaces(piece, faces, colors, textures, flags), created: new Set([a1, a2, b1, b2].map(vertexKey)) };
 }
+
+/**
+ * Corte en anillo: parte por la mitad la arista entre dos vértices y sigue, cara tras cara, por las aristas opuestas de los cuadriláteros que
+ * atraviesa, hasta volver al principio o llegar a una cara que no es un cuadrilátero. Cada cuadrilátero queda en dos, y las caras donde acaba
+ * el anillo reciben el vértice nuevo en su arista. Devuelve la pieza, los vértices nuevos y cuántas caras se partieron; null si no hay ninguna.
+ */
+export function ringCut(piece: Piece, from: Vec3, to: Vec3): { piece: Piece; created: Set<string>; cut: number } | null {
+  const ka = vertexKey(from);
+  const kb = vertexKey(to);
+  const edgeId = (x: string, y: string): string => (x < y ? `${x}|${y}` : `${y}|${x}`);
+  const facesOf = new Map<string, number[]>();
+  piece.faces.forEach((face, i) =>
+    face.forEach((p, k) => {
+      const id = edgeId(vertexKey(p), vertexKey(face[(k + 1) % face.length]));
+      const list = facesOf.get(id) ?? [];
+      list.push(i);
+      facesOf.set(id, list);
+    }),
+  );
+  const first = edgeId(ka, kb);
+  if (!facesOf.has(first)) return null;
+  // Para cada cara que se parte: la arista por donde entra el anillo y la opuesta por donde sale.
+  const cutFaces = new Map<number, { entry: string; exit: string }>();
+  const ringEdges = new Set<string>([first]);
+  const walk = (startFace: number): void => {
+    let edge = first;
+    let face = startFace;
+    while (true) {
+      const ring = piece.faces[face];
+      if (ring.length !== 4 || cutFaces.has(face)) return;
+      const at = ring.findIndex((p, k) => edgeId(vertexKey(p), vertexKey(ring[(k + 1) % 4])) === edge);
+      if (at < 0) return;
+      const exit = edgeId(vertexKey(ring[(at + 2) % 4]), vertexKey(ring[(at + 3) % 4]));
+      cutFaces.set(face, { entry: edge, exit });
+      ringEdges.add(exit);
+      const others = (facesOf.get(exit) ?? []).filter((i) => i !== face);
+      if (others.length !== 1) return;
+      edge = exit;
+      face = others[0];
+    }
+  };
+  for (const face of facesOf.get(first)!) walk(face);
+  if (cutFaces.size === 0) return null;
+  const midpoints = new Map<string, Vec3>();
+  const midOf = (a: Vec3, b: Vec3): Vec3 => {
+    const id = edgeId(vertexKey(a), vertexKey(b));
+    let mid = midpoints.get(id);
+    if (!mid) midpoints.set(id, (mid = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2, (a[2] + b[2]) / 2]));
+    return mid;
+  };
+  const faces: Vec3[][] = [];
+  const colors: number[] = [];
+  const textures: (FaceTexture | null)[] = [];
+  const flags: number[] = [];
+  const push = (source: number, face: Vec3[], next: Vec3[]): void => {
+    faces.push(next);
+    colors.push(piece.faceColors?.[source] ?? piece.color);
+    const texture = piece.faceTextures?.[source] ?? null;
+    textures.push(texture ? remapTexture(texture, face, next, (p) => p) : null);
+    flags.push(piece.faceFlags?.[source] ?? 0);
+  };
+  piece.faces.forEach((face, i) => {
+    const cut = cutFaces.get(i);
+    if (cut) {
+      const at = face.findIndex((p, k) => edgeId(vertexKey(p), vertexKey(face[(k + 1) % 4])) === cut.entry);
+      const [w0, w1, w2, w3] = [0, 1, 2, 3].map((k) => face[(at + k) % 4]);
+      const me = midOf(w0, w1);
+      const mx = midOf(w2, w3);
+      push(i, face, [w0, me, mx, w3]);
+      push(i, face, [me, w1, w2, mx]);
+      return;
+    }
+    // Una cara que no se parte pero toca una arista del anillo (donde éste acaba) recibe el vértice nuevo en esa arista.
+    const next: Vec3[] = [];
+    face.forEach((p, k) => {
+      const q = face[(k + 1) % face.length];
+      next.push(p);
+      if (ringEdges.has(edgeId(vertexKey(p), vertexKey(q)))) next.push(midOf(p, q));
+    });
+    if (next.length === face.length) {
+      faces.push(face);
+      colors.push(piece.faceColors?.[i] ?? piece.color);
+      textures.push(piece.faceTextures?.[i] ?? null);
+      flags.push(piece.faceFlags?.[i] ?? 0);
+    } else push(i, face, next);
+  });
+  return { piece: withFaces(piece, faces, colors, textures, flags), created: new Set([...midpoints.values()].map(vertexKey)), cut: cutFaces.size };
+}

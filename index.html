@@ -399,6 +399,7 @@
               <span class="groupTitle">Segmentos</span>
             <label title="Cuánto se corta la esquina al biselar una arista, en celdas (medido sobre los segmentos vecinos; tiene que ser menor que ellos)"><input type="number" id="meshBevelSize" min="0.02" step="0.05" value="0.25" style="width:56px" /> Tamaño del bisel</label>
             <button data-mesh="bevel" title="Bisela la arista entre dos vértices elegidos: corta sus esquinas y deja una cara nueva entre las dos caras de la arista. Cada extremo tiene que tocar tres caras, como la esquina de un cubo">Biselar arista</button>
+            <button data-mesh="ring" title="Con los dos vértices de una arista elegidos, parte por la mitad todas las caras de cuatro lados que atraviesa en fila (la vuelta entera si cierra): pone un vértice nuevo en medio de cada arista y los deja elegidos. La forma no cambia">Corte en anillo</button>
             <button data-mesh="connect" title="Con dos vértices elegidos de una misma cara (no vecinos, con el camino libre entre ellos), traza el segmento que los une: la cara se parte en dos. Con el espejo activo también parte la cara espejo. Atajo: tecla U">Trazar segmento (U)</button>
             <button data-mesh="dissolve" title="Quita el segmento entre dos vértices elegidos: las dos caras que separa, si están en el mismo plano, pasan a ser una (lo contrario de Trazar segmento). No borra vértices. Atajo: tecla Q">Quitar segmento (Q)</button>
             </div>
