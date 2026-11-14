@@ -37,6 +37,8 @@ const DRAG_THRESHOLD = 3;
 const NORMAL_COLOR = 0xe6e8ee;
 const SELECTED_COLOR = 0xffd34d;
 const HOVER_COLOR = 0x40e0ff;
+/** Cuánto se acercan los vértices a la cámara al ocultar los de atrás (fracción de su distancia): al dibujarlos y al decidir si uno está tapado. */
+const VERTEX_BIAS = 0.006;
 /** Contorno de las caras torcidas. */
 const WARN_COLOR = 0xff8a1f;
 
@@ -228,7 +230,7 @@ export class MeshTool {
     // para que no los tape su propia cara al ocultar los de atrás. Se mide en distancia y no en profundidad de pantalla: a lo lejos esa profundidad
     // está tan comprimida que el desplazamiento antes sacaba a la vista vértices de la cara de atrás.
     (this.points.material as THREE.PointsMaterial).onBeforeCompile = (shader) => {
-      shader.vertexShader = shader.vertexShader.replace('#include <project_vertex>', '#include <project_vertex>\n  mvPosition.xyz *= 0.994;\n  gl_Position = projectionMatrix * mvPosition;');
+      shader.vertexShader = shader.vertexShader.replace('#include <project_vertex>', `#include <project_vertex>\n  mvPosition.xyz *= ${(1 - VERTEX_BIAS).toFixed(4)};\n  gl_Position = projectionMatrix * mvPosition;`);
     };
     this.points.renderOrder = 999;
     this.points.frustumCulled = false;
@@ -307,11 +309,11 @@ export class MeshTool {
   }
 
   /** Con `on` se ven y se pueden elegir los vértices de detrás de las caras; sin él, solo los que se ven desde la cámara. */
-  setSeeBehind(on: boolean): void {
+  setSeeBehind(on: boolean, announce = true): void {
     this.seeBehind = on;
     (this.points.material as THREE.PointsMaterial).depthTest = !on;
     this.paint();
-    this.host.status(on ? 'Se ven todos los vértices, también los de detrás' : 'Solo se ven los vértices que dan a la cámara');
+    if (announce) this.host.status(on ? 'Se ven todos los vértices, también los de detrás' : 'Solo se ven los vértices que dan a la cámara');
     this.host.onSelectionChange();
   }
 
@@ -500,7 +502,8 @@ export class MeshTool {
     const target = new THREE.Vector3(...position);
     const distance = origin.distanceTo(target);
     const ray = new THREE.Ray(origin, target.clone().sub(origin).normalize());
-    const margin = 1e-3 + distance * 2e-3;
+    // El mismo margen con el que se dibujan los vértices (se acercan a la cámara un 0,6 % de su distancia): lo que se ve se puede elegir y viceversa.
+    const margin = distance * VERTEX_BIAS;
     const point = new THREE.Vector3();
     const a = new THREE.Vector3();
     const b = new THREE.Vector3();
@@ -1300,7 +1303,7 @@ export class MeshTool {
       }
       return current === piece ? null : sameId(current, piece);
     }, keepPosition);
-    if (made === 0) this.host.status('No se creó ninguna cara: elige tres o más vértices de una misma pieza que no formen ya una cara');
+    if (made === 0) this.host.status(`No se creó ninguna cara: elige tres o más vértices de una misma pieza que no formen ya una cara${this.seeBehind ? '' : ' (si te faltan vértices, están tapados: marca «Ver vértices de atrás»)'}`);
   }
 
   /** Quita las caras cuyos vértices están todos elegidos. */
