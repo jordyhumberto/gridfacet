@@ -4,7 +4,7 @@ import { faceNormal, type Piece, type Vec3 } from '../core/piece';
 import { MIRROR_TOLERANCE, pieceKey, reflectPiece, reflections, symmetrize, type Reflection, type Symmetry } from '../core/symmetry';
 import { triangulateFace } from '../core/convex';
 import { collapses } from '../core/selfIntersect';
-import { bevelEdge, triangulateFaces, edgeLoop, pieceEdges, fillHoles, connectVertices, dissolveEdge, slideSegment, straightenVertices, flattenVertices, flattenWarped, warpedFaces, finFaces, flagFins, splitFacesAtCenter, addFace, deleteFaces, deleteVertices, extrudeEdge, extrudeFaces, facesWithin, flipFaces, mergeVertices, placeVertices, rotateAbout, scaleAbout, setFaceFlags, splitEdge, addMirrorPairOnFace, addVertexOnFace, taperPoint, twistPoint, bendPoint, uniqueVertices, vertexKey } from '../core/vertices';
+import { ringCut, bevelEdge, triangulateFaces, edgeLoop, pieceEdges, fillHoles, connectVertices, dissolveEdge, slideSegment, straightenVertices, flattenVertices, flattenWarped, warpedFaces, finFaces, flagFins, splitFacesAtCenter, addFace, deleteFaces, deleteVertices, extrudeEdge, extrudeFaces, facesWithin, flipFaces, mergeVertices, placeVertices, rotateAbout, scaleAbout, setFaceFlags, splitEdge, addMirrorPairOnFace, addVertexOnFace, taperPoint, twistPoint, bendPoint, uniqueVertices, vertexKey } from '../core/vertices';
 import type { ModelScene } from '../scene';
 
 /** Paso de la rejilla de imán, en celdas. */
@@ -1556,6 +1556,28 @@ export class MeshTool {
       return result ? sameId(result, piece) : null;
     }, keepPosition);
     this.host.status(any ? `Invertir cara: ${count} cara(s) dadas la vuelta` : 'Invertir cara: elige todos los vértices de la cara');
+  }
+
+  /** Corta por la mitad el anillo de caras que atraviesa la arista entre dos vértices elegidos; los vértices nuevos quedan elegidos para moverlos o escalarlos juntos. */
+  ringCutSelected(): void {
+    let cuts = 0;
+    let faces = 0;
+    this.change((piece, _keys, _dirAt, parts) => {
+      let current = piece;
+      const select = new Set<string>();
+      for (const part of parts) {
+        const pair = uniqueVertices(current).filter((p) => part.full.has(vertexKey(p)));
+        if (pair.length !== 2) continue;
+        const result = ringCut(current, pair[0], pair[1]);
+        if (!result) continue;
+        current = result.piece;
+        cuts++;
+        faces += result.cut;
+        for (const key of result.created) select.add(key);
+      }
+      return current === piece ? null : { piece: sameId(current, piece), select };
+    });
+    this.host.status(cuts > 0 ? `Corte en anillo: ${faces} cara(s) partidas${cuts > 1 ? ` en ${cuts} anillos (el espejo también)` : ''}; los vértices nuevos quedan elegidos` : 'Corte en anillo: elige los dos vértices de una arista (que dé paso a caras de cuatro lados)');
   }
 
   /** Bisela la arista entre dos vértices elegidos (con el espejo, también la suya); los cuatro vértices nuevos quedan elegidos para ajustarlos. */
