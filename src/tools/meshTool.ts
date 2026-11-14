@@ -175,7 +175,7 @@ export class MeshTool {
     startY: number;
     moved: boolean;
     delta: Vec3;
-    /** Con «Deslizar», el segmento por el que se mueve el vértice agarrado: dirección y cuánto puede avanzar hacia cada lado. */
+    /** Con «Deslizar vértice», el segmento por el que se mueve el vértice agarrado: dirección y cuánto puede avanzar hacia cada lado. */
     slide?: { dir: Vec3; min: number; max: number };
   } | null = null;
   /** Deslizar: el vértice agarrado solo se mueve a lo largo del segmento en que está (sin deformar la pieza), entre sus dos vecinos. */
@@ -1019,7 +1019,7 @@ export class MeshTool {
       this.setSlideMode(!this.sliding);
       return true;
     }
-    // U (de «unir») traza el segmento entre dos vértices elegidos, igual que el botón «Unir vértices».
+    // U (de «unir») traza el segmento entre dos vértices elegidos, igual que el botón «Trazar segmento».
     if (key === 'u' && !this.drag && !e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey) {
       this.connectSelected();
       return true;
@@ -1029,12 +1029,12 @@ export class MeshTool {
       this.dissolveSelected();
       return true;
     }
-    // L (de «línea») endereza los vértices elegidos entre el primero y el último, igual que el botón «Alinear».
+    // L (de «línea») endereza los vértices elegidos entre el primero y el último, igual que el botón «Alinear en línea».
     if (key === 'l' && !this.drag && !e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey) {
       this.straightenSelected();
       return true;
     }
-    // P (de «plano») aplana los vértices elegidos, igual que el botón «Aplanar».
+    // P (de «plano») aplana los vértices elegidos, igual que el botón «Aplanar en plano».
     if (key === 'p' && !this.drag && !e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey) {
       this.flattenSelected();
       return true;
@@ -1384,7 +1384,7 @@ export class MeshTool {
     this.change((piece, keys, _dirAt, parts) => {
       let current = piece;
       let here = 0;
-      // Como en Unir vértices: con simetría, cada grupo (los elegidos y cada espejo) quita su propio segmento.
+      // Como en Trazar segmento: con simetría, cada grupo (los elegidos y cada espejo) quita su propio segmento.
       for (const part of parts) {
         const result = dissolveEdge(current, part.full);
         if (!result) continue;

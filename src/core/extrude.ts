@@ -25,7 +25,7 @@ function distanceToFace(face: Vec3[], unit: Vec3, point: Vec3): number {
 
 /**
  * Cara de la pieza que contiene `point` y mira hacia `normal`; sirve para saber qué cara se tocó con el ratón.
- * Varias caras pueden estar en el mismo plano (una cara partida con Unir vértices, o hecha de triángulos con «+ Vértice»): gana la que tiene el punto dentro
+ * Varias caras pueden estar en el mismo plano (una cara partida con Trazar segmento, o hecha de triángulos con «+ Vértice»): gana la que tiene el punto dentro
  * (o la más cercana), no la primera de la lista.
  */
 export function faceAt(piece: Piece, point: Vec3, normal: Vec3): Vec3[] | undefined {
