@@ -800,3 +800,49 @@ describe('triangular caras', () => {
     expect(result.piece.faceColors).toEqual([0xff0000, 0xff0000]);
   });
 });
+
+describe('biselar una arista', () => {
+  const edgeOf = (c = cube()) => {
+    const vs = uniqueVertices(c);
+    const a = vs[0];
+    const b = vs.find((p) => p !== a && [0, 1, 2].filter((k) => p[k] !== a[k]).length === 1)!;
+    return { c, a, b };
+  };
+
+  it('un cubo con una arista biselada tiene un vértice más por extremo y una cara más', async () => {
+    const { bevelEdge } = await import('./vertices');
+    const { c, a, b } = edgeOf();
+    const result = bevelEdge(c, a, b, 0.25)!;
+    expect(result).not.toBeNull();
+    expect(result.piece.faces).toHaveLength(7);
+    expect(uniqueVertices(result.piece)).toHaveLength(10);
+    expect(result.created.size).toBe(4);
+  });
+
+  it('el cuerpo sigue cerrado y pierde algo de volumen', async () => {
+    const { bevelEdge, openLoops } = await import('./vertices');
+    const { c, a, b } = edgeOf();
+    const result = bevelEdge(c, a, b, 0.25)!;
+    expect(openLoops(result.piece)).toHaveLength(0);
+    expect(volume(result.piece)).toBeLessThan(volume(c));
+    expect(volume(result.piece)).toBeGreaterThan(0);
+  });
+
+  it('la cara nueva mira hacia fuera', async () => {
+    const { bevelEdge } = await import('./vertices');
+    const { c, a, b } = edgeOf();
+    const result = bevelEdge(c, a, b, 0.25)!;
+    const cap = result.piece.faces[result.piece.faces.length - 1];
+    const middle: Vec3 = [0, 1, 2].map((k) => uniqueVertices(c).reduce((s, p) => s + p[k], 0) / 8) as Vec3;
+    const centre: Vec3 = [0, 1, 2].map((k) => cap.reduce((s, p) => s + p[k], 0) / 4) as Vec3;
+    const n = faceNormal(cap);
+    expect(n[0] * (centre[0] - middle[0]) + n[1] * (centre[1] - middle[1]) + n[2] * (centre[2] - middle[2])).toBeGreaterThan(0);
+  });
+
+  it('un tamaño mayor que los segmentos vecinos no se puede', async () => {
+    const { bevelEdge } = await import('./vertices');
+    const { c, a, b } = edgeOf();
+    expect(bevelEdge(c, a, b, 50)).toBeNull();
+    expect(bevelEdge(c, a, b, 0)).toBeNull();
+  });
+});

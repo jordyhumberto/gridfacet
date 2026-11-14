@@ -2176,7 +2176,7 @@ magnetEl.addEventListener('change', () => {
 });
 if (import.meta.env.DEV) (window as unknown as Record<string, unknown>).__mesh = meshTool;
 /** Cuántos vértices (de una misma pieza) pide cada acción de Malla para poder usarse; «face» pide al menos una cara con todos sus vértices elegidos. */
-const NEEDS: Record<string, number | 'face'> = { merge: 2, face: 3, fillhole: 1, delface: 'face', triangulate: 'face', push: 'face', flip: 'face', extrude: 'face', connect: 2, dissolve: 2, growedge: 2, straighten: 3, flatten: 3, taper: 2, twist: 2, bend: 2 };
+const NEEDS: Record<string, number | 'face'> = { merge: 2, bevel: 2, face: 3, fillhole: 1, delface: 'face', triangulate: 'face', push: 'face', flip: 'face', extrude: 'face', connect: 2, dissolve: 2, growedge: 2, straighten: 3, flatten: 3, taper: 2, twist: 2, bend: 2 };
 function syncMeshActions(): void {
   meshActionsEl.hidden = mode !== 'mesh';
   const count = meshTool.count;
@@ -2236,6 +2236,21 @@ meshGrowAmountEl.addEventListener('input', () => {
     meshPref.set('grow', String(value));
   }
 });
+const meshBevelSizeEl = document.getElementById('meshBevelSize') as HTMLInputElement;
+{
+  const saved = Number(meshPref.get('bevel'));
+  if (saved > 0 && saved <= gridSize) {
+    meshBevelSizeEl.value = String(saved);
+    meshTool.bevelSize = saved;
+  }
+}
+meshBevelSizeEl.addEventListener('input', () => {
+  const value = Number(meshBevelSizeEl.value);
+  if (value > 0 && value <= gridSize) {
+    meshTool.bevelSize = value;
+    meshPref.set('bevel', String(value));
+  }
+});
 const meshSeeBehindEl = document.getElementById('meshSeeBehind') as HTMLInputElement;
 // La casilla arranca con lo último que se eligió y la herramienta con ella (si no, se veían los vértices al revés).
 meshSeeBehindEl.checked = meshPref.get('seeBehind') !== '0';
@@ -2278,6 +2293,7 @@ meshActionsEl.querySelectorAll<HTMLButtonElement>('button[data-mesh]').forEach((
     else if (action === 'push') meshTool.beginTransform('push');
     else if (action === 'growedge') meshTool.growFaceFromEdge();
     else if (action === 'connect') meshTool.connectSelected();
+    else if (action === 'bevel') meshTool.bevelSelected();
     else if (action === 'dissolve') meshTool.dissolveSelected();
     else if (action === 'straighten') meshTool.straightenSelected();
     else if (action === 'flatten') meshTool.flattenSelected();
@@ -3921,6 +3937,7 @@ const GUIDE: Record<Mode, [string, string][]> = {
     ['Clic en un segmento', 'elige sus dos vértices (sustituye la elección anterior); doble clic en el mismo segmento sigue en línea recta por todos los segmentos que continúan. Shift+clic en una cara elige sus vértices'],
     ['N', 'empujar cara: con todos los vértices de una o más caras elegidos, mueve el ratón en la dirección de la cara para empujarla o jalarla sin torcerla; clic confirma, Esc cancela'],
     ['Triangular (botón)', 'parte en triángulos las caras de cuatro o más lados cuyos vértices están todos elegidos; la forma no cambia. Para juntar triángulos otra vez: Quitar segmento (Q)'],
+    ['Biselar arista (botón)', 'con los dos vértices de una arista elegidos, corta sus esquinas y deja una cara nueva entre las dos caras de la arista; el tamaño se pone en «Tamaño del bisel». Cada extremo tiene que tocar tres caras'],
     ['K', 'tapar hueco: con un vértice elegido del borde abierto de una pieza, cierra ese contorno con una cara que mira hacia el mismo lado que sus vecinas'],
     ['P', 'aplanar en plano: lleva los vértices elegidos (tres o más, por ejemplo los de una cara chueca) al plano que mejor se ajusta a todos; con vértices elegidos sustituye a la P que abre el modo Pintar'],
     ['Simetrizar (botón)', 'con la simetría activa, deja exactamente iguales los dos lados de las piezas elegidas (o de todas): promedia cada vértice con el espejo de su gemelo y pega al plano los que están casi sobre él. Los vértices sin gemelo se ven en rosa'],

@@ -1038,3 +1038,80 @@ export function triangulateFaces(piece: Piece, faces: ReadonlySet<number>): { pi
   });
   return split === 0 ? null : { piece: withFaces(piece, outFaces, colors, textures, flags), split };
 }
+
+/**
+ * Bisela (achaflana) la arista entre dos vértices: la esquina de cada extremo se corta con un plano que sale de la arista, y entre las dos
+ * caras que la compartían queda una cara nueva. Cada extremo tiene que tocar exactamente tres caras (como la esquina de un cubo) y `size`
+ * (en celdas, medido sobre los segmentos vecinos) tiene que ser menor que el largo de esos segmentos. Devuelve la pieza y los cuatro vértices nuevos, o null.
+ */
+export function bevelEdge(piece: Piece, from: Vec3, to: Vec3, size: number): { piece: Piece; created: Set<string> } | null {
+  if (!(size > 1e-6)) return null;
+  const ka = vertexKey(from);
+  const kb = vertexKey(to);
+  const directed = (face: Vec3[], x: string, y: string): number => face.findIndex((p, i) => vertexKey(p) === x && vertexKey(face[(i + 1) % face.length]) === y);
+  const f1 = piece.faces.findIndex((face) => directed(face, ka, kb) >= 0);
+  const f2 = piece.faces.findIndex((face) => directed(face, kb, ka) >= 0);
+  if (f1 < 0 || f2 < 0 || f1 === f2) return null;
+  const around = (key: string): number[] => piece.faces.flatMap((face, i) => (face.some((p) => vertexKey(p) === key) ? [i] : []));
+  const atA = around(ka);
+  const atB = around(kb);
+  if (atA.length !== 3 || atB.length !== 3) return null;
+  const ring1 = piece.faces[f1];
+  const ring2 = piece.faces[f2];
+  const i1 = directed(ring1, ka, kb);
+  const i2 = directed(ring2, kb, ka);
+  const a = ring1[i1];
+  const b = ring1[(i1 + 1) % ring1.length];
+  const c1 = ring1[(i1 - 1 + ring1.length) % ring1.length];
+  const d1 = ring1[(i1 + 2) % ring1.length];
+  const d2 = ring2[(i2 - 1 + ring2.length) % ring2.length];
+  const c2 = ring2[(i2 + 2) % ring2.length];
+  const toward = (origin: Vec3, target: Vec3): Vec3 | null => {
+    const d: Vec3 = [target[0] - origin[0], target[1] - origin[1], target[2] - origin[2]];
+    const length = Math.hypot(...d);
+    if (length <= size + 1e-6) return null;
+    return [origin[0] + (d[0] / length) * size, origin[1] + (d[1] / length) * size, origin[2] + (d[2] / length) * size];
+  };
+  const a1 = toward(a, c1);
+  const a2 = toward(a, c2);
+  const b1 = toward(b, d1);
+  const b2 = toward(b, d2);
+  if (!a1 || !a2 || !b1 || !b2) return null;
+  const faces: Vec3[][] = [];
+  const colors: number[] = [];
+  const textures: (FaceTexture | null)[] = [];
+  const flags: number[] = [];
+  piece.faces.forEach((face, i) => {
+    let next: Vec3[] = face;
+    if (i === f1) next = face.map((p) => (vertexKey(p) === ka ? a1 : vertexKey(p) === kb ? b1 : p));
+    else if (i === f2) next = face.map((p) => (vertexKey(p) === kb ? b2 : vertexKey(p) === ka ? a2 : p));
+    else {
+      // La tercera cara de cada extremo: el vértice se parte en dos, en el orden en que sus vecinos lo recorren.
+      const split = (ring: Vec3[], key: string, first: Vec3, second: Vec3, firstNeighbour: Vec3): Vec3[] => {
+        const at = ring.findIndex((p) => vertexKey(p) === key);
+        if (at < 0) return ring;
+        const before = ring[(at - 1 + ring.length) % ring.length];
+        const pair = vertexKey(before) === vertexKey(firstNeighbour) ? [first, second] : [second, first];
+        return [...ring.slice(0, at), ...pair, ...ring.slice(at + 1)];
+      };
+      next = split(next, ka, a1, a2, c1);
+      next = split(next, kb, b1, b2, d1);
+    }
+    faces.push(next);
+    colors.push(piece.faceColors?.[i] ?? piece.color);
+    const texture = piece.faceTextures?.[i] ?? null;
+    textures.push(texture ? (next === face ? texture : remapTexture(texture, face, next, (p) => p)) : null);
+    flags.push(piece.faceFlags?.[i] ?? 0);
+  });
+  // La cara nueva recorre su borde al revés que las vecinas; se elige el sentido que no repita ninguna arista.
+  const used = new Set<string>();
+  for (const face of faces) face.forEach((p, i) => used.add(`${vertexKey(p)}>${vertexKey(face[(i + 1) % face.length])}`));
+  const quad = [b1, a1, a2, b2];
+  const clashes = (ring: Vec3[]): number => ring.filter((p, i) => used.has(`${vertexKey(p)}>${vertexKey(ring[(i + 1) % ring.length])}`)).length;
+  const cap = clashes(quad) <= clashes([...quad].reverse()) ? quad : [...quad].reverse();
+  faces.push(cap);
+  colors.push(piece.faceColors?.[f1] ?? piece.color);
+  textures.push(null);
+  flags.push(0);
+  return { piece: withFaces(piece, faces, colors, textures, flags), created: new Set([a1, a2, b1, b2].map(vertexKey)) };
+}
