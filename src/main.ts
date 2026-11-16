@@ -1,5 +1,5 @@
 import { panStep, type PanState } from './core/pan';
-import { ctrlBeatsField, escLeavesTool, isTextField, meshIgnoresKey, undoRedoKey, verticalMoveKey } from './core/shortcuts';
+import { ctrlBeatsField, escLeavesTool, isTextField, meshIgnoresKey, toolForKey, toolKey, undoRedoKey, verticalMoveKey, type KeyMode } from './core/shortcuts';
 import * as THREE from 'three';
 import { axisAllowed, lockLabel, planeNormal, type AxisLock } from './core/axisLock';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
@@ -2967,69 +2967,29 @@ const pieceButtons = CATALOG.map((def, i) => {
   piecesEl.appendChild(button);
   return button;
 });
-const cutButton = document.createElement('button');
-cutButton.textContent = 'C Cortar';
-cutButton.addEventListener('click', () => setMode(mode === 'cut' ? 'place' : 'cut'));
-toolsEl.appendChild(cutButton);
-const selectButton = document.createElement('button');
-selectButton.textContent = 'S Elegir';
-selectButton.addEventListener('click', () => setMode(mode === 'select' ? 'place' : 'select'));
-toolsEl.appendChild(selectButton);
-const eraseButton = document.createElement('button');
-eraseButton.textContent = 'B Borrar';
-eraseButton.title = 'Clic en una pieza la borra';
-eraseButton.addEventListener('click', () => setMode(mode === 'erase' ? 'place' : 'erase'));
-toolsEl.appendChild(eraseButton);
-const fillButton = document.createElement('button');
-fillButton.textContent = 'L Rellenar';
-fillButton.title = 'Marca puntos y se llena el volumen que encierran';
-fillButton.addEventListener('click', () => setMode(mode === 'fill' ? 'place' : 'fill'));
-toolsEl.appendChild(fillButton);
-const outlineButton = document.createElement('button');
-outlineButton.textContent = 'Figura';
-outlineButton.title = 'Marca los puntos de una figura sobre una superficie y haz crecer o hundir solo esa figura';
-outlineButton.addEventListener('click', () => setMode(mode === 'outline' ? 'place' : 'outline'));
-toolsEl.appendChild(outlineButton);
-const vertexButton = document.createElement('button');
-vertexButton.textContent = 'V Vértice';
-vertexButton.title = 'Añade un vértice de referencia a la pieza elegida';
-vertexButton.addEventListener('click', () => setMode(mode === 'vertex' ? 'place' : 'vertex'));
-toolsEl.appendChild(vertexButton);
-const meshButton = document.createElement('button');
-meshButton.textContent = 'E Malla';
-meshButton.title = 'Elige y mueve los vértices de las piezas: estira, tuerce y modela formas libres';
-meshButton.addEventListener('click', () => setMode(mode === 'mesh' ? 'place' : 'mesh'));
-toolsEl.appendChild(meshButton);
-const bevelButton = document.createElement('button');
-bevelButton.textContent = 'J Chaflán';
-bevelButton.title = 'Corta una arista en chaflán';
-bevelButton.addEventListener('click', () => setMode(mode === 'bevel' ? 'place' : 'bevel'));
-toolsEl.appendChild(bevelButton);
-const faceButton = document.createElement('button');
-faceButton.textContent = 'F Cara';
-faceButton.title = 'Extruye, cava o divide a partir de una cara';
-faceButton.addEventListener('click', () => setMode(mode === 'face' ? 'place' : 'face'));
-toolsEl.appendChild(faceButton);
-const shapeButton = document.createElement('button');
-shapeButton.textContent = 'T Forma';
-shapeButton.title = 'Esfera, cilindro, cono o cápsula con medidas y lados a elegir';
-shapeButton.addEventListener('click', () => setMode(mode === 'shape' ? 'place' : 'shape'));
-toolsEl.appendChild(shapeButton);
-const paintButton = document.createElement('button');
-paintButton.textContent = 'P Pintar';
-paintButton.title = 'Pinta una cara con el color elegido';
-paintButton.addEventListener('click', () => setMode(mode === 'paint' ? 'place' : 'paint'));
-toolsEl.appendChild(paintButton);
-const growButton = document.createElement('button');
-growButton.textContent = 'G Crecer';
-growButton.title = 'Clic en una cara la hace crecer; arrastrar elige cuánto';
-growButton.addEventListener('click', () => setMode(mode === 'grow' ? 'place' : 'grow'));
-toolsEl.appendChild(growButton);
-const sinkButton = document.createElement('button');
-sinkButton.textContent = 'D Hundir';
-sinkButton.title = 'Lo contrario de crecer: clic en una cara la hunde hacia dentro; arrastrar elige cuánto';
-sinkButton.addEventListener('click', () => setMode(mode === 'sink' ? 'place' : 'sink'));
-toolsEl.appendChild(sinkButton);
+/** Botón de una herramienta: la tecla sale de la tabla de atajos, así el texto no puede contradecir al teclado. */
+function toolButton(tool: KeyMode, label: string, title?: string): HTMLButtonElement {
+  const button = document.createElement('button');
+  const key = toolKey(tool);
+  button.textContent = key ? `${key.toUpperCase()} ${label}` : label;
+  if (title) button.title = title;
+  button.addEventListener('click', () => setMode(mode === tool ? 'place' : tool));
+  toolsEl.appendChild(button);
+  return button;
+}
+const cutButton = toolButton('cut', 'Cortar');
+const selectButton = toolButton('select', 'Elegir');
+const eraseButton = toolButton('erase', 'Borrar', 'Clic en una pieza la borra');
+const fillButton = toolButton('fill', 'Rellenar', 'Marca puntos y se llena el volumen que encierran');
+const outlineButton = toolButton('outline', 'Figura', 'Marca los puntos de una figura sobre una superficie y haz crecer o hundir solo esa figura');
+const vertexButton = toolButton('vertex', 'Vértice', 'Añade un vértice de referencia a la pieza elegida');
+const meshButton = toolButton('mesh', 'Malla', 'Elige y mueve los vértices de las piezas: estira, tuerce y modela formas libres');
+const bevelButton = toolButton('bevel', 'Chaflán', 'Corta una arista en chaflán');
+const faceButton = toolButton('face', 'Cara', 'Extruye, cava o divide a partir de una cara');
+const shapeButton = toolButton('shape', 'Forma', 'Esfera, cilindro, cono o cápsula con medidas y lados a elegir');
+const paintButton = toolButton('paint', 'Pintar', 'Pinta una cara con el color elegido');
+const growButton = toolButton('grow', 'Crecer', 'Clic en una cara la hace crecer; arrastrar elige cuánto');
+const sinkButton = toolButton('sink', 'Hundir', 'Lo contrario de crecer: clic en una cara la hunde hacia dentro; arrastrar elige cuánto');
 
 const cutActionsEl = document.getElementById('cutActions')!;
 function syncCutActions(): void {
@@ -4497,24 +4457,15 @@ window.addEventListener('keydown', (e) => {
 
   const n = Number(e.key);
   if (n >= 1 && n <= Math.min(9, CATALOG.length)) selectPiece(n - 1);
-  if (key === 'c') setMode(mode === 'cut' ? 'place' : 'cut');
-  if (key === 's') setMode(mode === 'select' ? 'place' : 'select');
-  if (key === 'b') setMode(mode === 'erase' ? 'place' : 'erase');
-  if (key === 'g') setMode(mode === 'grow' ? 'place' : 'grow');
-  if (key === 'd') setMode(mode === 'sink' ? 'place' : 'sink');
-  if (key === 'p') setMode(mode === 'paint' ? 'place' : 'paint');
+  // Las teclas que encienden o apagan una herramienta salen de la tabla de atajos (core/shortcuts.ts).
+  const toggled = toolForKey(key, mode);
+  if (toggled) setMode(mode === toggled ? 'place' : toggled);
   if (key === 'o') {
     // Alt+O muestra solo las piezas ocultas una a una: las de capas ocultas siguen ocultas (se muestran con el botón «Mostrar ocultas» o el ojo de la capa).
     if (e.altKey) showHidden([...hidden].filter((id) => { const piece = model.get(id); return !piece || !layers.isHidden(piece); }));
     else hideSelected();
   }
   if (key === 'i') isolateSelected();
-  if (key === 't') setMode(mode === 'shape' ? 'place' : 'shape');
-  if (key === 'j') setMode(mode === 'bevel' ? 'place' : 'bevel');
-  if (key === 'l') setMode(mode === 'fill' ? 'place' : 'fill');
-  if (key === 'f' && mode !== 'cut') setMode(mode === 'face' ? 'place' : 'face');
-  if (key === 'v') setMode(mode === 'vertex' ? 'place' : 'vertex');
-  if (key === 'e') setMode(mode === 'mesh' ? 'place' : 'mesh');
   if (key === 'h') toggleHud();
   if (key === 'a') setHintHidden(!hintHidden);
   if (key === 'w') setWireframe(!isWireframeView());
