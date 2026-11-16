@@ -1,4 +1,5 @@
 import { panStep, type PanState } from './core/pan';
+import { ctrlBeatsField, escLeavesTool, isTextField, meshIgnoresKey, undoRedoKey, verticalMoveKey } from './core/shortcuts';
 import * as THREE from 'three';
 import { axisAllowed, lockLabel, planeNormal, type AxisLock } from './core/axisLock';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
@@ -3888,7 +3889,7 @@ const GUIDE: Record<Mode, [string, string][]> = {
     ['Ctrl+A · K · Esc', 'elegir todo · sumar conectadas · quitar selección'],
     ['Arrastrar pieza', 'mover la selección (Alt: en vertical · Ctrl: paso doble · Esc cancela). Los botones «Mover en» limitan el movimiento a X, Y o Z'],
     ['Flechas', 'mover un cuarto de celda (Ctrl: media celda)'],
-    ['E / Q · Re Pág / Av Pág', 'subir / bajar un cuarto de celda (Ctrl: media celda)'],
+    ['Re Pág / Av Pág', 'subir / bajar un cuarto de celda (Ctrl: media celda)'],
     ['R · Alt+R', 'girar 90° · girar al revés'],
     ['Alt + flechas', 'tumbar 90°: la parte de arriba va hacia la flecha (según la cámara); dos veces la deja de cabeza'],
     ['M · N · U', 'espejo en X · Z · Y'],
@@ -3982,7 +3983,7 @@ const GUIDE: Record<Mode, [string, string][]> = {
     ['Clic', 'hacer crecer la cara apuntada la cantidad elegida en el panel'],
     ['Ctrl+clic', 'invierte “Toda la cara conectada” solo para ese clic'],
     ['Arrastrar', 'elegir otra distancia al momento'],
-    ['Esc', 'cancelar el arrastre / volver'],
+    ['Esc', 'cancelar el arrastre / volver a Colocar'],
     ['Panel “Cuánto”', '¼, ½, ¾, 1 celda, valor exacto o Auto'],
     ...VIEW_GUIDE.slice(0, 2),
   ],
@@ -3990,7 +3991,7 @@ const GUIDE: Record<Mode, [string, string][]> = {
     ['Clic', 'hundir la cara apuntada la cantidad elegida en el panel (la parte roja es lo que se quita)'],
     ['Ctrl+clic', 'invierte “Toda la cara conectada” solo para ese clic'],
     ['Arrastrar', 'elegir otra distancia al momento (hacia dentro)'],
-    ['Esc', 'cancelar el arrastre / volver'],
+    ['Esc', 'cancelar el arrastre / volver a Colocar'],
     ['Panel “Cuánto”', '¼, ½, ¾, 1 celda, valor exacto o Auto'],
     ...VIEW_GUIDE.slice(0, 2),
   ],
@@ -4276,19 +4277,20 @@ window.addEventListener('keydown', (e) => {
     if (e.key === 'Escape' || (e.key === '?' && e.target !== helpSearchEl)) setHelp(false);
     return;
   }
-  if (e.key === '?' || e.key === 'F1') {
+  const key = e.key.toLowerCase();
+  const typing = isTextField(e.target as { tagName?: string; type?: string } | null);
+  // «?» dentro de un campo de texto es un signo más; F1 abre la ayuda desde cualquier sitio.
+  if ((e.key === '?' && !typing) || e.key === 'F1') {
     e.preventDefault();
     setHelp(true);
     return;
   }
-  // Con el foco en un selector las teclas le pertenecen a él.
-  if (e.target instanceof HTMLSelectElement || e.target instanceof HTMLTextAreaElement) return;
-  if (e.target instanceof HTMLInputElement && (e.target.type === 'number' || e.target.type === 'text' || e.target.type === 'search')) return;
+  // Con el foco en un campo las teclas le pertenecen a él, salvo Ctrl+S, Ctrl+O y Ctrl+K (si no, el navegador abre «Guardar página»).
+  if (typing && !((e.ctrlKey || e.metaKey) && ctrlBeatsField(key))) return;
   if (poseDragKey(e)) {
     e.preventDefault();
     return;
   }
-  const key = e.key.toLowerCase();
   // Teclado numérico, como en Blender: 1 frente, 3 derecha, 7 arriba (con Ctrl, la opuesta) y 5 alterna ortográfica/perspectiva.
   if (e.code.startsWith('Numpad') && !e.altKey && !e.shiftKey) {
     const numpad = e.code.slice(6);
@@ -4310,6 +4312,8 @@ window.addEventListener('keydown', (e) => {
     e.preventDefault();
     return;
   }
+  // En Malla, lo que la herramienta no toma no actúa sobre las piezas (reflejar, ocultar, aislar) ni cambia de herramienta con vértices elegidos.
+  if (mode === 'mesh' && !e.ctrlKey && !e.metaKey && !e.altKey && meshIgnoresKey(key, meshTool.count)) return;
   if ((e.ctrlKey || e.metaKey) && key === 'enter' && mode === 'cut') {
     e.preventDefault();
     cutTool.applyNow();
@@ -4322,7 +4326,11 @@ window.addEventListener('keydown', (e) => {
   }
   if ((e.ctrlKey || e.metaKey) && key === 'z') {
     e.preventDefault();
-    // Con una herramienta a medias, Ctrl+Z retrocede un punto en vez de deshacer el último bloque.
+    // Ctrl+Mayús+Z rehace; con una herramienta a medias, Ctrl+Z retrocede un punto en vez de deshacer el último bloque.
+    if (undoRedoKey(key, e.shiftKey) === 'redo') {
+      redo();
+      return;
+    }
     const tool = mode === 'cut' ? cutTool : mode === 'fill' ? fillTool : mode === 'outline' ? outlineTool : null;
     if (tool?.hasPoints) {
       tool.undoPoint();
@@ -4428,12 +4436,10 @@ window.addEventListener('keydown', (e) => {
       moveSelectionBy(dir[0] * stepXZ, 0, dir[1] * stepXZ);
       return;
     }
-    if (key === 'pageup' || key === 'e') {
-      moveSelectionBy(0, stepY, 0);
-      return;
-    }
-    if (key === 'pagedown' || key === 'q') {
-      moveSelectionBy(0, -stepY, 0);
+    // E y Q no mueven piezas: E entra en Malla y Q es de sus acciones.
+    const vertical = verticalMoveKey(key);
+    if (vertical !== 0) {
+      moveSelectionBy(0, vertical * stepY, 0);
       return;
     }
   }
@@ -4477,7 +4483,7 @@ window.addEventListener('keydown', (e) => {
     }
     if (key === 'f') cutTool.flip();
     if (key === 'escape') cutTool.cancel();
-  } else if (mode === 'vertex' || mode === 'mesh' || mode === 'paint' || mode === 'erase' || mode === 'shape' || mode === 'bevel' || mode === 'face') {
+  } else if (escLeavesTool(mode)) {
     if (key === 'escape') setMode('place');
     if (key === 'r' && mode === 'shape') turnShape();
   } else if (mode === 'fill') {

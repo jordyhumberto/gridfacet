@@ -367,9 +367,9 @@ Marcar cada tarea al fusionar su PR. Si un defecto `[leído]` no se reproduce, p
 | 2.6 Paso de deshacer vacío | hecha | rama fix/plan-revision | Reproducido. `ModelScene.commitPreview` descarta las piezas cuya geometría no cambió (`sameGeometry`) y no anota ni borra el rehacer; `finishDrag` y `finishModal` solo anotan la elección si el historial subió |
 | 2.7 Vértices del plano | hecha | rama fix/plan-revision | Reproducido. `keepPlanes` en `meshTool.ts`: con simetría, todo vértice a menos de `MIRROR_TOLERANCE` de un plano activo conserva esa coordenada en el arrastre, giro, escala y deformaciones (vale para cualquier vértice, no solo el agarrado); conserva la coordenada que tenía, no la lleva al centro |
 | 2.8 Pequeños de Malla | hecha | rama fix/plan-revision | Hechos los seis. Reproducidos: elección de piezas ocultas/bloqueadas, `deactivate`, `snapToGrid`, `updateUnpaired` (contra todas las editables, solo se pintan las visibles), mensaje de modales (ahora `describe(result)`) y `down` viejo (`MeshToolHost.consumed`, que `main.ts` usa para poner `down = null`). `snapToGrid` y el resto de colocaciones respetan además los vértices del plano |
-| 3.1 Tecla E | pendiente | | |
-| 3.2 Atajos en Malla | pendiente | | |
-| 3.3 Atajos estándar | pendiente | | |
+| 3.1 Tecla E | hecha | rama fix/plan-revision | Reproducido: E y Q subían y bajaban la selección en Elegir. Ahora solo RePág y AvPág (`verticalMoveKey`); E siempre cambia a Malla; ayuda actualizada |
+| 3.2 Atajos en Malla | hecha | rama fix/plan-revision | `meshIgnoresKey` en `core/shortcuts.ts`: en Malla M, N, U, K, O e I no actúan (N, U y K solo si la herramienta no los toma); los dígitos 1–9 tampoco con vértices elegidos. Alt+O (mostrar ocultas) se mantiene |
+| 3.3 Atajos estándar | hecha | rama fix/plan-revision | Ctrl+Mayús+Z rehace; Ctrl+S, Ctrl+O y Ctrl+K valen con el foco en un campo (Z, A, C, V, Y siguen siendo del campo); «?» se ignora en campos de texto (F1 sigue abriendo la ayuda); Esc en Crecer y Hundir vuelve a Colocar |
 | 4.1 Exportar piezas abiertas | pendiente | | |
 | 4.2 Una sola clave de vértice | pendiente | | |
 | 4.3 Canonizar vértices | pendiente | | |
