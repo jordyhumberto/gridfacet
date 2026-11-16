@@ -1,6 +1,7 @@
 import { vertexKey } from './key';
 import { intersectionPointsWith } from './intersections';
 import { faceNormal, type Piece, type Vec3 } from './piece';
+import { boundsOf } from './transform';
 
 export interface Edge {
   a: Vec3;
@@ -34,19 +35,7 @@ export function uniqueEdges(piece: Piece): Edge[] {
   return [...seen.values()];
 }
 
-function boxOf(piece: Piece): { min: Vec3; max: Vec3 } {
-  const min: Vec3 = [Infinity, Infinity, Infinity];
-  const max: Vec3 = [-Infinity, -Infinity, -Infinity];
-  for (const face of piece.faces) {
-    for (const p of face) {
-      for (let i = 0; i < 3; i++) {
-        min[i] = Math.min(min[i], p[i]);
-        max[i] = Math.max(max[i], p[i]);
-      }
-    }
-  }
-  return { min, max };
-}
+const boxOf = (piece: Piece): { min: Vec3; max: Vec3 } => boundsOf([piece])!;
 
 function overlap(a: Piece, b: Piece): boolean {
   const [x, y] = [boxOf(a), boxOf(b)];

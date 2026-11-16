@@ -1,4 +1,5 @@
 import type { Piece } from './piece';
+import { boundsOf } from './transform';
 
 const EPS = 1e-6;
 
@@ -7,19 +8,7 @@ interface Box {
   max: [number, number, number];
 }
 
-function boxOf(piece: Piece): Box {
-  const min: Box['min'] = [Infinity, Infinity, Infinity];
-  const max: Box['max'] = [-Infinity, -Infinity, -Infinity];
-  for (const face of piece.faces) {
-    for (const p of face) {
-      for (let i = 0; i < 3; i++) {
-        min[i] = Math.min(min[i], p[i]);
-        max[i] = Math.max(max[i], p[i]);
-      }
-    }
-  }
-  return { min, max };
-}
+const boxOf = (piece: Piece): Box => boundsOf([piece])!;
 
 /** Dos piezas se tocan si sus cajas se solapan en volumen o comparten al menos una cara (no basta una arista ni una esquina). */
 function touches(a: Box, b: Box): boolean {

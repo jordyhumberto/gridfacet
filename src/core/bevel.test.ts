@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { bevelChange, bevelPlane, edgeBetween, nearestEdge, pieceEdges } from './bevel';
+import { bevelChange, bevelPlane, edgeBetween, nearestEdge } from './bevel';
+import { pieceEdges } from './vertices';
 import { buildPiece, CATALOG } from './catalog';
 import { volume } from './piece';
 
@@ -7,7 +8,7 @@ const cube = () => buildPiece(CATALOG[0], 0, 0, 0, 0, 0xff0000);
 
 describe('chaflán', () => {
   it('un cubo tiene 12 aristas, cada una con dos caras', () => {
-    const edges = pieceEdges(cube());
+    const edges = pieceEdges(cube(), true);
     expect(edges).toHaveLength(12);
     expect(edges.every((e) => e.faces.length === 2)).toBe(true);
   });

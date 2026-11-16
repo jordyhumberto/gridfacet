@@ -1,7 +1,8 @@
 import { vertexKey } from './key';
-import { FACE_DOUBLE, faceNormal, makePiece, type Piece, type Vec3 } from './piece';
+import { FACE_DOUBLE, faceNormal, keepGroup, makePiece, type Piece, type Vec3 } from './piece';
 import { remapTexture, type FaceTexture } from './texture';
 import { triangulateFace } from './convex';
+import { planeBasis } from './cut';
 
 export { vertexKey };
 
@@ -64,10 +65,7 @@ function rebuild(piece: Piece, mapFace: (face: Vec3[], index: number) => Vec3[] 
     textures.push(texture ? (moved ? remapTexture(texture, face, next, (p) => p) : texture) : null);
   });
   if (faces.length === 0) return null;
-  const result = makePiece(canonFaces(faces), piece.color, colors, piece.faceTextures ? textures : undefined, flags);
-  if (piece.group !== undefined) result.group = piece.group;
-  if (piece.groupName) result.groupName = piece.groupName;
-  if (piece.layer !== undefined) result.layer = piece.layer;
+  const result = keepGroup(makePiece(canonFaces(faces), piece.color, colors, piece.faceTextures ? textures : undefined, flags), piece);
   if (keepId) result.id = piece.id;
   return result;
 }
@@ -267,10 +265,7 @@ function replaceFaces(piece: Piece, replacements: ReadonlyMap<number, Vec3[][]>)
       textures.push(texture ? (replaced ? remapTexture(texture, original, next, (p) => p) : texture) : null);
     }
   });
-  const result = makePiece(faces, piece.color, colors, piece.faceTextures ? textures : undefined, flags);
-  if (piece.group !== undefined) result.group = piece.group;
-  if (piece.groupName) result.groupName = piece.groupName;
-  if (piece.layer !== undefined) result.layer = piece.layer;
+  const result = keepGroup(makePiece(faces, piece.color, colors, piece.faceTextures ? textures : undefined, flags), piece);
   return result;
 }
 
@@ -346,11 +341,7 @@ function splitRing(face: Vec3[], ia: number, ib: number): Vec3[][] | null {
   if (length < 1e-12) return null;
   const unit: Vec3 = [n[0] / length, n[1] / length, n[2] / length];
   // Base 2D del plano de la cara, para comprobar el trayecto con geometría plana.
-  const seed: Vec3 = Math.abs(unit[1]) < 0.9 ? [0, 1, 0] : [1, 0, 0];
-  const ux: Vec3 = [seed[1] * unit[2] - seed[2] * unit[1], seed[2] * unit[0] - seed[0] * unit[2], seed[0] * unit[1] - seed[1] * unit[0]];
-  const ul = Math.hypot(...ux);
-  const axisX: Vec3 = [ux[0] / ul, ux[1] / ul, ux[2] / ul];
-  const axisY: Vec3 = [unit[1] * axisX[2] - unit[2] * axisX[1], unit[2] * axisX[0] - unit[0] * axisX[2], unit[0] * axisX[1] - unit[1] * axisX[0]];
+  const { u: axisX, v: axisY } = planeBasis(unit);
   const flat = face.map((p) => [p[0] * axisX[0] + p[1] * axisX[1] + p[2] * axisX[2], p[0] * axisY[0] + p[1] * axisY[1] + p[2] * axisY[2]] as [number, number]);
   const a = flat[ia];
   const b = flat[ib];
@@ -659,10 +650,7 @@ function ringAround(points: Vec3[]): Vec3[] {
 
 /** Copia de `source` con otras caras, colores y texturas, conservando grupo, nombre de grupo y capa. */
 function withFaces(source: Piece, faces: Vec3[][], colors: number[], textures: (FaceTexture | null)[], flags: number[]): Piece {
-  const result = makePiece(faces, source.color, colors, source.faceTextures ? textures : undefined, flags);
-  if (source.group !== undefined) result.group = source.group;
-  if (source.groupName) result.groupName = source.groupName;
-  if (source.layer !== undefined) result.layer = source.layer;
+  const result = keepGroup(makePiece(faces, source.color, colors, source.faceTextures ? textures : undefined, flags), source);
   return result;
 }
 
@@ -832,10 +820,7 @@ export function setFaceFlags(piece: Piece, indices: ReadonlySet<number>, flag: n
     return on ? current | flag : current & ~flag;
   });
   if (flags.every((f, i) => f === (piece.faceFlags?.[i] ?? 0))) return null;
-  const result = makePiece(piece.faces, piece.color, piece.faceColors, piece.faceTextures, flags);
-  if (piece.group !== undefined) result.group = piece.group;
-  if (piece.groupName) result.groupName = piece.groupName;
-  if (piece.layer !== undefined) result.layer = piece.layer;
+  const result = keepGroup(makePiece(piece.faces, piece.color, piece.faceColors, piece.faceTextures, flags), piece);
   return result;
 }
 
@@ -1024,10 +1009,26 @@ export function fillHoles(piece: Piece, keys: ReadonlySet<string> | null): { pie
   return { piece: result, filled: loops.length };
 }
 
-/** Los segmentos de la pieza (aristas de sus caras, sin repetir) como pares de claves de vértice. */
-export function pieceEdges(piece: Piece): [Vec3, Vec3][] {
-  const seen = new Set<string>();
-  const out: [Vec3, Vec3][] = [];
+/** Un segmento de la pieza con las caras que lo usan. */
+export interface Segment {
+  a: Vec3;
+  b: Vec3;
+  faces: Vec3[][];
+}
+
+/** Una arista compartida por exactamente dos caras. */
+export interface PieceEdge extends Segment {
+  faces: [Vec3[], Vec3[]];
+}
+
+/**
+ * Los segmentos de la pieza (aristas de sus caras, sin repetir ni degenerados), cada uno con las caras que lo usan.
+ * Con `sharedOnly` solo quedan los que comparten exactamente dos caras (los de un borde abierto no cuentan).
+ */
+export function pieceEdges(piece: Piece, sharedOnly: true): PieceEdge[];
+export function pieceEdges(piece: Piece, sharedOnly?: boolean): Segment[];
+export function pieceEdges(piece: Piece, sharedOnly = false): Segment[] {
+  const seen = new Map<string, Segment>();
   for (const face of piece.faces) {
     face.forEach((p, i) => {
       const q = face[(i + 1) % face.length];
@@ -1035,12 +1036,13 @@ export function pieceEdges(piece: Piece): [Vec3, Vec3][] {
       const b = vertexKey(q);
       if (a === b) return;
       const id = a < b ? `${a}|${b}` : `${b}|${a}`;
-      if (seen.has(id)) return;
-      seen.add(id);
-      out.push([p, q]);
+      const entry = seen.get(id);
+      if (entry) entry.faces.push(face);
+      else seen.set(id, { a: p, b: q, faces: [face] });
     });
   }
-  return out;
+  const all = [...seen.values()];
+  return sharedOnly ? all.filter((e) => e.faces.length === 2) : all;
 }
 
 /**
@@ -1050,7 +1052,7 @@ export function pieceEdges(piece: Piece): [Vec3, Vec3][] {
 export function edgeLoop(piece: Piece, from: Vec3, to: Vec3, maxTurn = 30): Set<string> {
   const position = new Map<string, Vec3>();
   const neighbours = new Map<string, Set<string>>();
-  for (const [p, q] of pieceEdges(piece)) {
+  for (const { a: p, b: q } of pieceEdges(piece)) {
     const a = vertexKey(p);
     const b = vertexKey(q);
     position.set(a, p);

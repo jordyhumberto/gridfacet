@@ -2051,7 +2051,7 @@ export class MeshTool {
     for (const { piece } of this.shown) {
       if (seen.has(piece.id)) continue;
       seen.add(piece.id);
-      for (const [a, b] of pieceEdges(piece)) {
+      for (const { a, b } of pieceEdges(piece)) {
         const sa = this.screenOf(a);
         const sb = this.screenOf(b);
         if (sa.behind || sb.behind) continue;
