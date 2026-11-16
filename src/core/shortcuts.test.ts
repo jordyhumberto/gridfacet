@@ -1,3 +1,4 @@
+import html from '../../index.html?raw';
 import { describe, expect, it } from 'vitest';
 import { ACTIONS, ALL_MODES, SHORTCUTS, clashes, ctrlBeatsField, escLeavesTool, freeKeys, isPanMode, isTextField, keyLabel, matchNumpad, matchShortcuts, meshIgnoresKey, shortcutLabel, shortcutsFor, toolForKey, toolKey, undoRedoKey, verticalMoveKey, type KeyLike, type KeyMode } from './shortcuts';
 
@@ -247,5 +248,26 @@ describe('los nombres de las teclas', () => {
   it('cada botón de Malla con tecla propia sale una sola vez en la tabla', () => {
     const names = SHORTCUTS.filter((s) => s.mesh).map((s) => s.mesh);
     expect(new Set(names).size).toBe(names.length);
+  });
+});
+
+describe('los textos de la página salen de la tabla', () => {
+  const refs = [...html.matchAll(/data-shortcut="([^"]+)"/g)].map((m) => m[1]);
+
+  it('cada data-shortcut de index.html apunta a una fila de la tabla', () => {
+    expect(refs.length).toBeGreaterThan(30);
+    for (const ref of refs) expect(shortcutLabel(ref), ref).not.toBe('');
+  });
+
+  it('cada elemento con data-shortcut deja el nombre de la tecla en {key}', () => {
+    for (const tag of html.match(/<[a-z]+[^>]*data-shortcut="[^"]+"[^>]*>/g) ?? []) expect(tag.includes('{key}') || /<(button|label)[^>]*>[^<]*{key}/.test(html.slice(html.indexOf(tag))), tag).toBe(true);
+  });
+
+  it('los botones de Malla no llevan la tecla escrita a mano', () => {
+    expect(html).not.toMatch(/Atajo: tecla [A-Z]/);
+  });
+
+  it('la tecla de una herramienta sale de la tabla', () => {
+    expect(shortcutLabel('tool:bevel')).toBe('J');
   });
 });

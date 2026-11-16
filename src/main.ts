@@ -21,6 +21,7 @@ import { createPlacement } from './ui/placement';
 import { createPixelPanel } from './ui/pixelPanel';
 import { createLayersPanel } from './ui/layersPanel';
 import { createMeshPanel } from './ui/meshPanel';
+import { applyShortcutLabels } from './ui/shortcutLabels';
 import { createCommandPalette } from './ui/commandPalette';
 import { createReferencesPanel } from './ui/referencesPanel';
 import { emptyAnimation, pruneTracks } from './core/animation';
@@ -1508,6 +1509,7 @@ axisRowEl.querySelectorAll<HTMLButtonElement>('button[data-axis]').forEach((butt
     statusEl.textContent = pieceAxis === null ? 'Arrastre libre' : `Las piezas solo se mueven en ${lockLabel(pieceAxis)}`;
   }),
 );
+applyShortcutLabels();
 const meshPanel = createMeshPanel({
   scene3d,
   camera,

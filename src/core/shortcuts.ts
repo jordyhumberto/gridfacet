@@ -308,12 +308,13 @@ export function keyLabel(s: Shortcut): string {
 }
 
 /**
- * La fila a la que apunta el `data-shortcut` de un botón: `acción` o `acción:dato` (por ejemplo `view:+x`), o `mesh:nombre` para un
+ * La fila a la que apunta el `data-shortcut` de un botón: `acción` o `acción:dato` (por ejemplo `view:+x`), `tool:modo` para la tecla que enciende una herramienta, o `mesh:nombre` para un
  * botón del panel de Malla (`face`, `add`…). Para un botón con varias filas gana la primera de la tabla.
  */
 export function findShortcut(ref: string): Shortcut | undefined {
   const [what, arg] = ref.split(':');
   if (what === 'mesh') return SHORTCUTS.find((s) => s.by === 'mesh' && s.mesh === arg);
+  if (what === 'tool') return SHORTCUTS.find((s) => s.toggles === arg);
   return SHORTCUTS.find((s) => s.action === what && (arg === undefined || s.arg === arg));
 }
 
