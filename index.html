@@ -15,6 +15,10 @@
       #hud .axisGroup { display: flex; gap: 4px; align-items: center; flex: 1 1 100%; }
       #hud .axisGroup > span { flex: 0 0 4.2em; opacity: 0.75; }
       #hud .axisGroup > button { flex: 1 1 0; min-width: 0; }
+      /* La barra de herramientas va en grupos con título (Crear, Elegir, Caras…). */
+      #hud .toolGroup { display: flex; flex-direction: column; gap: 5px; padding-top: 5px; border-top: 1px solid rgba(255,255,255,0.12); }
+      #hud h4 + .toolGroup { border-top: 0; padding-top: 0; }
+      #hud .toolGroup > .groupTitle { font-size: 0.8em; opacity: 0.65; text-transform: uppercase; letter-spacing: 0.04em; }
       #hud .meshGroup { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; flex: 1 1 100%; padding-top: 4px; border-top: 1px solid rgba(255,255,255,0.12); }
       #hud .meshGroup > .groupTitle { flex: 1 1 100%; font-size: 0.8em; opacity: 0.65; text-transform: uppercase; letter-spacing: 0.04em; }
       #hud button, #hud select { background: #2a2f3a; color: inherit; border: 1px solid #3d4452; border-radius: 6px; padding: 4px 8px; font-size: 12px; cursor: pointer; }
@@ -177,8 +181,73 @@
         </section>
         <section>
           <h4><span class="title">Herramientas</span></h4>
-          <div class="row grid" id="tools"></div>
-          <label title="Con imán, al arrastrar, las piezas y los vértices caen en la rejilla (¼ de celda); sin imán siguen al ratón con suavidad. En Malla, Ctrl invierte el imán mientras arrastras"><input type="checkbox" id="magnet" /> Imán (rejilla)</label>
+          <div class="toolGroup" id="groupCreate">
+            <span class="groupTitle">Crear</span>
+            <small>Colocar: clic pone la pieza elegida (teclas 1–9)</small>
+            <div class="row grid" id="pieces"></div>
+            <div class="row" id="placeSize" title="Escala de la pieza al colocarla; en la lámina, el lado">
+              <small>Tamaño</small>
+              <button data-place-size="1">1</button>
+              <button data-place-size="0.75">¾</button>
+              <button data-place-size="0.5">½</button>
+              <button data-place-size="0.25">¼</button>
+              <input type="number" id="placeSizeInput" min="0.1" max="4" step="0.05" placeholder="otro" title="Escala exacta (1 = tamaño normal)" />
+            </div>
+            <div class="row" id="slopeRow" title="Cómo se coloca una pieza sobre una cara inclinada, como el techo de rampas">
+              <label>Pendiente
+                <select id="slopeMode">
+                  <option value="seat">Asentada (vertical, base cortada)</option>
+                  <option value="perp">Perpendicular a la cara</option>
+                  <option value="grid">A la rejilla (como antes)</option>
+                </select>
+              </label>
+            </div>
+            <div class="row" id="slabThick" title="Grosor de la lámina, en celdas" hidden>
+              <small>Grosor</small>
+              <button data-thick="0.125">⅛</button>
+              <button data-thick="0.25">¼</button>
+              <button data-thick="0.5">½</button>
+              <input type="number" id="slabThickInput" min="0.02" max="4" step="0.025" placeholder="otro" title="Grosor exacto en celdas" />
+            </div>
+            <div class="row grid" data-tools="create"></div>
+            <div class="row" id="triRow">
+              <small id="triStats"></small>
+              <label title="Presupuesto de triángulos: se pone en rojo al pasarlo (un personaje PS1 ronda 300–800)">Máx <input type="number" id="triBudget" min="0" step="100" value="800" /></label>
+            </div>
+          </div>
+          <div class="toolGroup">
+            <span class="groupTitle">Elegir</span>
+            <div class="row grid" data-tools="pick"></div>
+          </div>
+          <div class="toolGroup">
+            <span class="groupTitle">Caras</span>
+            <div class="row grid" data-tools="faces"></div>
+          </div>
+          <div class="toolGroup">
+            <span class="groupTitle">Vértices</span>
+            <div class="row grid" data-tools="vertices"></div>
+          </div>
+          <div class="toolGroup">
+            <span class="groupTitle">Pintar</span>
+            <div class="row grid" data-tools="paint"></div>
+          </div>
+          <div class="toolGroup">
+            <span class="groupTitle">Guías</span>
+            <div class="row grid" data-tools="guides"></div>
+            <div class="row" id="planeRow" hidden title="Plano de trabajo: marca los puntos de Cortar, Rellenar y Figura sobre un plano, también en el aire">
+              <small>Plano de trabajo:</small>
+              <select id="planeAxis">
+                <option value="">Ninguno</option>
+                <option value="x">X =</option>
+                <option value="y">Y =</option>
+                <option value="z">Z =</option>
+              </select>
+              <button data-plane="-" title="Bajar medio paso">−</button>
+              <input type="number" id="planeValue" step="0.5" />
+              <button data-plane="+" title="Subir medio paso">+</button>
+            </div>
+            <label title="Con imán, al arrastrar, las piezas y los vértices caen en la rejilla (¼ de celda); sin imán siguen al ratón con suavidad. En Malla, Ctrl invierte el imán mientras arrastras"><input type="checkbox" id="magnet" /> Imán (rejilla)</label>
+          </div>
           <small id="status"></small>
           <div class="row" id="selActions" hidden>
             <button data-sel="hide" title="O">Ocultar (O)</button>
@@ -230,18 +299,6 @@
               <option value="16">×16 (dieciseisavos)</option>
             </select>
             <label id="visibleOnlyLabel" title="Con la casilla marcada solo se ven los puntos de las caras que se ven; sin marcar, también los que quedan detrás"><input type="checkbox" id="visibleOnly" checked /> Solo visibles</label>
-          </div>
-          <div class="row" id="planeRow" hidden title="Marca los puntos de Cortar y Rellenar sobre un plano, también en el aire">
-            <small>Plano:</small>
-            <select id="planeAxis">
-              <option value="">Ninguno</option>
-              <option value="x">X =</option>
-              <option value="y">Y =</option>
-              <option value="z">Z =</option>
-            </select>
-            <button data-plane="-" title="Bajar medio paso">−</button>
-            <input type="number" id="planeValue" step="0.5" />
-            <button data-plane="+" title="Subir medio paso">+</button>
           </div>
           <div class="row" id="growActions" hidden>
             <small>Cuánto (celdas):</small>
@@ -417,38 +474,6 @@
             <label title="Tamaño del extremo respecto a la cara: 1 recto, 0,5 estrecho, 0 en punta">Punta <input type="number" id="faceTaper" min="0" max="3" step="0.1" value="1" /></label>
             <label title="Cuánto se separa del borde de la cara (0 a 0,9): deja un reborde alrededor del cráter o del saliente">Borde <input type="number" id="faceInset" min="0" max="0.9" step="0.05" value="0" /></label>
             <label title="Dónde corta, contando desde la cara: 0,5 es por la mitad">Corte <input type="number" id="faceFraction" min="0.05" max="0.95" step="0.05" value="0.5" /></label>
-          </div>
-        </section>
-        <section>
-          <h4><span class="title">Piezas</span></h4>
-          <div class="row grid" id="pieces"></div>
-          <div class="row" id="placeSize" title="Escala de la pieza al colocarla; en la lámina, el lado">
-            <small>Tamaño</small>
-            <button data-place-size="1">1</button>
-            <button data-place-size="0.75">¾</button>
-            <button data-place-size="0.5">½</button>
-            <button data-place-size="0.25">¼</button>
-            <input type="number" id="placeSizeInput" min="0.1" max="4" step="0.05" placeholder="otro" title="Escala exacta (1 = tamaño normal)" />
-          </div>
-          <div class="row" id="slopeRow" title="Cómo se coloca una pieza sobre una cara inclinada, como el techo de rampas">
-            <label>En pendientes
-              <select id="slopeMode">
-                <option value="seat">Asentada (vertical, base cortada)</option>
-                <option value="perp">Perpendicular a la cara</option>
-                <option value="grid">A la rejilla (como antes)</option>
-              </select>
-            </label>
-          </div>
-          <div class="row" id="slabThick" title="Grosor de la lámina, en celdas" hidden>
-            <small>Grosor</small>
-            <button data-thick="0.125">⅛</button>
-            <button data-thick="0.25">¼</button>
-            <button data-thick="0.5">½</button>
-            <input type="number" id="slabThickInput" min="0.02" max="4" step="0.025" placeholder="otro" title="Grosor exacto en celdas" />
-          </div>
-          <div class="row" id="triRow">
-            <small id="triStats"></small>
-            <label title="Presupuesto de triángulos: se pone en rojo al pasarlo (un personaje PS1 ronda 300–800)">Máx <input type="number" id="triBudget" min="0" step="100" value="800" /></label>
           </div>
         </section>
         <section>
@@ -644,8 +669,8 @@
         <h3>Colocar y borrar</h3>
         <dl>
           <dt><kbd>1</kbd>–<kbd>9</kbd></dt><dd>Elegir pieza. Clic coloca; <kbd>R</kbd> la rota antes de colocar. Si lo que apuntas es un desnivel (por ejemplo un cubito en una esquina de la celda), la pieza se apoya encima de lo más alto que cubre en vez de meterse dentro.</dd>
-          <dt>Tamaño</dt><dd>Debajo de las piezas eliges la escala al colocar: 1, ¾, ½, ¼ o un valor exacto. Una pieza menor que una celda se centra en el cursor y salta de medio en medio tamaño dentro de la celda (una de ½ cabe en las esquinas y también en el centro), y, sobre una cara plana, se apoya justo encima de ella aunque sea una lámina fina.</dd>
-          <dt><kbd>5</kbd> Lámina</dt><dd>Una lámina que crece pegada a la cara que apuntas: desde arriba queda tumbada, desde abajo cuelga, de costado queda de pie como un ladrillito contra la pared (arranca desde la base de esa pieza). Su lado es el “Tamaño” (1, ½, ¼…) y su “Grosor” se elige aparte (⅛, ¼, ½ o un valor exacto).</dd>
+          <dt>Tamaño</dt><dd>En “Herramientas”, bajo las piezas (grupo “Crear”), eliges la escala al colocar: 1, ¾, ½, ¼ o un valor exacto. Una pieza menor que una celda se centra en el cursor y salta de medio en medio tamaño dentro de la celda (una de ½ cabe en las esquinas y también en el centro), y, sobre una cara plana, se apoya justo encima de ella aunque sea una lámina fina.</dd>
+          <dt><kbd>5</kbd> Lámina</dt><dd>Una lámina que crece pegada a la cara que apuntas: desde arriba queda tumbada, desde abajo cuelga, de costado queda de pie como un ladrillito contra la pared (arranca desde la base de esa pieza). Su lado es el “Tamaño” (1, ½, ¼…) y su “Grosor” se elige aparte, junto a las piezas (⅛, ¼, ½ o un valor exacto).</dd>
           <dt>Esquina interior, Arco</dt><dd>Se componen de varias piezas convexas (se seleccionan y borran de una en una).</dd>
           <dt><kbd>B</kbd> Borrar</dt><dd>Clic en una pieza la borra; la pieza bajo el ratón se marca en rojo. También <kbd>Ctrl</kbd>+clic al colocar.</dd>
           <dt><kbd>D</kbd> Hundir</dt><dd>Lo contrario de Crecer: clic en una cara la hunde hacia dentro lo que elijas en “Cuánto” (el mismo selector que Crecer). Antes de soltar se ve en rojo lo que se va a quitar; arrastrar hacia dentro elige otra profundidad. Con “Toda la cara conectada” (o <kbd>Ctrl</kbd>+clic) hunde de golpe todo el muro. Si la profundidad supera el grosor, atraviesa. <kbd>Esc</kbd> cancela.</dd>
@@ -661,7 +686,7 @@
           <dt>Excavar</dt><dd>Con una pieza elegida (por ejemplo una forma colocada dentro de otra), el botón <i>Excavar</i> la resta de las demás piezas que toca y la borra. Sirve para agujeros, ventanas, bocas y cráteres. Las piezas cavadas se reparten en varias convexas.</dd>
           <dt>Unir piezas</dt><dd>Botón de “Herramientas” (con piezas elegidas): une las piezas en una sola. Si su unión es convexa queda un solo cuerpo limpio (baja la cuenta de piezas y triángulos); si no lo es, las junta tal cual en un solo bloque, con todas sus caras. “Unir” es para piezas; para juntar vértices está “Fusionar vértices” en Malla.</dd>
           <dt>Repetir</dt><dd>En “Selección”: copia lo elegido N veces; cada copia suma otro desplazamiento, giro (grados) y escala. Escaleras, dientes, escamas, ramas, espirales.</dd>
-          <dt>Triángulos</dt><dd>En “Piezas” se cuentan los triángulos de todas las piezas y se compara con el máximo que pongas (se pone en rojo al pasarlo). Es un conteo de las piezas; el modo fusionado del GLB suele quitar caras interiores.</dd>
+          <dt>Triángulos</dt><dd>En “Herramientas”, grupo “Crear”, se cuentan los triángulos de todas las piezas y se compara con el máximo que pongas (se pone en rojo al pasarlo). Es un conteo de las piezas; el modo fusionado del GLB suele quitar caras interiores.</dd>
         </dl>
         <h3>Formas redondeadas</h3>
         <dl>
@@ -672,7 +697,7 @@
         <dl>
           <dt>Ajuste</dt><dd>Al marcar en Cortar o Rellenar el punto se pega al candidato más cercano: vértice, punto medio de una arista, centro de una cara, punto de referencia o cruce entre piezas. La línea de estado muestra sus coordenadas antes de hacer clic.</dd>
           <dt><kbd>Alt</kbd></dt><dd>Mantenlo pulsado para marcar libremente sobre la arista más cercana.</dd>
-          <dt>Plano de trabajo</dt><dd>Elige un eje y un valor (junto a las herramientas): los puntos se marcan sobre ese plano, aunque no haya ninguna pieza, con ajuste a media celda y a los vértices que estén en él. Sirve para marcar en el aire.</dd>
+          <dt>Plano de trabajo</dt><dd>Elige un eje y un valor (en el grupo “Guías” de las herramientas, con Cortar, Rellenar y Figura): los puntos se marcan sobre ese plano, aunque no haya ninguna pieza, con ajuste a media celda y a los vértices que estén en él. Sirve para marcar en el aire.</dd>
           <dt>Cerrar la región</dt><dd>Clic cerca del primer punto (a menos de unos 14 píxeles en pantalla) o <kbd>Enter</kbd>.</dd>
         </dl>
         <h3>Mover, escalar y girar con precisión</h3>
@@ -715,7 +740,7 @@
         <dl>
           <dt><kbd>C</kbd> Cortar</dt><dd>Los puntos se ajustan a vértices, a la rejilla y también a los puntos donde una pieza atraviesa a otra (el cruce de una arista con una cara). <kbd>Ctrl</kbd>+clic en una cara usa esa cara como plano y región de corte: solo se cortan las piezas apoyadas en ella. Marca los puntos de una región; clic en el primero (o <kbd>Enter</kbd>) la cierra. <kbd>F</kbd> cambia el lado que se borra (el rojo). <kbd>Enter</kbd> corta. Solo se cortan las piezas que la región toca; con selección, solo la selección.</dd>
           <dt><kbd>L</kbd> Rellenar</dt><dd>Marca 4 o más puntos que no estén en un plano; clic en el primero (o <kbd>Enter</kbd>) crea la pieza que los une.</dd>
-          <dt>Figura</dt><dd>Botón de la barra de herramientas (no tiene tecla): marca 3 o más puntos sobre una misma cara y, con clic en el primero o <kbd>Enter</kbd>, hace crecer o hundir solo esa figura, en perpendicular a la cara. Crecer / Hundir y “Cuánto” se eligen en el panel.</dd>
+          <dt>Figura</dt><dd>Botón del grupo “Caras” de las herramientas (no tiene tecla: no queda ninguna libre): marca 3 o más puntos sobre una misma cara y, con clic en el primero o <kbd>Enter</kbd>, hace crecer o hundir solo esa figura, en perpendicular a la cara. Crecer / Hundir y “Cuánto” se eligen en el panel.</dd>
           <dt><kbd>Ctrl</kbd>+<kbd>Z</kbd> al marcar</dt><dd>Con puntos marcados quita el último punto, no el último bloque.</dd>
         </dl>
         <h3>Elegir y mover</h3>

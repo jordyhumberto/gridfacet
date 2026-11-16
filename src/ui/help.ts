@@ -38,8 +38,8 @@ const TOOL_KEY_LINES: [string, string][] = ([
 export const GUIDE: Record<Mode, [string, string][]> = {
   place: [
     ['Clic', 'colocar la pieza elegida (la lámina crece desde la cara apuntada)'],
-    ['En pendientes', 'sobre el techo de rampas o una cara inclinada la pieza se asienta (vertical, con la base cortada a la rampa) o se apoya perpendicular; se elige en el panel'],
-    ['Tamaño ¾ · ½ · ¼', 'la pieza sigue al cursor dentro de la cara, en pasos de un cuarto de su tamaño, y se imanta a las aristas de las piezas cercanas y a la rejilla'],
+    ['Pendiente', 'sobre el techo de rampas o una cara inclinada la pieza se asienta (vertical, con la base cortada a la rampa) o se apoya perpendicular; se elige en el panel'],
+    ['Tamaño · Pendiente · Grosor', 'la pieza sigue al cursor dentro de la cara, en pasos de un cuarto de su tamaño, y se imanta a las aristas de las piezas cercanas y a la rejilla'],
     ['Ctrl+clic', 'borrar la pieza apuntada'],
     ['R', 'rotar la pieza 90°'],
     ['1 – 9', 'elegir pieza del catálogo'],
@@ -168,7 +168,7 @@ export const GUIDE: Record<Mode, [string, string][]> = {
     ['Casilla “Píxeles”', 'pinta píxeles sueltos en vez de la cara entera: arrastra con lápiz, borrador o relleno (Alt toma el color del píxel); un trazo es un solo paso de deshacer'],
     ['Doble clic / Plano', 'con “Píxeles” abre la cara en plano, ampliada, para pintarla de frente con las mismas herramientas (Esc cierra)'],
     ['Texturas', 'se conservan al mover, girar, espejar, cortar, hundir y guardar; al crecer una cara, la de arriba del cuerpo nuevo hereda sus píxeles; las caras nuevas de un corte nacen sin pintar'],
-    ['Colores', 'selector junto a “Piezas” y los últimos 10 usados'],
+    ['Colores', 'selector de la sección “Colores” y los últimos 10 usados'],
     ['Esc', 'volver a Colocar'],
     ...VIEW_GUIDE.slice(0, 2),
   ],

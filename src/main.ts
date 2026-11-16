@@ -2949,7 +2949,10 @@ document.getElementById('gridToggle')!.addEventListener('change', (e) => {
 });
 
 // Panel
-const toolsEl = document.getElementById('tools')!;
+/** Cada herramienta va en un grupo de la barra (Crear, Elegir, Caras, Vértices, Pintar, Guías). */
+const TOOL_GROUPS = ['create', 'pick', 'faces', 'vertices', 'paint', 'guides'] as const;
+type ToolGroup = (typeof TOOL_GROUPS)[number];
+const toolGroupEls = Object.fromEntries(TOOL_GROUPS.map((name) => [name, document.querySelector(`[data-tools="${name}"]`)!])) as Record<ToolGroup, Element>;
 const piecesEl = document.getElementById('pieces')!;
 const pieceButtons = CATALOG.map((def, i) => {
   const button = document.createElement('button');
@@ -2960,28 +2963,29 @@ const pieceButtons = CATALOG.map((def, i) => {
   return button;
 });
 /** Botón de una herramienta: la tecla sale de la tabla de atajos, así el texto no puede contradecir al teclado. */
-function toolButton(tool: KeyMode, label: string, title?: string): HTMLButtonElement {
+function toolButton(tool: KeyMode, group: ToolGroup, label: string, title?: string): HTMLButtonElement {
   const button = document.createElement('button');
   const key = toolKey(tool);
   button.textContent = key ? `${key.toUpperCase()} ${label}` : label;
   if (title) button.title = title;
   button.addEventListener('click', () => setMode(mode === tool ? 'place' : tool));
-  toolsEl.appendChild(button);
+  toolGroupEls[group].appendChild(button);
   return button;
 }
-const cutButton = toolButton('cut', 'Cortar');
-const selectButton = toolButton('select', 'Elegir');
-const eraseButton = toolButton('erase', 'Borrar', 'Clic en una pieza la borra');
-const fillButton = toolButton('fill', 'Rellenar', 'Marca puntos y se llena el volumen que encierran');
-const outlineButton = toolButton('outline', 'Figura', 'Marca los puntos de una figura sobre una superficie y haz crecer o hundir solo esa figura');
-const vertexButton = toolButton('vertex', 'Punto guía', 'Añade un punto guía (un vértice de referencia que no se exporta) a la pieza elegida');
-const meshButton = toolButton('mesh', 'Malla', 'Elige y mueve los vértices de las piezas: estira, tuerce y modela formas libres');
-const bevelButton = toolButton('bevel', 'Chaflán', 'Corta una arista en chaflán');
-const faceButton = toolButton('face', 'Cara', 'Extruye, cava o divide a partir de una cara');
-const shapeButton = toolButton('shape', 'Forma', 'Esfera, cilindro, cono o cápsula con medidas y lados a elegir');
-const paintButton = toolButton('paint', 'Pintar', 'Pinta una cara con el color elegido');
-const growButton = toolButton('grow', 'Crecer', 'Clic en una cara la hace crecer; arrastrar elige cuánto');
-const sinkButton = toolButton('sink', 'Hundir', 'Lo contrario de crecer: clic en una cara la hunde hacia dentro; arrastrar elige cuánto');
+// Los botones se agregan por grupos, en este orden: Crear (con las piezas), Elegir, Caras, Vértices, Pintar y Guías.
+const shapeButton = toolButton('shape', 'create', 'Forma', 'Esfera, cilindro, cono o cápsula con medidas y lados a elegir');
+const fillButton = toolButton('fill', 'create', 'Rellenar', 'Marca puntos y se llena el volumen que encierran');
+const selectButton = toolButton('select', 'pick', 'Elegir', 'Elige piezas y las mueve');
+const eraseButton = toolButton('erase', 'pick', 'Borrar', 'Clic en una pieza la borra');
+const growButton = toolButton('grow', 'faces', 'Crecer', 'Clic en una cara la hace crecer; arrastrar elige cuánto');
+const sinkButton = toolButton('sink', 'faces', 'Hundir', 'Lo contrario de crecer: clic en una cara la hunde hacia dentro; arrastrar elige cuánto');
+const faceButton = toolButton('face', 'faces', 'Cara', 'Extruye, cava o divide a partir de una cara');
+const outlineButton = toolButton('outline', 'faces', 'Figura', 'Marca los puntos de una figura sobre una superficie y haz crecer o hundir solo esa figura');
+const cutButton = toolButton('cut', 'faces', 'Cortar', 'Marca una región y corta las piezas con ella');
+const bevelButton = toolButton('bevel', 'faces', 'Chaflán', 'Corta una arista en chaflán');
+const meshButton = toolButton('mesh', 'vertices', 'Malla', 'Elige y mueve los vértices de las piezas: estira, tuerce y modela formas libres');
+const paintButton = toolButton('paint', 'paint', 'Pintar', 'Pinta una cara con el color elegido, o píxeles sueltos con la casilla «Píxeles»');
+const vertexButton = toolButton('vertex', 'guides', 'Punto guía', 'Añade un punto guía (un vértice de referencia que no se exporta) a la pieza elegida');
 
 const cutActionsEl = document.getElementById('cutActions')!;
 function syncCutActions(): void {
