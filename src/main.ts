@@ -16,10 +16,11 @@ import { pieceKey, reflectPiece, reflections, withSymmetry, withSymmetryPoints, 
 import type { Piece, Vec3 } from './core/piece';
 import { STEP_XZ, STEP_Y, mirrorChange, mirrorCopyChange, moveChange, rotateChange, rotateQuarterChange, translatePiece, type Axis } from './core/transform';
 import { alignChange, distributeChange, groundChange, partsOf, resizeLongestChange } from './core/arrange';
-import { searchCommands, type Command } from './core/commands';
+import type { Command } from './core/commands';
 import { parseHexColors, parsePalettes, toHexText, upsertPalette, type Palette } from './core/palettes';
 import { serializeProject } from './core/project';
 import { createFiles } from './ui/files';
+import { createCommandPalette } from './ui/commandPalette';
 import { createReferencesPanel } from './ui/referencesPanel';
 import { emptyAnimation, pruneTracks } from './core/animation';
 import { createAnimationPanel } from './ui/animationPanel';
@@ -3418,58 +3419,7 @@ const commands: Command[] = [
   { name: 'Píxeles: volver a pintar caras enteras', keywords: 'pintar color cara', run: () => { pixelModeEl.checked = false; pixelModeEl.dispatchEvent(new Event('change')); } },
   { name: 'Mostrar ayuda', shortcut: '?', keywords: 'atajos', run: () => setHelp(true) },
 ];
-const paletteEl = document.getElementById('palette')!;
-const paletteInput = document.getElementById('paletteInput') as HTMLInputElement;
-const paletteList = document.getElementById('paletteList')!;
-let paletteMatches: Command[] = [];
-let paletteIndex = 0;
-const isPaletteOn = (c: Command): boolean => c.enabled?.() ?? true;
-
-function renderPalette(): void {
-  paletteMatches = searchCommands(commands, paletteInput.value);
-  paletteIndex = Math.max(0, paletteMatches.findIndex(isPaletteOn));
-  paletteList.replaceChildren();
-  paletteMatches.forEach((command, i) => {
-    const row = document.createElement('div');
-    row.className = `pcmd${i === paletteIndex ? ' active' : ''}${isPaletteOn(command) ? '' : ' off'}`;
-    row.append(Object.assign(document.createElement('span'), { textContent: command.name }));
-    if (command.shortcut) row.append(Object.assign(document.createElement('kbd'), { textContent: command.shortcut }));
-    row.addEventListener('click', () => runPaletteCommand(command));
-    paletteList.appendChild(row);
-  });
-}
-function runPaletteCommand(command: Command): void {
-  if (!isPaletteOn(command)) return;
-  setPalette(false);
-  command.run();
-}
-function setPalette(on: boolean): void {
-  paletteEl.hidden = !on;
-  if (!on) {
-    // Sin esto el campo oculto conserva el foco y se come los atajos siguientes.
-    paletteInput.blur();
-    return;
-  }
-  paletteInput.value = '';
-  renderPalette();
-  paletteInput.focus();
-}
-paletteInput.addEventListener('input', renderPalette);
-paletteInput.addEventListener('keydown', (e) => {
-  if (e.key === 'Escape') setPalette(false);
-  else if (e.key === 'Enter' && paletteMatches[paletteIndex]) runPaletteCommand(paletteMatches[paletteIndex]);
-  else if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
-    e.preventDefault();
-    const step = e.key === 'ArrowDown' ? 1 : -1;
-    paletteIndex = (paletteIndex + step + paletteMatches.length) % Math.max(1, paletteMatches.length);
-    [...paletteList.children].forEach((row, i) => row.classList.toggle('active', i === paletteIndex));
-    paletteList.children[paletteIndex]?.scrollIntoView({ block: 'nearest' });
-  }
-  e.stopPropagation();
-});
-paletteEl.addEventListener('pointerdown', (e) => {
-  if (e.target === paletteEl) setPalette(false);
-});
+const commandPalette = createCommandPalette(commands);
 
 /** Línea de “ahora”: dice qué toca hacer en este momento y cambia con la fase de la herramienta y la selección. */
 function hintText(): string {
@@ -3823,7 +3773,7 @@ window.addEventListener('keydown', (e) => {
   }
   if ((e.ctrlKey || e.metaKey) && key === 'k') {
     e.preventDefault();
-    setPalette(true);
+    commandPalette.open();
     return;
   }
   if ((e.ctrlKey || e.metaKey) && key === 'z') {
