@@ -1,3 +1,4 @@
+import { vertexKey } from './key';
 import { faceNormal, type Piece, type Vec3 } from './piece';
 
 /** Cuánto puede salirse un vértice de un plano de cara (en celdas) y seguir contando como convexo. */
@@ -6,9 +7,34 @@ const TOLERANCE = 1e-6;
 const dot = (a: Vec3, b: Vec3): number => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
 
 const cache = new WeakMap<Piece, boolean>();
+const closedCache = new WeakMap<Piece, boolean>();
 
 /**
- * ¿Es la pieza un poliedro convexo con caras planas? Las operaciones de corte, resta, unión y chaflán solo valen para esas;
+ * ¿Es la pieza cerrada? Toda arista que recorre una cara la recorre también, en sentido contrario, otra: sin huecos ni bordes sueltos.
+ * Una caja sin tapa «cumple» los planos de un poliedro convexo (describen un prisma infinito), pero no es un sólido.
+ */
+export function isClosed(piece: Piece): boolean {
+  const known = closedCache.get(piece);
+  if (known !== undefined) return known;
+  const edges = new Map<string, number>();
+  const bump = (key: string, by: number): void => void edges.set(key, (edges.get(key) ?? 0) + by);
+  for (const face of piece.faces) {
+    face.forEach((p, i) => {
+      const a = vertexKey(p);
+      const b = vertexKey(face[(i + 1) % face.length]);
+      if (a === b) return;
+      // Cada arista cuenta +1 en un sentido y -1 en el otro: en una pieza cerrada todas acaban en cero.
+      if (a < b) bump(`${a}|${b}`, 1);
+      else bump(`${b}|${a}`, -1);
+    });
+  }
+  const result = piece.faces.length >= 4 && [...edges.values()].every((count) => count === 0);
+  closedCache.set(piece, result);
+  return result;
+}
+
+/**
+ * ¿Es la pieza un poliedro convexo, cerrado y con caras planas? Las operaciones de corte, resta, unión y chaflán solo valen para esas;
  * las demás son "mallas libres" (vértices movidos, huecos, caras torcidas) y solo admiten mover, extruir, pintar y exportar.
  */
 export function isConvex(piece: Piece): boolean {
@@ -20,6 +46,7 @@ export function isConvex(piece: Piece): boolean {
 }
 
 function computeConvex(piece: Piece): boolean {
+  if (!isClosed(piece)) return false;
   const points = piece.faces.flat();
   for (const face of piece.faces) {
     const n = faceNormal(face);

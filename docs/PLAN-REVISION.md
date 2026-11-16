@@ -370,7 +370,7 @@ Marcar cada tarea al fusionar su PR. Si un defecto `[leído]` no se reproduce, p
 | 3.1 Tecla E | hecha | rama fix/plan-revision | Reproducido: E y Q subían y bajaban la selección en Elegir. Ahora solo RePág y AvPág (`verticalMoveKey`); E siempre cambia a Malla; ayuda actualizada |
 | 3.2 Atajos en Malla | hecha | rama fix/plan-revision | `meshIgnoresKey` en `core/shortcuts.ts`: en Malla M, N, U, K, O e I no actúan (N, U y K solo si la herramienta no los toma); los dígitos 1–9 tampoco con vértices elegidos. Alt+O (mostrar ocultas) se mantiene |
 | 3.3 Atajos estándar | hecha | rama fix/plan-revision | Ctrl+Mayús+Z rehace; Ctrl+S, Ctrl+O y Ctrl+K valen con el foco en un campo (Z, A, C, V, Y siguen siendo del campo); «?» se ignora en campos de texto (F1 sigue abriendo la ayuda); Esc en Crecer y Hundir vuelve a Colocar |
-| 4.1 Exportar piezas abiertas | pendiente | | |
+| 4.1 Exportar piezas abiertas | hecha | rama fix/plan-revision | Reproducido (el cubo de encima desaparecía). `isClosed` en `core/convex.ts`; `isConvex` la exige, así que la pieza abierta cuenta como malla libre en exportar, cortar, restar, unir y chaflán |
 | 4.2 Una sola clave de vértice | hecha | rama fix/plan-revision | `src/core/key.ts` (`VERTEX_EPSILON` 1e-5, `vertexKey`); lo usan todos los módulos, también export, merge y guides (las pruebas siguen en verde con 1e-5). `vertices.ts` lo reexporta. Quedan, con comentario, `WELD` de piece.ts (distancia, no clave), `PLANE_KEY` de merge.ts (planos) y el redondeo 1e9 de transform.ts (limpieza de valores) |
 | 4.3 Canonizar vértices | pendiente | | |
 | 4.4 Soldar cercanos | pendiente | | |
