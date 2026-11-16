@@ -78,3 +78,20 @@ describe('capa activa', () => {
     expect(model.get(derived.id)!.layer).toBeUndefined();
   });
 });
+
+describe('historial', () => {
+  it('clearHistory vacía deshacer y rehacer sin tocar las piezas', () => {
+    const model = new ModelScene();
+    const a = buildPiece(CATALOG[0], 0, 0, 0, 0, 0xffffff);
+    model.apply({ added: [a], removed: [] });
+    model.apply({ added: [], removed: [a] });
+    model.undo();
+    expect(model.undoDepth).toBe(1);
+    expect(model.redoDepth).toBe(1);
+    model.clearHistory();
+    expect(model.undoDepth).toBe(0);
+    expect(model.redoDepth).toBe(0);
+    model.undo();
+    expect(model.get(a.id)).toBeDefined();
+  });
+});

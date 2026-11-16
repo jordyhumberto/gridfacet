@@ -82,6 +82,13 @@ export class ModelScene {
     this.serial++;
   }
 
+  /** Olvida todo lo que se podía deshacer y rehacer (al abrir otro proyecto, por ejemplo). */
+  clearHistory(): void {
+    this.undoStack = [];
+    this.redoStack = [];
+    this.serial++;
+  }
+
   undo(): void {
     const change = this.undoStack.pop();
     if (!change) return;

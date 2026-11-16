@@ -43,6 +43,7 @@ import { connectedPieces, sizeOf } from './core/connected';
 import { bevelChange, edgeBetween, nearestEdge, type PieceEdge } from './core/bevel';
 import { buildShape, MAX_RINGS, MAX_SIDES, MIN_RINGS, MIN_SIDES, SECTIONS, SHAPES, type ShapeKind, type ShapeSpec, type SphereSection } from './core/shapes';
 import { facesAt, paintChange, type FaceRef } from './core/paint';
+import { MAX_GENERATIONS, addGeneration, describeGeneration, parseGenerations, serializeGenerations, type RecoveryEntry } from './core/recovery';
 import { FACE_BEHIND, FACE_DOUBLE, FACE_UNLIT, faceColorOf, faceNormal, newGroupId, reserveGroupIds, withGroup, withLayer } from './core/piece';
 import { VertexTool } from './tools/vertexTool';
 import { FaceEditor } from './tools/faceEditor';
@@ -166,6 +167,8 @@ let dirty = false;
 
 /** Copia automática de la escena en el navegador: si se cierra o recarga la página sin guardar, se recupera al volver. */
 const AUTOSAVE_KEY = 'gridfacet.autosave';
+/** Cuándo se hizo la última copia automática (para la lista de «Recuperar…»). */
+const AUTOSAVE_TIME_KEY = 'gridfacet.autosave.time';
 let autosaveTimer: number | undefined;
 function scheduleAutosave(): void {
   window.clearTimeout(autosaveTimer);
@@ -177,6 +180,7 @@ function scheduleAutosave(): void {
         // Con imágenes la copia puede no caber: se guarda sin ellas antes que perder el modelo.
         localStorage.setItem(AUTOSAVE_KEY, serializeProject(model.all(), model.points(), gridSize, layers.toJSON(), pruneTracks(animation, model.all())));
       }
+      localStorage.setItem(AUTOSAVE_TIME_KEY, String(Date.now()));
     } catch {
       // Sin espacio o sin acceso al almacenamiento: no se copia, pero el trabajo sigue.
     }
@@ -3341,25 +3345,30 @@ async function saveProject(asNew = false): Promise<void> {
   statusEl.textContent = `Guardado ${name} (${pieces.length} piezas)`;
 }
 
-/** Abrir reemplaza la escena como un cambio más, así que se puede deshacer. */
+/** Abrir reemplaza todo el proyecto y vacía el historial: no se puede deshacer (Ctrl+Z no vuelve al archivo anterior). */
 async function openProject(file: File, handle: FileHandle | null = null): Promise<void> {
   try {
     const project = parseProjectFull(await file.text());
     replaceProject(project, file.name, handle);
-    statusEl.textContent = `Abierto ${file.name} (${project.pieces.length} piezas). Ctrl+Z para volver atrás`;
+    statusEl.textContent = `Abierto ${file.name} (${project.pieces.length} piezas)`;
   } catch (error) {
     fileProblem(error instanceof Error ? `No se pudo abrir: ${error.message}` : 'No se pudo abrir el archivo');
   }
 }
 
-/** Empieza de cero: lienzo en blanco sin piezas, capas, animación ni referencias, y sin archivo vinculado. Se puede deshacer. */
+/** Con cambios sin guardar pide confirmación antes de tirarlos; devuelve si se puede seguir. */
+function confirmDiscard(question: string): boolean {
+  return !dirty || window.confirm(`Hay cambios sin guardar. ${question}`);
+}
+
+/** Empieza de cero: lienzo en blanco sin piezas, capas, animación ni referencias, y sin archivo vinculado. No se puede deshacer. */
 function newProject(): void {
-  if (dirty && !window.confirm('Hay cambios sin guardar. ¿Empezar un proyecto nuevo de todas formas? (Ctrl+Z lo recupera)')) return;
+  if (!confirmDiscard('¿Empezar un proyecto nuevo de todas formas?')) return;
   replaceProject({ pieces: [], marks: [], references: [] }, 'Sin título', null);
   statusEl.textContent = 'Proyecto nuevo en blanco';
 }
 
-/** Cambia toda la escena por la de un proyecto como un solo cambio (se puede deshacer) y lo deja vinculado al archivo `name`. */
+/** Cambia toda la escena por la de un proyecto y lo deja vinculado al archivo `name`. Vacía el historial: lo anterior no se puede deshacer, porque el archivo vinculado ya no sería el mismo. */
 function replaceProject(project: ReturnType<typeof parseProjectFull>, name: string, handle: FileHandle | null): void {
   const { pieces: loaded, marks, gridSize: savedSize, layers: savedLayers, animation: savedAnimation, references: savedReferences } = project;
   if (savedSize !== undefined) setGridSize(savedSize);
@@ -3370,11 +3379,10 @@ function replaceProject(project: ReturnType<typeof parseProjectFull>, name: stri
   stopAnimationView();
   // Los grupos del proyecto abierto quedan reservados: uno nuevo no debe fundirse con ellos.
   reserveGroupIds(loaded);
-  const previousAnimation = animation;
   model.apply({ added: loaded, removed: model.all(), marksAdded: marks, marksRemoved: model.points() });
+  model.clearHistory();
   setAnimation(savedAnimation ?? emptyAnimation());
-  // Abrir reemplaza también la animación: si se deshace lo de abrir, vuelve la de antes.
-  if (animation !== previousAnimation) animationUndo.push({ before: previousAnimation, after: animation, depth: model.undoDepth - 1, serial: model.serial, withModel: true });
+  animationUndo.length = 0;
   animationRedo = [];
   layers.load(savedLayers, loaded);
   applyLayerState();
@@ -3387,6 +3395,7 @@ function replaceProject(project: ReturnType<typeof parseProjectFull>, name: stri
 
 /** Con el selector del sistema se conserva el archivo para poder guardar encima; si no, se usa el campo de archivo clásico. */
 async function requestOpen(): Promise<void> {
+  if (!confirmDiscard('¿Abrir otro archivo de todas formas?')) return;
   if (!canPickOpen()) {
     openFileEl.click();
     return;
@@ -3713,7 +3722,7 @@ const commands: Command[] = [
     },
   },
   { name: 'Nueva capa', keywords: 'capas', run: () => layers.add() },
-  { name: 'Recuperar el trabajo anterior', keywords: 'copia automatica restaurar sesion anterior', run: recoverPrevious },
+  { name: 'Recuperar el trabajo anterior', keywords: 'copia automatica restaurar sesion anterior', run: toggleRecoverList },
   { name: 'Nuevo proyecto', keywords: 'nuevo en blanco lienzo vacio', run: newProject },
   { name: 'Guardar', shortcut: 'Ctrl+S', run: () => void saveProject(false) },
   { name: 'Guardar como…', shortcut: 'Ctrl+Alt+S', run: () => void saveProject(true) },
@@ -4967,38 +4976,76 @@ refFileEl.addEventListener('change', async () => {
   }
 });
 
-/** El trabajo de la sesión anterior, guardado aparte al abrir la página para poder recuperarlo sin que se cuele en la hoja nueva. */
+/** Las últimas copias de trabajos de sesiones anteriores (la más nueva primero), guardadas aparte para poder recuperarlas sin que se cuelen en la hoja nueva. */
+const RECOVERY_KEY = 'gridfacet.recovery';
+/** Clave de la versión anterior, que guardaba una sola copia: se aprovecha al leer. */
 const PREVIOUS_KEY = 'gridfacet.previous';
+
+function readRecovery(): RecoveryEntry[] {
+  try {
+    const list = parseGenerations(localStorage.getItem(RECOVERY_KEY));
+    const legacy = localStorage.getItem(PREVIOUS_KEY);
+    if (legacy) {
+      const entry = describeEntry(legacy, 0);
+      if (entry && !list.some((e) => e.data === entry.data)) return [...list, entry].slice(0, MAX_GENERATIONS);
+    }
+    return list;
+  } catch {
+    return [];
+  }
+}
+
+/** Lee un proyecto guardado como texto y lo resume; sin piezas o ilegible da `null`. */
+function describeEntry(text: string, savedAt: number): RecoveryEntry | null {
+  try {
+    const { pieces } = parseProjectFull(text);
+    return pieces.length === 0 ? null : { data: text, pieces: pieces.length, savedAt };
+  } catch {
+    return null;
+  }
+}
+
+function writeRecovery(list: RecoveryEntry[]): void {
+  // Si no caben todas se van soltando las más viejas: más vale guardar menos que nada.
+  for (let keep = list.length; keep >= 0; keep--) {
+    try {
+      localStorage.setItem(RECOVERY_KEY, serializeGenerations(list.slice(0, keep)));
+      localStorage.removeItem(PREVIOUS_KEY);
+      return;
+    } catch {
+      // Sin espacio: se reintenta con una copia menos.
+    }
+  }
+}
 
 /**
  * Al abrir la página se empieza en una hoja en blanco: la última copia automática ya no se mete sola en la escena (se confundía con el
- * trabajo de ahora). Se aparta y se puede traer con el comando «Recuperar el trabajo anterior».
+ * trabajo de ahora). Se aparta como una generación más (se conservan las 3 últimas) y se puede traer con «Recuperar…».
+ * Una copia vacía o igual a la última generación no se guarda: dos recargas seguidas no pisan el trabajo bueno.
  */
 function stashPreviousSession(): void {
   try {
     const text = localStorage.getItem(AUTOSAVE_KEY);
     if (!text) return;
-    const { pieces } = parseProjectFull(text);
-    if (pieces.length === 0) return;
-    localStorage.setItem(PREVIOUS_KEY, text);
+    const savedAt = Number(localStorage.getItem(AUTOSAVE_TIME_KEY)) || Date.now();
+    const entry = describeEntry(text, savedAt);
     localStorage.removeItem(AUTOSAVE_KEY);
-    statusEl.textContent = `Hoja nueva. Tu trabajo anterior (${pieces.length} piezas) sigue disponible: busca «recuperar» en el buscador de comandos`;
+    localStorage.removeItem(AUTOSAVE_TIME_KEY);
+    if (!entry) return;
+    const before = readRecovery();
+    writeRecovery(addGeneration(before, entry));
+    statusEl.textContent = `Hoja nueva. Tu trabajo anterior (${entry.pieces} piezas) sigue disponible: pulsa «Recuperar…» en Archivo`;
   } catch {
     // Una copia dañada o ilegible se ignora: se empieza con la escena vacía.
   }
 }
 stashPreviousSession();
 
-/** Trae a la escena el trabajo de la sesión anterior (se puede deshacer). */
-function recoverPrevious(): void {
+/** Trae a la escena una copia de una sesión anterior. Reemplaza la hoja actual y no se puede deshacer. */
+function recoverGeneration(entry: RecoveryEntry): void {
   try {
-    const text = localStorage.getItem(PREVIOUS_KEY);
-    if (!text) {
-      statusEl.textContent = 'No hay un trabajo anterior que recuperar';
-      return;
-    }
-    if (dirty && !window.confirm('La hoja actual tiene cambios sin guardar. ¿Reemplazarla por el trabajo anterior? (Ctrl+Z lo deshace)')) return;
-    const project = parseProjectFull(text);
+    if (!confirmDiscard('¿Reemplazar la hoja actual por el trabajo anterior?')) return;
+    const project = parseProjectFull(entry.data);
     replaceProject(project, 'Sin título', null);
     dirty = true;
     syncFileName();
@@ -5007,6 +5054,41 @@ function recoverPrevious(): void {
     fileProblem(`No se pudo recuperar: ${errorText(error)}`);
   }
 }
+
+const recoverListEl = document.getElementById('recoverList')!;
+
+/** Muestra u oculta la lista de copias recuperables, cada una con su fecha y número de piezas. */
+function toggleRecoverList(): void {
+  if (!recoverListEl.hidden) {
+    recoverListEl.hidden = true;
+    return;
+  }
+  const list = readRecovery();
+  recoverListEl.replaceChildren();
+  if (list.length === 0) {
+    statusEl.textContent = 'No hay un trabajo anterior que recuperar';
+    return;
+  }
+  for (const entry of list) {
+    const button = document.createElement('button');
+    button.textContent = describeGeneration(entry);
+    button.title = 'Traer este trabajo a la hoja actual';
+    button.addEventListener('click', () => {
+      recoverListEl.hidden = true;
+      recoverGeneration(entry);
+    });
+    recoverListEl.append(button);
+  }
+  recoverListEl.hidden = false;
+}
+document.getElementById('recover')!.addEventListener('click', toggleRecoverList);
+
+// Cerrar o recargar con cambios sin guardar: el navegador pregunta antes.
+window.addEventListener('beforeunload', (event) => {
+  if (!dirty) return;
+  event.preventDefault();
+  event.returnValue = '';
+});
 
 function resize(): void {
   const { clientWidth: w, clientHeight: h } = container;
