@@ -198,9 +198,10 @@ export class CutTool {
     this.setStatus('');
   }
 
+  /** El cursor se movió. Con la región cerrada el cursor no pinta nada (solo se ve el corte); si no, se redibuja sin tocar el mensaje de la barra de estado. */
   setHover(point: Vec3 | null): void {
     this.hover = point;
-    this.refresh();
+    if (!this.closed) this.redraw();
   }
 
   /** Usa una cara existente como región y plano de corte: solo se cortan las piezas apoyadas en ella. */
@@ -347,10 +348,14 @@ export class CutTool {
   }
 
   private refresh(): void {
-    this.clearOverlay();
     this.setStatus(this.hint());
     this.onPhaseChange();
+    this.redraw();
+  }
 
+  /** Dibuja los puntos, la línea, el relleno de la región y lo que se borraría; no toca el mensaje ni el panel. */
+  private redraw(): void {
+    this.clearOverlay();
     // Desde el cuarto punto el clic marca el punto proyectado al plano de los tres primeros: la vista previa se dibuja ahí,
     // con una línea fina hasta el vértice apuntado cuando no coinciden.
     const landing = this.hover && !this.closed && this.points.length >= 3 ? projectToPlane(this.hover, planeFromPoints(this.points[0], this.points[1], this.points[2])) : this.hover;

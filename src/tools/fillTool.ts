@@ -17,6 +17,8 @@ export class FillTool {
   private points: Vec3[] = [];
   private hover: Vec3 | null = null;
   private overlay = new THREE.Group();
+  /** Lo que sigue al cursor (su marca y la línea hasta él): se rehace en cada movimiento sin tocar el resto del dibujo. */
+  private hoverLayer = new THREE.Group();
 
   /** Se llama al cambiar el estado, para que el panel muestre los botones que tocan. */
   onPhaseChange: () => void = () => {};
@@ -29,6 +31,7 @@ export class FillTool {
     /** Añade las imágenes en espejo cuando hay simetría activa. */
     private expand: (pieces: Piece[]) => Piece[] = (pieces) => pieces,
   ) {
+    this.overlay.add(this.hoverLayer);
     scene.add(this.overlay);
   }
 
@@ -78,9 +81,10 @@ export class FillTool {
     this.setStatus('');
   }
 
+  /** El cursor se movió: solo cambia la marca que lo sigue. El dibujo de los puntos, la vista previa y el mensaje no se tocan. */
   setHover(point: Vec3 | null): void {
     this.hover = point;
-    this.refresh();
+    this.drawHover();
   }
 
   addPoint(point: Vec3): void {
@@ -125,7 +129,16 @@ export class FillTool {
 
   private clearOverlay(): void {
     for (const child of [...this.overlay.children]) {
+      if (child === this.hoverLayer) continue;
       this.overlay.remove(child);
+      disposeObject(child);
+    }
+    this.clearHover();
+  }
+
+  private clearHover(): void {
+    for (const child of [...this.hoverLayer.children]) {
+      this.hoverLayer.remove(child);
       disposeObject(child);
     }
   }
@@ -135,9 +148,14 @@ export class FillTool {
     this.setStatus(this.hint());
     this.onPhaseChange();
     this.points.forEach((p, i) => this.overlay.add(marker(p, false, i === 0 && this.points.length >= 4)));
-    if (this.hover) this.overlay.add(marker(this.hover, true, false));
     const preview = this.build();
     if (preview) for (const piece of this.expand([preview])) this.overlay.add(createPieceObject(piece, true));
+    this.drawHover();
+  }
+
+  private drawHover(): void {
+    this.clearHover();
+    if (this.hover) this.hoverLayer.add(marker(this.hover, true, false));
   }
 }
 

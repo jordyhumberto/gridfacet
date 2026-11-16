@@ -20,6 +20,8 @@ export class OutlineTool {
   private points: Vec3[] = [];
   private hover: Vec3 | null = null;
   private overlay = new THREE.Group();
+  /** Lo que sigue al cursor (su marca y la línea hasta él): se rehace en cada movimiento sin tocar el resto del dibujo. */
+  private hoverLayer = new THREE.Group();
   private redoStack: Vec3[] = [];
 
   /** Se llama al cambiar el estado, para que el panel muestre los botones que tocan. */
@@ -36,6 +38,7 @@ export class OutlineTool {
     /** Añade las imágenes en espejo cuando hay simetría activa. */
     private expand: (pieces: Piece[]) => Piece[] = (pieces) => pieces,
   ) {
+    this.overlay.add(this.hoverLayer);
     scene.add(this.overlay);
   }
 
@@ -79,9 +82,10 @@ export class OutlineTool {
     this.setStatus('');
   }
 
+  /** El cursor se movió: solo cambia la marca que lo sigue. El dibujo de los puntos, la vista previa y el mensaje no se tocan. */
   setHover(point: Vec3 | null): void {
     this.hover = point;
-    this.refresh();
+    this.drawHover();
   }
 
   /** Vuelve a dibujar con la cantidad o el sentido que haya ahora en el panel. */
@@ -138,7 +142,16 @@ export class OutlineTool {
 
   private clearOverlay(): void {
     for (const child of [...this.overlay.children]) {
+      if (child === this.hoverLayer) continue;
       this.overlay.remove(child);
+      disposeObject(child);
+    }
+    this.clearHover();
+  }
+
+  private clearHover(): void {
+    for (const child of [...this.hoverLayer.children]) {
+      this.hoverLayer.remove(child);
       disposeObject(child);
     }
   }
@@ -148,15 +161,21 @@ export class OutlineTool {
     this.setStatus(this.hint());
     this.onPhaseChange();
     this.points.forEach((p, i) => this.overlay.add(marker(p, false, i === 0 && this.points.length >= 3)));
-    if (this.hover) this.overlay.add(marker(this.hover, true, false));
     if (this.points.length >= 3) this.preview();
-    else if (this.points.length >= 1) this.outlineLine();
+    this.drawHover();
+  }
+
+  /** La marca bajo el cursor y, con menos de tres puntos, la línea que va de los puntos hasta él. */
+  private drawHover(): void {
+    this.clearHover();
+    if (this.hover) this.hoverLayer.add(marker(this.hover, true, false));
+    if (this.points.length >= 1 && this.points.length < 3) this.outlineLine(this.hoverLayer);
   }
 
   private preview(): void {
     const outline = prepareOutline(this.points, this.model.all());
     if ('error' in outline) {
-      this.outlineLine();
+      this.outlineLine(this.overlay);
       return;
     }
     const distance = this.distanceFor(outline.normal);
@@ -168,11 +187,11 @@ export class OutlineTool {
         for (const copy of this.expand([piece])) this.overlay.add(createPieceObject(copy, true));
       }
     }
-    this.outlineLine();
+    this.outlineLine(this.overlay);
   }
 
   /** El contorno de los puntos marcados, cerrado si ya hay tres. */
-  private outlineLine(): void {
+  private outlineLine(into: THREE.Group): void {
     const list = this.hover && this.points.length < 3 ? [...this.points, this.hover] : this.points;
     if (list.length < 2) return;
     const coords: number[] = [];
@@ -182,7 +201,7 @@ export class OutlineTool {
     geometry.setAttribute('position', new THREE.Float32BufferAttribute(coords, 3));
     const line = new THREE.LineSegments(geometry, new THREE.LineBasicMaterial({ color: ACCENT, depthTest: false }));
     line.renderOrder = 10;
-    this.overlay.add(line);
+    into.add(line);
   }
 }
 

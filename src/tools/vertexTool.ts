@@ -35,6 +35,11 @@ export class VertexTool {
   private isVisible: ((p: Vec3) => boolean) | null = null;
   private visible = new Set<Vec3>();
   private visibleKey = '';
+  /** Los puntos amarillos y la marca bajo el cursor son objetos aparte: mover el cursor solo rehace la marca. */
+  private dotsKey = '';
+  private marker: THREE.Mesh | null = null;
+  /** Estado del modelo con que se calcularon los candidatos: si cambia (deshacer, rehacer, un punto nuevo), se calculan de nuevo. */
+  private modelState = '';
 
   /** Se llama al cambiar el estado, para que el panel muestre la densidad actual. */
   onPhaseChange: () => void = () => {};
@@ -98,6 +103,8 @@ export class VertexTool {
 
   /** Busca el punto candidato bajo el cursor; con `free`, el punto más cercano sobre cualquier arista. */
   hoverAt(cursor: ScreenPoint, ray: THREE.Ray, screenOf: (p: Vec3) => ScreenPoint | null, free: boolean, isVisible: ((p: Vec3) => boolean) | null = null, viewKey = ''): void {
+    // Los candidatos salen de las piezas: tras deshacer, rehacer o un cambio en el modelo ya no valen.
+    if (this.active && this.modelState !== this.stateOfModel()) this.recompute();
     // Las comprobaciones de visibilidad cuestan un rayo por punto: se rehacen solo cuando la cámara o los candidatos cambian.
     const key = `${viewKey}|${this.candidates.length}`;
     if (isVisible && key !== this.visibleKey) {
@@ -128,13 +135,16 @@ export class VertexTool {
     } else {
       for (const p of this.candidates) consider(p);
     }
+    const changed = best !== this.hover;
     this.hover = best;
-    this.refresh();
+    // Los puntos solo se dibujan de nuevo si cambió cuáles se ven; moverse entre ellos solo mueve la marca.
+    if (this.dotsKey !== this.currentDotsKey()) this.refresh();
+    else if (changed) this.drawHover();
   }
 
   clearHover(): void {
     this.hover = null;
-    this.refresh();
+    this.drawHover();
   }
 
   click(): void {
@@ -151,8 +161,18 @@ export class VertexTool {
     this.visibleKey = '';
     this.edges = result.edges;
     this.hover = null;
+    this.modelState = this.stateOfModel();
     this.refresh();
     this.onPhaseChange();
+  }
+
+  private stateOfModel(): string {
+    return `${this.model.serial}:${this.model.undoDepth}:${this.model.redoDepth}:${this.getTargets().map((piece) => piece.id).join(',')}`;
+  }
+
+  /** Qué puntos amarillos se dibujan: todos, o los que dan por visibles para esta cámara. */
+  private currentDotsKey(): string {
+    return `${this.isVisible ? `v${this.visibleKey}` : 'a'}|${this.candidates.length}`;
   }
 
   private clearOverlay(): void {
@@ -163,6 +183,8 @@ export class VertexTool {
         (child.material as THREE.Material).dispose();
       }
     }
+    this.marker = null;
+    this.dotsKey = '';
   }
 
   private refresh(): void {
@@ -181,16 +203,27 @@ export class VertexTool {
     dots.renderOrder = 12;
     dots.raycast = () => {};
     this.overlay.add(dots);
+    this.dotsKey = this.currentDotsKey();
+    this.drawHover();
+  }
 
-    if (this.hover) {
-      const marker = new THREE.Mesh(
-        new THREE.SphereGeometry(0.07, 16, 12),
-        new THREE.MeshBasicMaterial({ color: HOVER_COLOR, depthTest: false }),
-      );
-      marker.position.set(...this.hover);
-      marker.renderOrder = 13;
-      marker.raycast = () => {};
-      this.overlay.add(marker);
+  /** La marca azul sobre el punto bajo el cursor. */
+  private drawHover(): void {
+    if (this.marker) {
+      this.overlay.remove(this.marker);
+      this.marker.geometry.dispose();
+      (this.marker.material as THREE.Material).dispose();
+      this.marker = null;
     }
+    if (!this.active || !this.hover) return;
+    const marker = new THREE.Mesh(
+      new THREE.SphereGeometry(0.07, 16, 12),
+      new THREE.MeshBasicMaterial({ color: HOVER_COLOR, depthTest: false }),
+    );
+    marker.position.set(...this.hover);
+    marker.renderOrder = 13;
+    marker.raycast = () => {};
+    this.overlay.add(marker);
+    this.marker = marker;
   }
 }
