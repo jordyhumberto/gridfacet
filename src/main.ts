@@ -1,6 +1,5 @@
-import { panStep, type PanState } from './core/pan';
 import { MODE_INFO, GUIDE, setupHelp } from './ui/help';
-import { ctrlBeatsField, escLeavesTool, isTextField, meshIgnoresKey, toolForKey, toolKey, undoRedoKey, verticalMoveKey, type KeyMode } from './core/shortcuts';
+import { isPanMode, toolKey, verticalMoveKey, type KeyMode } from './core/shortcuts';
 import * as THREE from 'three';
 import { axisAllowed, lockLabel, planeNormal, type AxisLock } from './core/axisLock';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
@@ -17,6 +16,7 @@ import type { Command } from './core/commands';
 import { parseHexColors, parsePalettes, toHexText, upsertPalette, type Palette } from './core/palettes';
 import { serializeProject } from './core/project';
 import { createFiles } from './ui/files';
+import { createKeyboard, type KeyActions } from './ui/keyboard';
 import { createPlacement } from './ui/placement';
 import { createPixelPanel } from './ui/pixelPanel';
 import { createLayersPanel } from './ui/layersPanel';
@@ -2783,269 +2783,186 @@ document.addEventListener('click', (e) => {
 });
 document.getElementById('exportMode')!.addEventListener('change', (e) => (e.target as HTMLSelectElement).blur());
 
-const PAN_KEYS: Record<string, [number, number]> = {
-  arrowleft: [-1, 0], arrowright: [1, 0], arrowup: [0, 1], arrowdown: [0, -1],
-};
-const panKeys = new Set<string>();
-let panFast = false;
-/** Cuánto lleva pulsada la flecha (segundos): al principio la cámara avanza despacio, para poder ajustar de a poco, y acelera si se mantiene. */
-const panState: PanState = { held: 0, vx: 0, vy: 0 };
-window.addEventListener('keyup', (e) => {
-  panKeys.delete(e.key.toLowerCase());
-  // Soltar Ctrl con la flecha pulsada vuelve a la velocidad normal (antes se quedaba rápida hasta la siguiente pulsación).
-  panFast = panKeys.size > 0 && (e.ctrlKey || e.metaKey);
-});
-// Si el navegador pierde el foco o la pestaña se oculta se pierde el «soltar tecla»: sin esto la cámara seguía avanzando sola.
-const stopPan = (): void => {
-  panKeys.clear();
-  panFast = false;
-};
-window.addEventListener('blur', stopPan);
-document.addEventListener('visibilitychange', () => document.hidden && stopPan());
-
-/** Desplaza cámara y punto de mira juntos por el plano de la pantalla: arranca lento, acelera si se mantiene pulsada y frena casi al soltar. */
-function updatePan(dt: number): void {
-  const want: [number, number] = [0, 0];
-  for (const key of panKeys) (want[0] += PAN_KEYS[key][0]), (want[1] += PAN_KEYS[key][1]);
-  const [x, y] = panStep(panState, want, dt, camera.position.distanceTo(controls.target), panFast);
-  if (x === 0 && y === 0) return;
-  const move = new THREE.Vector3(x, y, 0).applyQuaternion(camera.quaternion);
-  camera.position.add(move);
-  controls.target.add(move);
+// Teclado (ui/keyboard.ts): cada fila de core/shortcuts.ts apunta a una de estas acciones por su id. Una acción que no corresponde ahora devuelve false.
+const ctrlOf = (e: KeyboardEvent): boolean => e.ctrlKey || e.metaKey;
+/** Hacia dónde va cada flecha en pantalla, vista desde la cámara. */
+function arrowDirections(): Record<string, [number, number]> {
+  const { forward, right } = cameraAxes();
+  return { arrowup: forward, arrowdown: [-forward[0], -forward[1]], arrowright: right, arrowleft: [-right[0], -right[1]] };
 }
-
-window.addEventListener('keydown', (e) => {
-  if (pixelPanel.editorOpen) {
-    if (e.key === 'Escape') pixelPanel.closeEditor();
-    // Deshacer y rehacer siguen disponibles; lo demás espera a que se cierre el editor.
-    if (!(e.ctrlKey || e.metaKey)) return;
-  }
-  if (help.isOpen()) {
-    // Con el foco en el buscador, "?" es una letra más.
-    if (e.key === 'Escape' || (e.key === '?' && !help.isSearch(e.target))) setHelp(false);
-    return;
-  }
-  const key = e.key.toLowerCase();
-  const typing = isTextField(e.target as { tagName?: string; type?: string } | null);
-  // «?» dentro de un campo de texto es un signo más; F1 abre la ayuda desde cualquier sitio.
-  if ((e.key === '?' && !typing) || e.key === 'F1') {
+const keyActions: KeyActions = {
+  help: (e) => {
     e.preventDefault();
     setHelp(true);
-    return;
-  }
-  // Con el foco en un campo las teclas le pertenecen a él, salvo Ctrl+S, Ctrl+O y Ctrl+K (si no, el navegador abre «Guardar página»).
-  if (typing && !((e.ctrlKey || e.metaKey) && ctrlBeatsField(key))) return;
-  if (animationPanel.poseKey(e)) {
-    e.preventDefault();
-    return;
-  }
-  // Teclado numérico, como en Blender: 1 frente, 3 derecha, 7 arriba (con Ctrl, la opuesta) y 5 alterna ortográfica/perspectiva.
-  if (e.code.startsWith('Numpad') && !e.altKey && !e.shiftKey) {
-    const numpad = e.code.slice(6);
-    const flip = e.ctrlKey || e.metaKey;
-    const views: Record<string, [string, string]> = { '1': ['+z', '-z'], '3': ['+x', '-x'], '7': ['+y', '-y'] };
-    if (numpad in views) {
-      e.preventDefault();
-      viewFrom(views[numpad][flip ? 1 : 0]);
-      setOrthographic(true);
-      return;
-    }
-    if (numpad === '5') {
-      e.preventDefault();
-      setOrthographic(camera.fov !== ORTHO_FOV);
-      return;
-    }
-  }
-  if (mode === 'mesh' && meshTool.handleKey(e)) {
-    e.preventDefault();
-    return;
-  }
-  // En Malla, lo que la herramienta no toma no actúa sobre las piezas (reflejar, ocultar, aislar) ni cambia de herramienta con vértices elegidos.
-  if (mode === 'mesh' && !e.ctrlKey && !e.metaKey && !e.altKey && meshIgnoresKey(key, meshTool.count)) return;
-  if ((e.ctrlKey || e.metaKey) && key === 'enter' && mode === 'cut') {
-    e.preventDefault();
-    cutTool.applyNow();
-    return;
-  }
-  if ((e.ctrlKey || e.metaKey) && key === 'k') {
+  },
+  commands: (e) => {
     e.preventDefault();
     commandPalette.open();
-    return;
-  }
-  if ((e.ctrlKey || e.metaKey) && key === 'z') {
+  },
+  save: (e) => {
     e.preventDefault();
-    // Ctrl+Mayús+Z rehace; con una herramienta a medias, Ctrl+Z retrocede un punto en vez de deshacer el último bloque.
-    if (undoRedoKey(key, e.shiftKey) === 'redo') {
-      redo();
-      return;
-    }
-    const tool = mode === 'cut' ? cutTool : mode === 'fill' ? fillTool : mode === 'outline' ? outlineTool : null;
-    if (tool?.hasPoints) {
-      tool.undoPoint();
-      return;
-    }
-    undo();
-    return;
-  }
-  if ((e.ctrlKey || e.metaKey) && key === 's') {
+    void files.saveProject(false);
+  },
+  saveAs: (e) => {
     e.preventDefault();
-    void files.saveProject(e.altKey);
-    return;
-  }
-  if ((e.ctrlKey || e.metaKey) && key === 'o') {
+    void files.saveProject(true);
+  },
+  open: (e) => {
     e.preventDefault();
     void files.requestOpen();
-    return;
-  }
-  if ((e.ctrlKey || e.metaKey) && key === 'y') {
+  },
+  // Con una herramienta a medias, Ctrl+Z retrocede un punto en vez de deshacer el último bloque.
+  undo: (e) => {
+    e.preventDefault();
+    const tool = mode === 'cut' ? cutTool : mode === 'fill' ? fillTool : mode === 'outline' ? outlineTool : null;
+    if (tool?.hasPoints) tool.undoPoint();
+    else undo();
+  },
+  redo: (e) => {
     e.preventDefault();
     redo();
-    return;
-  }
-  if ((e.ctrlKey || e.metaKey) && key === 'g') {
+  },
+  group: (e) => {
     e.preventDefault();
-    if (e.altKey) ungroupSelected();
-    else groupSelected();
-    return;
-  }
-  if ((e.ctrlKey || e.metaKey) && key === 'a') {
+    groupSelected();
+  },
+  ungroup: (e) => {
+    e.preventDefault();
+    ungroupSelected();
+  },
+  selectAll: (e) => {
     e.preventDefault();
     selection.set(model.all().filter((piece) => !hidden.has(piece.id)).map((piece) => piece.id));
-    return;
-  }
-  if ((e.ctrlKey || e.metaKey) && (key === 'c' || key === 'v') && pixelPanel.painting()) {
-    e.preventDefault();
-    if (key === 'c') pixelPanel.copy();
-    else pixelPanel.paste();
-    return;
-  }
-  if ((e.ctrlKey || e.metaKey) && key === 'c') {
+  },
+  copy: (e) => {
+    if (pixelPanel.painting()) return false;
     e.preventDefault();
     copySelected();
-    return;
-  }
-  if ((e.ctrlKey || e.metaKey) && key === 'v') {
+  },
+  paste: (e) => {
+    if (pixelPanel.painting()) return false;
     e.preventDefault();
     pasteClipboard();
-    return;
-  }
-  if ((e.ctrlKey || e.metaKey) && key === 'd') {
+  },
+  copyPixels: (e) => {
+    if (!pixelPanel.painting()) return false;
+    e.preventDefault();
+    pixelPanel.copy();
+  },
+  pastePixels: (e) => {
+    if (!pixelPanel.painting()) return false;
+    e.preventDefault();
+    pixelPanel.paste();
+  },
+  duplicate: (e) => {
     e.preventDefault();
     copySelected();
     pasteClipboard();
-    return;
-  }
-  // Con Ctrl solo siguen las flechas y Re Pág/Av Pág (paso doble); con Alt solo R y O (girar al revés, mostrar ocultas) y las flechas (tumbar).
-  if (e.ctrlKey || e.metaKey) {
-    if (!/^(arrow|page)/.test(key)) return;
-  } else if (e.altKey && key !== 'r' && key !== 'o' && !key.startsWith('arrow')) return;
-  const fast = e.ctrlKey || e.metaKey;
-
-  if (key === 'escape' && (drag || growDrag || marquee)) {
+  },
+  applyCutNow: (e) => {
+    e.preventDefault();
+    cutTool.applyNow();
+  },
+  // Teclado numérico, como en Blender: 1 frente, 3 derecha, 7 arriba (con Ctrl, la opuesta) y 5 alterna ortográfica/perspectiva.
+  view: (e, row) => {
+    e.preventDefault();
+    viewFrom(row.arg!);
+    setOrthographic(true);
+  },
+  toggleOrtho: (e) => {
+    e.preventDefault();
+    setOrthographic(camera.fov !== ORTHO_FOV);
+  },
+  toggleHud: () => toggleHud(),
+  toggleWire: () => setWireframe(!isWireframeView()),
+  // Alt+O muestra solo las piezas ocultas una a una: las de capas ocultas siguen ocultas (se muestran con el botón «Mostrar ocultas» o el ojo de la capa).
+  showHidden: () => showHidden([...hidden].filter((id) => { const piece = model.get(id); return !piece || !layers.isHidden(piece); })),
+  // Con selección, las flechas mueven las piezas (Ctrl duplica el paso: de un cuarto a media celda); sin ella, o en las herramientas de marcar puntos y en Malla, mueven la cámara.
+  moveSelection: (e) => {
+    if (isPanMode(mode) || selection.size === 0) return false;
+    const dir = arrowDirections()[e.key.toLowerCase()];
+    if (!dir) return false;
+    e.preventDefault();
+    const stepXZ = ctrlOf(e) ? 2 * STEP_XZ : STEP_XZ;
+    moveSelectionBy(dir[0] * stepXZ, 0, dir[1] * stepXZ);
+  },
+  // Alt + flechas: tumbar la selección un cuarto de vuelta, la parte de arriba va hacia donde apunta la flecha (según la cámara).
+  tumbleSelection: (e) => {
+    if (isPanMode(mode) || selection.size === 0 || ctrlOf(e)) return false;
+    const dir = arrowDirections()[e.key.toLowerCase()];
+    if (!dir) return false;
+    e.preventDefault();
+    const [dx, dz] = dir;
+    // Eje de giro = arriba × dirección, llevado al eje del mundo más cercano.
+    const k = [dz, -dx];
+    const axis: Axis = Math.abs(k[0]) >= Math.abs(k[1]) ? 'x' : 'z';
+    const turns = (axis === 'x' ? k[0] : k[1]) >= 0 ? 1 : -1;
+    commitTransform(rotateQuarterChange(selectedPieces(), axis, turns));
+  },
+  // E y Q no mueven piezas: E entra en Malla y Q es de sus acciones.
+  moveVertical: (e) => {
+    if (isPanMode(mode) || selection.size === 0) return false;
+    const vertical = verticalMoveKey(e.key.toLowerCase());
+    if (vertical === 0) return false;
+    moveSelectionBy(0, vertical * (ctrlOf(e) ? 2 * STEP_Y : STEP_Y), 0);
+  },
+  // Las teclas que encienden o apagan una herramienta salen de la tabla de atajos.
+  toggleTool: (_e, row) => setMode(mode === row.toggles ? 'place' : row.toggles!),
+  selectPiece: (e) => {
+    const n = Number(e.key);
+    if (!(n >= 1 && n <= Math.min(9, CATALOG.length))) return false;
+    selectPiece(n - 1);
+  },
+  rotatePlace: () => {
+    rotation = (rotation + 1) % 4;
+    placement.refresh();
+  },
+  rotateSelection: (e) => {
+    if (selection.size === 0) return false;
+    commitTransform(rotateChange(selectedPieces(), e.altKey ? 3 : 1));
+  },
+  turnShape: () => turnShape(),
+  flipCut: () => cutTool.flip(),
+  cancelDrag: () => {
+    if (!(drag || growDrag || marquee)) return false;
     finishMarquee(false);
     finishDrag(false);
     finishGrow(false);
-    return;
-  }
-
-  // Sin selección (o cortando, o en Malla) las flechas desplazan la cámara en pantalla; con selección mueven las piezas.
-  if (key in PAN_KEYS && (mode === 'cut' || mode === 'fill' || mode === 'outline' || mode === 'vertex' || mode === 'mesh' || selection.size === 0)) {
+  },
+  clearSelection: () => selection.clear(),
+  leaveTool: () => setMode('place'),
+  cancelTool: () => {
+    if (mode === 'cut') cutTool.cancel();
+    else if (mode === 'fill') fillTool.cancel();
+    else if (mode === 'outline') outlineTool.cancel();
+  },
+  applyTool: (e) => {
     e.preventDefault();
-    panKeys.add(key);
-    panFast = fast;
-    return;
-  }
-
-  if (mode !== 'cut' && mode !== 'fill' && mode !== 'outline' && mode !== 'vertex' && mode !== 'mesh' && selection.size > 0) {
-    // Ctrl duplica el paso: de un cuarto a media celda.
-    const stepXZ = fast ? 2 * STEP_XZ : STEP_XZ;
-    const stepY = fast ? 2 * STEP_Y : STEP_Y;
-    const { forward, right } = cameraAxes();
-    const arrows: Record<string, [number, number]> = {
-      arrowup: forward,
-      arrowdown: [-forward[0], -forward[1]],
-      arrowright: right,
-      arrowleft: [-right[0], -right[1]],
-    };
-    const dir = arrows[key];
-    // Alt + flechas: tumbar la selección un cuarto de vuelta, la parte de arriba va hacia donde apunta la flecha (según la cámara).
-    if (dir && e.altKey && !e.ctrlKey && !e.metaKey) {
-      e.preventDefault();
-      const [dx, dz] = dir;
-      // Eje de giro = arriba × dirección, llevado al eje del mundo más cercano.
-      const k = [dz, -dx];
-      const axis: Axis = Math.abs(k[0]) >= Math.abs(k[1]) ? 'x' : 'z';
-      const turns = (axis === 'x' ? k[0] : k[1]) >= 0 ? 1 : -1;
-      commitTransform(rotateQuarterChange(selectedPieces(), axis, turns));
-      return;
-    }
-    if (dir) {
-      e.preventDefault();
-      moveSelectionBy(dir[0] * stepXZ, 0, dir[1] * stepXZ);
-      return;
-    }
-    // E y Q no mueven piezas: E entra en Malla y Q es de sus acciones.
-    const vertical = verticalMoveKey(key);
-    if (vertical !== 0) {
-      moveSelectionBy(0, vertical * stepY, 0);
-      return;
-    }
-  }
-
-  const n = Number(e.key);
-  if (n >= 1 && n <= Math.min(9, CATALOG.length)) selectPiece(n - 1);
-  // Las teclas que encienden o apagan una herramienta salen de la tabla de atajos (core/shortcuts.ts).
-  const toggled = toolForKey(key, mode);
-  if (toggled) setMode(mode === toggled ? 'place' : toggled);
-  if (key === 'o') {
-    // Alt+O muestra solo las piezas ocultas una a una: las de capas ocultas siguen ocultas (se muestran con el botón «Mostrar ocultas» o el ojo de la capa).
-    if (e.altKey) showHidden([...hidden].filter((id) => { const piece = model.get(id); return !piece || !layers.isHidden(piece); }));
-    else hideSelected();
-  }
-  if (key === 'i') isolateSelected();
-  if (key === 'h') toggleHud();
-  if (key === 'a') setHintHidden(!hintHidden);
-  if (key === 'w') setWireframe(!isWireframeView());
-  if (key === 'x' || key === 'y' || key === 'z') toggleSymmetry(key);
-  if (mode !== 'cut' && mode !== 'fill' && mode !== 'vertex' && mode !== 'outline') {
-    if (key === 'm') mirrorSelected('x');
-    if (key === 'n') mirrorSelected('z');
-    if (key === 'u') mirrorSelected('y');
-    if (key === 'k') selectConnected();
-  }
+    if (mode === 'cut') cutTool.apply();
+    else if (mode === 'fill') fillTool.apply();
+    else if (mode === 'outline') outlineTool.apply();
+  },
+  hideSelected: () => hideSelected(),
+  isolateSelected: () => isolateSelected(),
+  toggleHint: () => setHintHidden(!hintHidden),
+  toggleSymmetry: (e) => toggleSymmetry(e.key.toLowerCase() as 'x' | 'y' | 'z'),
+  mirrorX: () => mirrorSelected('x'),
+  mirrorZ: () => mirrorSelected('z'),
+  mirrorY: () => mirrorSelected('y'),
+  selectConnected: () => selectConnected(),
   // En Malla Supr y Retroceso son de los vértices (MeshTool los toma), nunca borran piezas; Retroceso tampoco en Cortar, Rellenar y Figura.
-  if (key === 'delete' && mode !== 'mesh') deleteSelected();
-  if (key === 'backspace' && mode !== 'mesh' && mode !== 'cut' && mode !== 'fill' && mode !== 'outline') deleteSelected();
-  if (mode === 'cut') {
-    if (key === 'enter') {
-      e.preventDefault();
-      cutTool.apply();
-    }
-    if (key === 'f') cutTool.flip();
-    if (key === 'escape') cutTool.cancel();
-  } else if (escLeavesTool(mode)) {
-    if (key === 'escape') setMode('place');
-    if (key === 'r' && mode === 'shape') turnShape();
-  } else if (mode === 'fill') {
-    if (key === 'enter') {
-      e.preventDefault();
-      fillTool.apply();
-    }
-    if (key === 'escape') fillTool.cancel();
-  } else if (mode === 'outline') {
-    if (key === 'enter') {
-      e.preventDefault();
-      outlineTool.apply();
-    }
-    if (key === 'escape') outlineTool.cancel();
-  } else if (key === 'escape') {
-    selection.clear();
-  } else if (key === 'r' && mode === 'select' && selection.size > 0) {
-    commitTransform(rotateChange(selectedPieces(), e.altKey ? 3 : 1));
-  } else if (key === 'r' && mode === 'place') {
-    rotation = (rotation + 1) % 4;
-    placement.refresh();
-  }
+  deleteSelection: () => deleteSelected(),
+};
+const keyboard = createKeyboard({
+  camera,
+  controls,
+  mode: () => mode,
+  hasSelection: () => selection.size > 0,
+  editor: { isOpen: () => pixelPanel.editorOpen, close: () => pixelPanel.closeEditor() },
+  help: { isOpen: () => help.isOpen(), isSearch: (target) => help.isSearch(target), set: (open) => setHelp(open) },
+  poseKey: (e) => animationPanel.poseKey(e),
+  mesh: { handleKey: (e) => meshTool.handleKey(e), count: () => meshTool.count },
+  actions: keyActions,
 });
 
 // Animación: claves de pose por grupo de piezas (el panel vive en ui/animationPanel.ts).
@@ -3114,7 +3031,7 @@ document.addEventListener('visibilitychange', wakeRender);
 renderer.setAnimationLoop((now) => {
   const dt = Math.min((now - lastFrame) / 1000, 0.1);
   lastFrame = now;
-  updatePan(dt);
+  keyboard.updatePan(dt);
   if (animationPanel.playing) animationPanel.tick(dt);
   // Con la inercia de la cámara activa, `update` dice si todavía se está moviendo.
   if (controls.update()) wakeRender();
