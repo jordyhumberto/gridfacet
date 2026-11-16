@@ -58,7 +58,8 @@ export class ModelScene {
     };
     if (effective.added.length === 0 && effective.removed.length === 0 && effective.marksAdded!.length === 0 && effective.marksRemoved!.length === 0) return;
     change = effective;
-    for (const piece of change.added) if (piece.layer === undefined && this.activeLayer !== 1) piece.layer = this.activeLayer;
+    // Solo las piezas nuevas de verdad caen en la capa activa: las derivadas de otra (hay `removed`) conservan la suya, aunque sea la 1 (sin valor).
+    if (change.removed.length === 0) for (const piece of change.added) if (piece.layer === undefined && this.activeLayer !== 1) piece.layer = this.activeLayer;
     this.write(change);
     this.undoStack.push(change);
     this.redoStack = [];

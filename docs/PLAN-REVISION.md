@@ -357,7 +357,7 @@ Marcar cada tarea al fusionar su PR. Si un defecto `[leído]` no se reproduce, p
 | 1.2 Abrir pregunta | pendiente | | |
 | 1.3 Aviso al cerrar y recuperación | pendiente | | |
 | 1.4 Supr en Malla | pendiente | | |
-| 1.5 Capa al editar | pendiente | | |
+| 1.5 Capa al editar | hecha | rama fix/plan-revision | `apply` solo asigna la capa activa si el cambio no quita piezas (las derivadas conservan la suya) |
 | 1.6 Grupos al abrir | pendiente | | |
 | 2.1 Elección crece al espejo | pendiente | | |
 | 2.2 Simetrizar conserva el id | pendiente | | |

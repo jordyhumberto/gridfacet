@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { ModelScene } from './scene';
+import { CATALOG, buildPiece } from './core/catalog';
 
 describe('puntos de referencia', () => {
   it('se añaden, se deshacen y se rehacen', () => {
@@ -53,5 +54,27 @@ describe('vista previa de un arrastre', () => {
     expect(model.get(original.id)).toBe(original);
     model.redo();
     expect(model.get(original.id)).toBe(current);
+  });
+});
+
+describe('capa activa', () => {
+  const cube = () => buildPiece(CATALOG[0], 0, 0, 0, 0, 0xffffff);
+
+  it('una pieza nueva cae en la capa activa', () => {
+    const model = new ModelScene();
+    model.activeLayer = 2;
+    const piece = cube();
+    model.apply({ added: [piece], removed: [] });
+    expect(model.get(piece.id)!.layer).toBe(2);
+  });
+
+  it('una pieza de la capa 1 sustituida con otra capa activa sigue sin capa', () => {
+    const model = new ModelScene();
+    const original = cube();
+    model.apply({ added: [original], removed: [] });
+    model.activeLayer = 2;
+    const derived = cube();
+    model.apply({ added: [derived], removed: [original] });
+    expect(model.get(derived.id)!.layer).toBeUndefined();
   });
 });
