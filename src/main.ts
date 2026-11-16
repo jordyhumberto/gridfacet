@@ -1,5 +1,6 @@
 import { panStep, type PanState } from './core/pan';
 import { MODE_INFO, GUIDE, setupHelp } from './ui/help';
+import { meshNeedReason, titleWithReason } from './core/meshNeeds';
 import { ctrlBeatsField, escLeavesTool, isTextField, meshIgnoresKey, toolForKey, toolKey, undoRedoKey, verticalMoveKey, type KeyMode } from './core/shortcuts';
 import * as THREE from 'three';
 import { axisAllowed, lockLabel, planeNormal, type AxisLock } from './core/axisLock';
@@ -437,12 +438,14 @@ function showGuides(guides: Guides | null, center?: Vec3): void {
   }
 }
 
-/** En cuántas partes se divide cada arista y cada cara para marcar puntos en Cortar, Rellenar y Figura. */
+/** «Puntos por arista»: en cuántas partes se divide cada arista y cada cara para marcar puntos en Cortar, Rellenar, Figura y Punto guía, y al añadir un vértice en Malla (0: solo vértices / libre). */
 let snapDivisions = 4;
 const snapRowEl = document.getElementById('snapRow')!;
 const snapDensityEl = document.getElementById('snapDensity') as HTMLSelectElement;
 snapDensityEl.addEventListener('change', () => {
   snapDivisions = Number(snapDensityEl.value);
+  vertexTool.setDivisions(snapDivisions);
+  meshTool.edgeDivisions = snapDivisions;
   snapDensityEl.blur();
 });
 
@@ -610,7 +613,7 @@ function updateHover(event: PointerEvent): void {
     if (mark) {
       setEraseHover(undefined);
       setMarkHover(mark);
-      statusEl.textContent = 'Clic para borrar el punto de referencia';
+      statusEl.textContent = 'Clic para borrar el punto guía';
       return;
     }
     setMarkHover(null);
@@ -1106,13 +1109,17 @@ groupNameInput.addEventListener('change', () => {
   groupNameInput.blur();
 });
 
-// Inspector de la selección: centro, tamaño y giro con números.
+// Panel «Selección»: las acciones sobre las piezas elegidas (selActions) y sus campos de centro, tamaño y giro (inspectorFields).
+// Aparece al elegir algo; con el portapapeles lleno y nada elegido se queda solo con las acciones (para poder pegar).
 const inspectorEl = document.getElementById('inspector')!;
+const inspectorFieldsEl = document.getElementById('inspectorFields')!;
+const selActionsEl = document.getElementById('selActions')!;
 const insInput = (name: string) => inspectorEl.querySelector<HTMLInputElement>(`[data-ins="${name}"]`)!;
 let rotSign = 1;
 function syncInspector(): void {
   const box = boundsOf(selectedPieces());
-  inspectorEl.hidden = !box;
+  inspectorFieldsEl.hidden = !box;
+  inspectorEl.hidden = !box && selActionsEl.hidden;
   if (!box || inspectorEl.contains(document.activeElement)) return;
   const r = (v: number) => String(Math.round(v * 1000) / 1000);
   (['x', 'y', 'z'] as const).forEach((axis, i) => {
@@ -1175,7 +1182,7 @@ function selectionLabel(): string {
   const size = sizeOf(selectedPieces());
   if (!size) return '';
   const round = (v: number) => Math.round(v * 100) / 100;
-  return `${selection.size} seleccionada(s) · ${round(size[0])} × ${round(size[2])} celdas, alto ${round(size[1])} celdas (X × Z, Y)`;
+  return `${selection.size} elegida(s) · ${round(size[0])} × ${round(size[2])} celdas, alto ${round(size[1])} celdas (X × Z, Y)`;
 }
 
 /** Clic elige una pieza (y su grupo); Ctrl+clic la añade o quita; clic en vacío limpia la selección. */
@@ -1279,19 +1286,65 @@ function mirrorCopySelected(axis: 'x' | 'z'): void {
   const change = mirrorCopyChange(selectedPieces(), axis, center, newGroupId);
   model.apply(change);
   selection.set(change.added.map((piece) => piece.id));
-  statusEl.textContent = `Copia en espejo sobre ${axis.toUpperCase()} = ${center}: ${change.added.length} pieza(s)`;
+  statusEl.textContent = `Copia reflejada sobre ${axis.toUpperCase()} = ${center}: ${change.added.length} pieza(s)`;
 }
 
-const selActionsEl = document.getElementById('selActions')!;
 function syncSelectionActions(): void {
   selActionsEl.hidden = mode === 'cut' || mode === 'fill' || mode === 'outline' || mode === 'vertex' || mode === 'mesh' || (selection.size === 0 && clipboard.length === 0);
+  inspectorEl.hidden = selActionsEl.hidden && inspectorFieldsEl.hidden;
+  const parts = partsOf(selectedPieces()).length;
   for (const button of selActionsEl.querySelectorAll<HTMLButtonElement>('button')) {
-    button.disabled = button.dataset.sel === 'paste' ? clipboard.length === 0 : selection.size === 0;
+    const action = button.dataset.sel;
+    button.disabled = action === 'paste' ? clipboard.length === 0 : action === 'slivers' ? false : action === 'align' ? parts < 2 : action === 'distribute' ? parts < 3 : selection.size === 0;
   }
 }
+
+/** Alinea a ras las partes de la selección (un grupo cuenta como una) por el borde menor, el centro o el borde mayor. */
+function alignSelected(axis: 'x' | 'y' | 'z', edge: 'min' | 'center' | 'max'): void {
+  commitTransform(alignChange(selectedPieces(), axis, edge));
+}
+/** Reparte las partes de la selección con huecos iguales; las de los extremos no se mueven. */
+function distributeSelected(axis: 'x' | 'y' | 'z'): void {
+  commitTransform(distributeChange(selectedPieces(), axis));
+}
+function groundSelected(): void {
+  commitTransform(groundChange(selectedPieces()));
+}
+/** Pregunta la medida de la dimensión mayor y escala la selección conservando las proporciones. */
+function resizeSelected(): void {
+  const box = boundsOf(selectedPieces());
+  if (!box) return;
+  const current = Math.max(...[0, 1, 2].map((k) => box.max[k] - box.min[k]));
+  const text = window.prompt('Medida de la dimensión mayor, en celdas (se conservan las proporciones)', String(Math.round(current * 1000) / 1000));
+  const value = text === null ? NaN : Number(text.replace(',', '.'));
+  if (Number.isFinite(value) && value > 0) commitTransform(resizeLongestChange(selectedPieces(), value));
+}
+/** Quita las piezas diminutas que dejan los cortes muy seguidos: con selección actúa sobre ella; sin selección, sobre las piezas que se pueden editar. */
+function cleanSlivers(): void {
+  const scope = selection.size > 0 ? selectedPieces() : model.editable();
+  const slivers = findSlivers(scope);
+  if (slivers.length === 0) {
+    statusEl.textContent = 'No hay astillas: ninguna pieza es tan pequeña';
+    return;
+  }
+  model.apply({ added: [], removed: slivers });
+  statusEl.textContent = `Quitadas ${slivers.length} astilla(s). Ctrl+Z para volver atrás`;
+}
+const alignEdgeEl = document.getElementById('alignEdge') as HTMLSelectElement;
+alignEdgeEl.addEventListener('change', () => alignEdgeEl.blur());
+
 selActionsEl.addEventListener('click', (e) => {
-  const action = (e.target as HTMLElement).dataset.sel;
-  if (action === 'hide') hideSelected();
+  const button = (e.target as HTMLElement).closest<HTMLElement>('[data-sel]');
+  const action = button?.dataset.sel;
+  const axis = button?.dataset.ax as 'x' | 'y' | 'z' | undefined;
+  if (action === 'align' && axis) alignSelected(axis, alignEdgeEl.value as 'min' | 'center' | 'max');
+  else if (action === 'distribute' && axis) distributeSelected(axis);
+  else if (action === 'ground') groundSelected();
+  else if (action === 'resize') resizeSelected();
+  else if (action === 'slivers') cleanSlivers();
+  else if (action === 'mirror-copy-x') mirrorCopySelected('x');
+  else if (action === 'mirror-copy-z') mirrorCopySelected('z');
+  else if (action === 'hide') hideSelected();
   else if (action === 'isolate') isolateSelected();
   else if (action === 'group') groupSelected();
   else if (action === 'ungroup') ungroupSelected();
@@ -1663,7 +1716,7 @@ function mergeSelected(): void {
     return;
   }
   commitTransform(result.change);
-  statusEl.textContent = 'error' in hull ? 'Piezas fusionadas en un solo bloque (con todas sus caras)' : 'Piezas fusionadas en una';
+  statusEl.textContent = 'error' in hull ? 'Piezas unidas en un solo bloque (con todas sus caras)' : 'Piezas unidas en una';
 }
 
 const repeatEl = document.getElementById('repeatRow')!;
@@ -1913,7 +1966,7 @@ function applyPixelTool(stroke: NonNullable<typeof pixelStroke>, point: Vec3): v
   previewStroke(stroke);
 }
 
-/** Región elegida en la vista 3D con la herramienta Seleccionar: sobre qué cara y qué casillas. La sigue un recuadro amarillo. */
+/** Región elegida en la vista 3D con la herramienta Elegir de los píxeles: sobre qué cara y qué casillas. La sigue un recuadro amarillo. */
 let pixelSelection: { pieceId: number; faceIndex: number; rect: Rect } | null = null;
 let pixelSelecting: { piece: Piece; faceIndex: number; start: { x: number; y: number }; moved: boolean } | null = null;
 const pixelSelectionBox = new THREE.LineLoop(new THREE.BufferGeometry(), new THREE.LineBasicMaterial({ color: 0xffd24a, depthTest: false }));
@@ -2116,22 +2169,28 @@ renderer.domElement.addEventListener('dblclick', (e) => {
 
 // Malla: elegir y mover los vértices de las piezas. Una pieza con un vértice hundido deja de ser convexa y pasa a ser malla libre.
 const meshActionsEl = document.getElementById('meshActions')!;
-const selectAxisEl = document.getElementById('selectAxis')!;
-function syncSelectAxis(): void {
-  selectAxisEl.querySelectorAll<HTMLButtonElement>('button[data-selaxis]').forEach((button) => {
-    const axis = button.dataset.selaxis === 'free' ? null : Number(button.dataset.selaxis);
-    button.classList.toggle('active', axis === pieceAxis);
+// «Mover en / Plano» es un solo componente: con Elegir limita el arrastre de las piezas (`pieceAxis`) y en Malla el de los vértices (`meshTool.axis`).
+const axisRowEl = document.getElementById('axisRow')!;
+function syncAxisRow(): void {
+  const current = mode === 'mesh' ? meshTool.axis : pieceAxis;
+  axisRowEl.querySelectorAll<HTMLButtonElement>('button[data-axis]').forEach((button) => {
+    const axis = button.dataset.axis === 'free' ? null : Number(button.dataset.axis);
+    button.classList.toggle('active', axis === current);
   });
 }
-selectAxisEl.querySelectorAll<HTMLButtonElement>('button[data-selaxis]').forEach((button) =>
+axisRowEl.querySelectorAll<HTMLButtonElement>('button[data-axis]').forEach((button) =>
   button.addEventListener('click', () => {
     button.blur();
-    pieceAxis = button.dataset.selaxis === 'free' ? null : Number(button.dataset.selaxis);
-    syncSelectAxis();
+    const axis = button.dataset.axis === 'free' ? null : Number(button.dataset.axis);
+    if (mode === 'mesh') {
+      meshTool.setAxis(axis);
+      return;
+    }
+    pieceAxis = axis;
+    syncAxisRow();
     statusEl.textContent = pieceAxis === null ? 'Arrastre libre' : `Las piezas solo se mueven en ${lockLabel(pieceAxis)}`;
   }),
 );
-syncSelectAxis();
 const meshInfoEl = document.getElementById('meshInfo')!;
 const meshDoubleEl = document.getElementById('meshDouble') as HTMLInputElement;
 /** Lo que se deja elegido en el panel de Malla se recuerda entre sesiones (sin fallar si el navegador no deja guardar). */
@@ -2179,6 +2238,7 @@ const meshTool = new MeshTool({
   onSelectionChange: () => syncMeshActions(),
 });
 model.onHistory = (kind) => meshTool.historyMoved(kind);
+syncAxisRow();
 meshTool.magnet = magnet;
 const magnetEl = document.getElementById('magnet') as HTMLInputElement;
 magnetEl.checked = magnet;
@@ -2194,8 +2254,11 @@ magnetEl.addEventListener('change', () => {
   statusEl.textContent = magnet ? 'Imán activado: piezas y vértices caen en la rejilla' : 'Imán desactivado: piezas y vértices siguen al ratón';
 });
 if (import.meta.env.DEV) (window as unknown as Record<string, unknown>).__mesh = meshTool;
-/** Cuántos vértices (de una misma pieza) pide cada acción de Malla para poder usarse; «face» pide al menos una cara con todos sus vértices elegidos. */
-const NEEDS: Record<string, number | 'face'> = { weld: 0, merge: 2, ring: 2, bevel: 2, face: 3, fillhole: 1, delface: 'face', triangulate: 'face', push: 'face', flip: 'face', extrude: 'face', connect: 2, dissolve: 2, growedge: 2, tip: 1, straighten: 3, flatten: 3, taper: 2, twist: 2, bend: 2 };
+/** Un botón o casilla de Malla apagado dice en su título qué hay que elegir (el título de siempre se guarda en `data-title`). */
+function setReasonTitle(element: HTMLElement, reason: string | null): void {
+  element.dataset.title ??= element.title;
+  element.title = titleWithReason(element.dataset.title, reason);
+}
 function syncMeshActions(): void {
   meshActionsEl.hidden = mode !== 'mesh';
   const count = meshTool.count;
@@ -2206,20 +2269,17 @@ function syncMeshActions(): void {
   document.getElementById('meshAdd')!.classList.toggle('active', meshTool.addMode);
   document.getElementById('meshSlide')!.classList.toggle('active', meshTool.slideMode);
   document.getElementById('meshRemove')!.classList.toggle('active', meshTool.removeMode);
-  meshActionsEl.querySelectorAll<HTMLButtonElement>('button[data-meshaxis]').forEach((button) => {
-    const axis = button.dataset.meshaxis === 'free' ? null : Number(button.dataset.meshaxis);
-    button.classList.toggle('active', axis === meshTool.axis);
-  });
+  syncAxisRow();
   meshActionsEl.querySelectorAll<HTMLButtonElement>('button[data-mesh]').forEach((button) => {
-    const action = button.dataset.mesh!;
-    const need = NEEDS[action];
-    const symmetric = symmetry.x || symmetry.y || symmetry.z;
-    button.disabled = action === 'symmetrize' ? !symmetric : action === 'all' ? false : need === 'face' ? fullFaces === 0 : count < (need ?? 1) || (need !== undefined && meshTool.mostInOnePiece < need);
+    const reason = meshNeedReason(button.dataset.mesh!, { count, mostInOnePiece: meshTool.mostInOnePiece, fullFaces, symmetric: symmetry.x || symmetry.y || symmetry.z });
+    button.disabled = reason !== null;
+    setReasonTitle(button, reason);
   });
   // Las casillas reflejan las caras elegidas (todos sus vértices): marcadas si todas la tienen, a medias si solo algunas.
   for (const [input, flag] of [[meshDoubleEl, FACE_DOUBLE], [meshUnlitEl, FACE_UNLIT], [meshBehindEl, FACE_BEHIND]] as const) {
     const { total, on } = meshTool.faceFlagCount(flag);
     input.disabled = total === 0;
+    setReasonTitle(input.parentElement!, total === 0 ? 'necesita elegir caras con todos sus vértices elegidos (no hay ninguna)' : null);
     input.checked = total > 0 && on === total;
     input.indeterminate = on > 0 && on < total;
   }
@@ -2227,11 +2287,6 @@ function syncMeshActions(): void {
 for (const [input, flag] of [[meshDoubleEl, FACE_DOUBLE], [meshUnlitEl, FACE_UNLIT], [meshBehindEl, FACE_BEHIND]] as const) {
   input.addEventListener('change', () => meshTool.setFaceFlag(flag, input.checked));
 }
-const meshDensityEl = document.getElementById('meshDensity') as HTMLSelectElement;
-meshDensityEl.addEventListener('change', () => {
-  meshTool.edgeDivisions = Number(meshDensityEl.value);
-  meshDensityEl.blur();
-});
 document.getElementById('meshSlide')!.addEventListener('click', (event) => {
   (event.currentTarget as HTMLButtonElement).blur();
   meshTool.setSlideMode(!meshTool.slideMode);
@@ -2255,21 +2310,23 @@ meshGrowAmountEl.addEventListener('input', () => {
     meshPref.set('grow', String(value));
   }
 });
+// El tamaño del chaflán es uno solo: lo comparten la herramienta Chaflán (J) y la acción «Chaflán» de Malla, y se recuerda entre sesiones.
 const meshBevelSizeEl = document.getElementById('meshBevelSize') as HTMLInputElement;
+function setBevelSize(value: number): void {
+  meshTool.bevelSize = value;
+  meshPref.set('bevel', String(value));
+  for (const input of [bevelSizeEl, meshBevelSizeEl]) if (Number(input.value) !== value) input.value = String(value);
+}
 {
   const saved = Number(meshPref.get('bevel'));
-  if (saved > 0 && saved <= gridSize) {
-    meshBevelSizeEl.value = String(saved);
-    meshTool.bevelSize = saved;
-  }
+  if (saved > 0 && saved <= gridSize) setBevelSize(saved);
 }
-meshBevelSizeEl.addEventListener('input', () => {
-  const value = Number(meshBevelSizeEl.value);
-  if (value > 0 && value <= gridSize) {
-    meshTool.bevelSize = value;
-    meshPref.set('bevel', String(value));
-  }
-});
+for (const input of [bevelSizeEl, meshBevelSizeEl]) {
+  input.addEventListener('input', () => {
+    const value = Number(input.value);
+    if (value > 0 && value <= gridSize) setBevelSize(value);
+  });
+}
 const meshWeldDistanceEl = document.getElementById('meshWeldDistance') as HTMLInputElement;
 {
   const saved = Number(meshPref.get('weld'));
@@ -2299,12 +2356,6 @@ document.getElementById('meshAdd')!.addEventListener('click', (event) => {
   (event.currentTarget as HTMLButtonElement).blur();
   meshTool.setAddMode(!meshTool.addMode);
 });
-meshActionsEl.querySelectorAll<HTMLButtonElement>('button[data-meshaxis]').forEach((button) =>
-  button.addEventListener('click', () => {
-    button.blur();
-    meshTool.setAxis(button.dataset.meshaxis === 'free' ? null : Number(button.dataset.meshaxis));
-  }),
-);
 meshActionsEl.querySelectorAll<HTMLButtonElement>('button[data-mesh]').forEach((button) =>
   button.addEventListener('click', () => {
     button.blur();
@@ -2652,7 +2703,7 @@ function clampToGrid(dx: number, dy: number, dz: number): [number, number, numbe
 function moveSelectionBy(dx: number, dy: number, dz: number): void {
   const [x, y, z] = clampToGrid(dx, dy, dz);
   if (x === 0 && y === 0 && z === 0) {
-    statusEl.textContent = 'Límite de la malla';
+    statusEl.textContent = 'Límite de la rejilla';
     return;
   }
   commitTransform(moveChange(selectedPieces(), x, y, z));
@@ -2948,7 +2999,10 @@ document.getElementById('gridToggle')!.addEventListener('change', (e) => {
 });
 
 // Panel
-const toolsEl = document.getElementById('tools')!;
+/** Cada herramienta va en un grupo de la barra (Crear, Elegir, Caras, Vértices, Pintar, Guías). */
+const TOOL_GROUPS = ['create', 'pick', 'faces', 'vertices', 'paint', 'guides'] as const;
+type ToolGroup = (typeof TOOL_GROUPS)[number];
+const toolGroupEls = Object.fromEntries(TOOL_GROUPS.map((name) => [name, document.querySelector(`[data-tools="${name}"]`)!])) as Record<ToolGroup, Element>;
 const piecesEl = document.getElementById('pieces')!;
 const pieceButtons = CATALOG.map((def, i) => {
   const button = document.createElement('button');
@@ -2959,28 +3013,29 @@ const pieceButtons = CATALOG.map((def, i) => {
   return button;
 });
 /** Botón de una herramienta: la tecla sale de la tabla de atajos, así el texto no puede contradecir al teclado. */
-function toolButton(tool: KeyMode, label: string, title?: string): HTMLButtonElement {
+function toolButton(tool: KeyMode, group: ToolGroup, label: string, title?: string): HTMLButtonElement {
   const button = document.createElement('button');
   const key = toolKey(tool);
   button.textContent = key ? `${key.toUpperCase()} ${label}` : label;
   if (title) button.title = title;
   button.addEventListener('click', () => setMode(mode === tool ? 'place' : tool));
-  toolsEl.appendChild(button);
+  toolGroupEls[group].appendChild(button);
   return button;
 }
-const cutButton = toolButton('cut', 'Cortar');
-const selectButton = toolButton('select', 'Elegir');
-const eraseButton = toolButton('erase', 'Borrar', 'Clic en una pieza la borra');
-const fillButton = toolButton('fill', 'Rellenar', 'Marca puntos y se llena el volumen que encierran');
-const outlineButton = toolButton('outline', 'Figura', 'Marca los puntos de una figura sobre una superficie y haz crecer o hundir solo esa figura');
-const vertexButton = toolButton('vertex', 'Vértice', 'Añade un vértice de referencia a la pieza elegida');
-const meshButton = toolButton('mesh', 'Malla', 'Elige y mueve los vértices de las piezas: estira, tuerce y modela formas libres');
-const bevelButton = toolButton('bevel', 'Chaflán', 'Corta una arista en chaflán');
-const faceButton = toolButton('face', 'Cara', 'Extruye, cava o divide a partir de una cara');
-const shapeButton = toolButton('shape', 'Forma', 'Esfera, cilindro, cono o cápsula con medidas y lados a elegir');
-const paintButton = toolButton('paint', 'Pintar', 'Pinta una cara con el color elegido');
-const growButton = toolButton('grow', 'Crecer', 'Clic en una cara la hace crecer; arrastrar elige cuánto');
-const sinkButton = toolButton('sink', 'Hundir', 'Lo contrario de crecer: clic en una cara la hunde hacia dentro; arrastrar elige cuánto');
+// Los botones se agregan por grupos, en este orden: Crear (con las piezas), Elegir, Caras, Vértices, Pintar y Guías.
+const shapeButton = toolButton('shape', 'create', 'Forma', 'Esfera, cilindro, cono o cápsula con medidas y lados a elegir');
+const fillButton = toolButton('fill', 'create', 'Rellenar', 'Marca puntos y se llena el volumen que encierran');
+const selectButton = toolButton('select', 'pick', 'Elegir', 'Elige piezas y las mueve');
+const eraseButton = toolButton('erase', 'pick', 'Borrar', 'Clic en una pieza la borra');
+const growButton = toolButton('grow', 'faces', 'Crecer', 'Clic en una cara la hace crecer; arrastrar elige cuánto');
+const sinkButton = toolButton('sink', 'faces', 'Hundir', 'Lo contrario de crecer: clic en una cara la hunde hacia dentro; arrastrar elige cuánto');
+const faceButton = toolButton('face', 'faces', 'Cara', 'Extruye, cava o divide a partir de una cara');
+const outlineButton = toolButton('outline', 'faces', 'Figura', 'Marca los puntos de una figura sobre una superficie y haz crecer o hundir solo esa figura');
+const cutButton = toolButton('cut', 'faces', 'Cortar', 'Marca una región y corta las piezas con ella');
+const bevelButton = toolButton('bevel', 'faces', 'Chaflán', 'Corta una arista en chaflán');
+const meshButton = toolButton('mesh', 'vertices', 'Malla', 'Elige y mueve los vértices de las piezas: estira, tuerce y modela formas libres');
+const paintButton = toolButton('paint', 'paint', 'Pintar', 'Pinta una cara con el color elegido, o píxeles sueltos con la casilla «Píxeles»');
+const vertexButton = toolButton('vertex', 'guides', 'Punto guía', 'Añade un punto guía (un vértice de referencia que no se exporta) a la pieza elegida');
 
 const cutActionsEl = document.getElementById('cutActions')!;
 function syncCutActions(): void {
@@ -2995,17 +3050,13 @@ function syncCutActions(): void {
 }
 cutTool.onPhaseChange = syncCutActions;
 const vertexActionsEl = document.getElementById('vertexActions')!;
-const vertexInfoEl = document.getElementById('vertexInfo')!;
 function syncVertexActions(): void {
   vertexActionsEl.hidden = mode !== 'vertex';
-  vertexInfoEl.textContent = `×${vertexTool.divisions}`;
 }
 vertexTool.onPhaseChange = syncVertexActions;
 vertexActionsEl.addEventListener('click', (e) => {
   const action = (e.target as HTMLElement).dataset.vertex;
-  if (action === 'more') vertexTool.morePoints();
-  else if (action === 'less') vertexTool.fewerPoints();
-  else if (action === 'done') setMode('place');
+  if (action === 'done') setMode('place');
 });
 document.getElementById('vertexFaces')!.addEventListener('change', (e) => {
   vertexTool.setFaces((e.target as HTMLInputElement).checked);
@@ -3026,7 +3077,9 @@ fillActionsEl.addEventListener('click', (e) => {
 const outlineActionsEl = document.getElementById('outlineActions')!;
 function syncOutlineActions(): void {
   outlineActionsEl.hidden = mode !== 'outline';
-  snapRowEl.hidden = mode !== 'outline' && mode !== 'cut' && mode !== 'fill' && mode !== 'vertex';
+  snapRowEl.hidden = mode !== 'outline' && mode !== 'cut' && mode !== 'fill' && mode !== 'vertex' && mode !== 'mesh';
+  // «Solo visibles» es de los puntos de Cortar, Rellenar, Figura y Punto guía; en Malla lo hace «Ver vértices de atrás».
+  document.getElementById('visibleOnlyLabel')!.hidden = mode === 'mesh';
   // El plano de trabajo solo vale al marcar puntos para cortar, rellenar o hacer una figura.
   document.getElementById('planeRow')!.hidden = mode !== 'outline' && mode !== 'cut' && mode !== 'fill';
   outlineActionsEl.querySelector<HTMLButtonElement>('[data-outline="undo"]')!.hidden = !outlineTool.hasPoints;
@@ -3118,7 +3171,8 @@ function syncButtons(): void {
   pieceButtons.forEach((b, i) => b.classList.toggle('active', mode === 'place' && i === selected));
   cutButton.classList.toggle('active', mode === 'cut');
   selectButton.classList.toggle('active', mode === 'select');
-  selectAxisEl.hidden = mode !== 'select';
+  axisRowEl.hidden = mode !== 'select' && mode !== 'mesh';
+  syncAxisRow();
   eraseButton.classList.toggle('active', mode === 'erase');
   growButton.classList.toggle('active', mode === 'grow');
   sinkButton.classList.toggle('active', mode === 'sink');
@@ -3302,7 +3356,7 @@ const setHelp = help.setHelp;
 // Barra de ayuda contextual: dice qué se puede hacer ahora y cambia con el modo, la fase y la selección.
 const hintEl = document.getElementById('hint')!;
 
-// Paleta de comandos (Ctrl+K): busca cualquier acción por nombre y la ejecuta.
+// Comandos (Ctrl+K): busca cualquier acción por nombre y la ejecuta.
 const hasSelection = (): boolean => selection.size > 0;
 const commands: Command[] = [
   ...(Object.keys(MODE_INFO) as Mode[]).map((name): Command => ({ name: `Herramienta: ${MODE_INFO[name].name}`, keywords: 'modo', run: () => setMode(name) })),
@@ -3316,54 +3370,28 @@ const commands: Command[] = [
   { name: 'Desagrupar', enabled: hasSelection, run: ungroupSelected },
   { name: 'Ocultar selección', enabled: hasSelection, run: hideSelected },
   { name: 'Aislar selección', keywords: 'solo', enabled: hasSelection, run: isolateSelected },
-  { name: 'Seleccionar conectadas', enabled: hasSelection, run: selectConnected },
+  { name: 'Elegir conectadas', enabled: hasSelection, run: selectConnected },
   { name: 'Excavar', keywords: 'restar hueco', enabled: hasSelection, run: excavateSelected },
-  ...(['x', 'y', 'z'] as const).map((axis): Command => ({ name: `Voltear en ${axis.toUpperCase()}`, keywords: 'espejo reflejar simetria', enabled: hasSelection, run: () => mirrorSelected(axis) })),
-  ...(['x', 'z'] as const).map((axis): Command => ({ name: `Espejo-copia en ${axis.toUpperCase()}`, keywords: 'duplicar reflejar simetria copia', enabled: hasSelection, run: () => mirrorCopySelected(axis) })),
+  ...(['x', 'y', 'z'] as const).map((axis): Command => ({ name: `Reflejar en ${axis.toUpperCase()}`, keywords: 'espejo reflejar simetria', enabled: hasSelection, run: () => mirrorSelected(axis) })),
+  ...(['x', 'z'] as const).map((axis): Command => ({ name: `Reflejar y copiar en ${axis.toUpperCase()}`, keywords: 'duplicar reflejar simetria copia', enabled: hasSelection, run: () => mirrorCopySelected(axis) })),
   ...(['x', 'y', 'z'] as const).map((axis): Command => ({ name: `Girar 90° sobre ${axis.toUpperCase()}`, keywords: 'rotar giro tumbar', enabled: hasSelection, run: () => commitTransform(rotateQuarterChange(selectedPieces(), axis, 1)) })),
   ...(['x', 'y', 'z'] as const).flatMap((axis) =>
     ([['min', 'al borde menor'], ['center', 'al centro'], ['max', 'al borde mayor']] as const).map(([edge, label]): Command => ({
       name: `Alinear en ${axis.toUpperCase()} ${label}`,
       keywords: 'alinear ras',
       enabled: () => partsOf(selectedPieces()).length >= 2,
-      run: () => commitTransform(alignChange(selectedPieces(), axis, edge)),
+      run: () => alignSelected(axis, edge),
     })),
   ),
   ...(['x', 'y', 'z'] as const).map((axis): Command => ({
     name: `Distribuir en ${axis.toUpperCase()} con huecos iguales`,
     keywords: 'repartir separar espaciar',
     enabled: () => partsOf(selectedPieces()).length >= 3,
-    run: () => commitTransform(distributeChange(selectedPieces(), axis)),
+    run: () => distributeSelected(axis),
   })),
-  {
-    name: 'Limpiar astillas',
-    keywords: 'cortes diminutas pequeñas quitar basura',
-    run: () => {
-      // Con selección actúa sobre ella; sin selección, sobre las piezas que se pueden editar.
-      const scope = selection.size > 0 ? selectedPieces() : model.editable();
-      const slivers = findSlivers(scope);
-      if (slivers.length === 0) {
-        statusEl.textContent = 'No hay astillas: ninguna pieza es tan pequeña';
-        return;
-      }
-      model.apply({ added: [], removed: slivers });
-      statusEl.textContent = `Quitadas ${slivers.length} astilla(s). Ctrl+Z para volver atrás`;
-    },
-  },
-  { name: 'Mover al suelo', keywords: 'bajar apoyar y 0', enabled: hasSelection, run: () => commitTransform(groundChange(selectedPieces())) },
-  {
-    name: 'Redimensionar…',
-    keywords: 'escalar tamaño medida proporcion',
-    enabled: hasSelection,
-    run: () => {
-      const box = boundsOf(selectedPieces());
-      if (!box) return;
-      const current = Math.max(...[0, 1, 2].map((k) => box.max[k] - box.min[k]));
-      const text = window.prompt('Medida de la dimensión mayor, en celdas (se conservan las proporciones)', String(Math.round(current * 1000) / 1000));
-      const value = text === null ? NaN : Number(text.replace(',', '.'));
-      if (Number.isFinite(value) && value > 0) commitTransform(resizeLongestChange(selectedPieces(), value));
-    },
-  },
+  { name: 'Limpiar astillas', keywords: 'cortes diminutas pequeñas quitar basura', run: cleanSlivers },
+  { name: 'Mover al suelo', keywords: 'bajar apoyar y 0', enabled: hasSelection, run: groundSelected },
+  { name: 'Redimensionar…', keywords: 'escalar tamaño medida proporcion', enabled: hasSelection, run: resizeSelected },
   { name: 'Nueva capa', keywords: 'capas', run: () => layers.add() },
   { name: 'Recuperar el trabajo anterior', keywords: 'copia automatica restaurar sesion anterior', run: files.toggleRecoverList },
   { name: 'Nuevo proyecto', keywords: 'nuevo en blanco lienzo vacio', run: files.newProject },
@@ -3470,7 +3498,7 @@ function hintText(): string {
     case 'mesh':
       return meshTool.count === 0 ? 'Clic en un vértice para elegirlo y arrástralo para moverlo (Ctrl+arrastrar en vacío: recuadro)' : `${meshTool.count} vértice(s): arrastra o usa Supr (las flechas mueven la cámara)`;
     case 'vertex':
-      return 'Clic en un punto amarillo para crear un punto de referencia';
+      return 'Clic en un punto amarillo para crear un punto guía';
     case 'fill': {
       const n = fillTool.pointCount;
       if (n === 0) return 'Rellenar: marca 4 o más puntos que no estén en un mismo plano; se pegan a vértices y a la rejilla';
@@ -3586,7 +3614,7 @@ document.querySelectorAll<HTMLElement>('#hud section').forEach((section) => {
 
 document.getElementById('helpFloat')!.addEventListener('click', () => setHelp(true));
 
-// Tamaño de la malla: número de celdas por lado (par, para que la cuadrícula siga alineada con las piezas).
+// Tamaño de la rejilla (la sala): número de celdas por lado (par, para que la cuadrícula siga alineada con las piezas).
 const sizeInput = document.getElementById('gridSize') as HTMLInputElement;
 const sizeLabel = document.getElementById('sizeLabel')!;
 function setGridSize(requested: number): void {
@@ -3604,7 +3632,7 @@ function setGridSize(requested: number): void {
     files.syncFileName();
     files.scheduleAutosave();
   }
-  statusEl.textContent = outside > 0 ? `Malla de ${gridSize}: ${outside} pieza(s) quedan fuera; se conservan` : `Malla de ${gridSize} × ${gridSize} × ${gridSize}`;
+  statusEl.textContent = outside > 0 ? `Rejilla de ${gridSize}: ${outside} pieza(s) quedan fuera; se conservan` : `Rejilla de ${gridSize} × ${gridSize} × ${gridSize}`;
 }
 sizeInput.addEventListener('change', () => setGridSize(Number(sizeInput.value)));
 document.querySelectorAll<HTMLButtonElement>('[data-size]').forEach((button) =>
@@ -3641,6 +3669,7 @@ function syncSymmetry(): void {
   }
   refreshGhost();
   meshTool.refresh();
+  syncMeshActions();
 }
 function toggleSymmetry(axis: 'x' | 'y' | 'z'): void {
   symmetry[axis] = !symmetry[axis];

@@ -3,9 +3,6 @@ import type { Piece, Vec3 } from '../core/piece';
 import { candidatePoints, type Edge } from '../core/vertexCandidates';
 import type { ModelScene } from '../scene';
 
-/** Divisiones por arista que se pueden elegir con los botones de más / menos puntos. */
-const LEVELS = [2, 4, 6, 8, 12];
-const DEFAULT_LEVEL = 1;
 /** Distancia en pantalla (px) a la que el cursor "agarra" un punto candidato. */
 const PICK_RADIUS = 14;
 const MAX_TARGETS = 200;
@@ -18,14 +15,15 @@ export interface ScreenPoint {
 }
 
 /**
- * Añade puntos de referencia (vértices sueltos) a las piezas elegidas. Solo se pueden poner en posiciones válidas:
+ * Añade puntos guía (vértices de referencia sueltos) a las piezas elegidas. Solo se pueden poner en posiciones válidas:
  * subdivisiones de las aristas, una cuadrícula opcional en las caras y los cruces con otras piezas; con Alt, en
  * cualquier punto de una arista.
  */
 export class VertexTool {
   faces = false;
 
-  private level = DEFAULT_LEVEL;
+  /** En cuántas partes se divide cada arista; es el mismo valor que «Puntos por arista» del panel (0: solo los vértices). */
+  private count = 4;
   private candidates: Vec3[] = [];
   private edges: Edge[] = [];
   private hover: Vec3 | null = null;
@@ -56,14 +54,14 @@ export class VertexTool {
   }
 
   get divisions(): number {
-    return LEVELS[this.level];
+    return this.count >= 2 ? this.count : 1;
   }
 
   /** Comprueba que hay piezas elegidas antes de entrar en la herramienta. */
   canStart(): boolean {
     const targets = this.getTargets();
     if (targets.length === 0) {
-      this.setStatus('Elige primero (S) la pieza a la que quieres añadir vértices');
+      this.setStatus('Elige primero (S) la pieza a la que quieres añadir puntos guía');
       return false;
     }
     if (targets.length > MAX_TARGETS) {
@@ -75,7 +73,6 @@ export class VertexTool {
 
   activate(): void {
     this.active = true;
-    this.level = DEFAULT_LEVEL;
     this.recompute();
   }
 
@@ -86,13 +83,10 @@ export class VertexTool {
     this.setStatus('');
   }
 
-  morePoints(): void {
-    this.level = Math.min(LEVELS.length - 1, this.level + 1);
-    this.recompute();
-  }
-
-  fewerPoints(): void {
-    this.level = Math.max(0, this.level - 1);
+  /** Cambia en cuántas partes se divide cada arista (0 u 1: solo los vértices). */
+  setDivisions(count: number): void {
+    if (count === this.count) return;
+    this.count = count;
     this.recompute();
   }
 
@@ -191,7 +185,7 @@ export class VertexTool {
     this.clearOverlay();
     if (!this.active) return;
     this.setStatus(
-      `Añadir vértice a ${this.getTargets().length} pieza(s): clic en un punto amarillo · Alt: libre sobre la arista · Esc: salir`,
+      `Punto guía en ${this.getTargets().length} pieza(s): clic en un punto amarillo · Alt: libre sobre la arista · Esc: salir`,
     );
 
     const shown = this.isVisible ? this.candidates.filter((p) => this.visible.has(p)) : this.candidates;

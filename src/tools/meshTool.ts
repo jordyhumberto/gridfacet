@@ -57,6 +57,7 @@ const NEEDS_SELECTION: Record<string, string> = {
   n: 'Empujar cara (N): elige todos los vértices de una o más caras',
   k: 'Tapar hueco (K): elige un vértice del borde abierto que quieres cerrar',
   i: 'Punta (I): elige los vértices de los que quieres sacar una copia para jalarla',
+  m: 'Extruir cara (M): elige todos los vértices de una o más caras',
   r: 'Girar (R): elige los vértices que quieres girar',
   t: 'Escalar (T): elige los vértices que quieres escalar',
   delete: 'Borrar vértices (Supr): elige los vértices que quieres quitar',
@@ -262,7 +263,7 @@ export class MeshTool {
 
   /** Cuánto crecen «Cara desde segmento» y «Extruir cara» (en unidades del modelo); se cambia desde el panel. */
   growDistance = EXTRUDE_DISTANCE;
-  /** Cuánto se corta la esquina al biselar una arista (en celdas, sobre los segmentos vecinos). */
+  /** Cuánto se corta la esquina al hacer el chaflán de una arista (en celdas, sobre los segmentos vecinos); es el mismo tamaño que el de la herramienta Chaflán. */
   bevelSize = 0.25;
   /** Distancia bajo la que «Soldar cercanos» junta dos vértices (en celdas); se cambia desde el panel. */
   weldDistance = WELD_DISTANCE;
@@ -1298,6 +1299,11 @@ export class MeshTool {
       this.fillHolesSelected();
       return true;
     }
+    // M (de «meter la cara hacia fuera»: extruir) saca las caras elegidas, igual que el botón «Extruir cara».
+    if (key === 'm' && !this.drag && !e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey) {
+      this.extrudeSelected();
+      return true;
+    }
     // I (de «sacar una punta») duplica los vértices elegidos y deja elegidas las copias para jalarlas, igual que el botón «Punta».
     if (key === 'i' && !this.drag && !e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey) {
       this.tipSelected();
@@ -1799,9 +1805,9 @@ export class MeshTool {
         max = Math.floor(lo * 100) / 100;
         while (max > 0 && !attempt(max).every((r) => r.ok)) max = Math.round((max - 0.01) * 100) / 100;
       }
-      if (max > 0) this.host.status(`Biselar: ese tamaño no cabe${symmetric ? ' con la simetría activa (cada lado recorta el segmento que comparten)' : ''}: prueba con ${max} o menos`);
-      else if (first.some((r) => r.count > 0)) this.host.status('Biselar: con la simetría activa esta arista y su espejo se estorban (comparten un extremo): bisélala sin simetría');
-      else this.host.status('Biselar: elige los dos vértices de una arista que acaben en esquinas de tres caras, y un tamaño menor que los segmentos vecinos');
+      if (max > 0) this.host.status(`Chaflán: ese tamaño no cabe${symmetric ? ' con la simetría activa (cada lado recorta el segmento que comparten)' : ''}: prueba con ${max} o menos`);
+      else if (first.some((r) => r.count > 0)) this.host.status('Chaflán: con la simetría activa esta arista y su espejo se estorban (comparten un extremo): hazlo sin simetría');
+      else this.host.status('Chaflán: elige los dos vértices de una arista que acaben en esquinas de tres caras, y un tamaño menor que los segmentos vecinos');
       return;
     }
     let done = 0;
@@ -1811,7 +1817,7 @@ export class MeshTool {
       done += result.count;
       return { piece: sameId(result.piece, piece), select: result.created.size > 0 ? this.oneSide(result.created, result.piece, piece, parts) : ownKeys(parts) };
     });
-    this.host.status(done > 0 ? `Biselar: ${done} arista(s) biseladas (los vértices nuevos quedan elegidos)` : 'Biselar: elige los dos vértices de una arista que acaben en esquinas de tres caras, y un tamaño menor que los segmentos vecinos');
+    this.host.status(done > 0 ? `Chaflán: ${done} arista(s) cortadas (los vértices nuevos quedan elegidos)` : 'Chaflán: elige los dos vértices de una arista que acaben en esquinas de tres caras, y un tamaño menor que los segmentos vecinos');
   }
 
   /** Parte en triángulos las caras de cuatro o más vértices cuyos vértices están todos elegidos (los vértices no se mueven; el contorno de cada cara queda igual). */
