@@ -1,6 +1,7 @@
+import { vertexKey } from './key';
 import { makePiece, type Piece, type Vec3 } from './piece';
 import { remapTexture } from './texture';
-import { uniqueVertices, vertexKey } from './vertices';
+import { uniqueVertices } from './vertices';
 
 /** Ejes con simetría activa y posición del plano de espejo en cada uno. */
 export interface Symmetry {
@@ -55,13 +56,13 @@ export function reflectPiece(piece: Piece, reflection: Reflection): Piece {
 /** Clave geométrica de una pieza: sus vértices ordenados, para reconocer piezas iguales. */
 export function pieceKey(piece: Piece): string {
   const set = new Set<string>();
-  for (const face of piece.faces) for (const p of face) set.add(p.map((v) => Math.round(v * 1e5)).join(','));
+  for (const face of piece.faces) for (const p of face) set.add(vertexKey(p));
   return [...set].sort().join('|');
 }
 
 /** Los puntos dados más sus imágenes en espejo, sin repetir. */
 export function withSymmetryPoints(points: Vec3[], sym: Symmetry): Vec3[] {
-  const key = (p: Vec3) => p.map((v) => Math.round(v * 1e5)).join(',');
+  const key = vertexKey;
   const seen = new Set(points.map(key));
   const out = [...points];
   for (const reflection of reflections(sym)) {

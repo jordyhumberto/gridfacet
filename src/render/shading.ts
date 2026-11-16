@@ -1,3 +1,4 @@
+import { vertexKey } from '../core/key';
 import * as THREE from 'three';
 import { faceNormal, type Piece, type Vec3 } from '../core/piece';
 
@@ -5,7 +6,7 @@ import { faceNormal, type Piece, type Vec3 } from '../core/piece';
 const SMOOTH_ANGLE = 45;
 const COS_LIMIT = Math.cos((SMOOTH_ANGLE * Math.PI) / 180);
 
-const key = (p: Vec3): string => p.map((v) => Math.round(v * 1e5)).join(',');
+const key = vertexKey;
 
 const unit = (n: Vec3): Vec3 => {
   const l = Math.hypot(n[0], n[1], n[2]) || 1;

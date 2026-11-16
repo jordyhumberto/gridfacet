@@ -1,3 +1,4 @@
+import { vertexKey } from './key';
 import { faceNormal, type Piece, type Vec3 } from './piece';
 
 /** A qué distancia del cursor (en celdas) cuenta una cara como "la que apunta". */
@@ -32,7 +33,7 @@ const unit = (a: Vec3): Vec3 => {
   const length = Math.hypot(a[0], a[1], a[2]) || 1;
   return [a[0] / length, a[1] / length, a[2] / length];
 };
-const keyOf = (p: Vec3): string => p.map((v) => Math.round(v * 1e4)).join(',');
+const keyOf = vertexKey;
 
 interface PlaneFace {
   face: Vec3[];

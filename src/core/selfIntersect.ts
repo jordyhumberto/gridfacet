@@ -1,7 +1,8 @@
+import { vertexKey } from './key';
 import { triangulateFace } from './convex';
 import type { Piece, Vec3 } from './piece';
 
-const key = (p: Vec3): string => p.map((v) => Math.round(v * 1e5)).join(',');
+const key = vertexKey;
 
 const EPS = 1e-6;
 /** Grosor mínimo: dos superficies paralelas, de frente una a otra y más cerca que esto, cuentan como pegadas (el cuerpo se ha quedado en una lámina). */

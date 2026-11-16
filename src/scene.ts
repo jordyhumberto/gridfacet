@@ -1,7 +1,8 @@
+import { vertexKey } from './core/key';
 import type { Change } from './core/cut';
 import type { Piece, Vec3 } from './core/piece';
 
-const markKey = (p: Vec3): string => p.map((v) => Math.round(v * 1e5)).join(',');
+const markKey = vertexKey;
 
 /** ¿Es la misma pieza con la misma forma y los mismos colores y propiedades por cara? (Las texturas solo se miran por referencia.) */
 function sameGeometry(a: Piece, b: Piece): boolean {

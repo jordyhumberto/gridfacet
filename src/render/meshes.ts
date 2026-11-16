@@ -1,3 +1,4 @@
+import { vertexKey } from '../core/key';
 import * as THREE from 'three';
 import { triangulateFace } from '../core/convex';
 import { FACE_BEHIND, FACE_DOUBLE, FACE_UNLIT, faceColorOf, type Piece } from '../core/piece';
@@ -85,7 +86,7 @@ export function pieceVertices(piece: Piece): THREE.Points {
   const positions: number[] = [];
   for (const face of piece.faces) {
     for (const p of face) {
-      const key = p.map((v) => Math.round(v * 1e5)).join(',');
+      const key = vertexKey(p);
       if (seen.has(key)) continue;
       seen.add(key);
       positions.push(p[0], p[1], p[2]);

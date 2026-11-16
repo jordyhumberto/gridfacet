@@ -1,3 +1,4 @@
+import { vertexKey } from './key';
 import { intersectionPointsWith } from './intersections';
 import { faceNormal, type Piece, type Vec3 } from './piece';
 
@@ -16,7 +17,7 @@ export interface CandidateOptions {
 const EPS = 1e-6;
 const MAX_POINTS = 8000;
 
-const keyOf = (p: Vec3): string => p.map((v) => Math.round(v * 1e5)).join(',');
+const keyOf = vertexKey;
 
 /** Aristas distintas de una pieza (cada una aparece en dos caras). */
 export function uniqueEdges(piece: Piece): Edge[] {

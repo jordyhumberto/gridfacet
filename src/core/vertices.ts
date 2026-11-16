@@ -1,9 +1,9 @@
+import { vertexKey } from './key';
 import { FACE_DOUBLE, faceNormal, makePiece, type Piece, type Vec3 } from './piece';
 import { remapTexture, type FaceTexture } from './texture';
 import { triangulateFace } from './convex';
 
-/** Clave de un vértice por su posición: los de varias caras que coinciden son el mismo vértice de la pieza. */
-export const vertexKey = (p: Vec3): string => p.map((v) => Math.round(v * 1e5)).join(',');
+export { vertexKey };
 
 /** Los vértices distintos de la pieza (uno por posición). */
 export function uniqueVertices(piece: Piece): Vec3[] {

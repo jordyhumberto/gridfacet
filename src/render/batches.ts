@@ -1,3 +1,4 @@
+import { vertexKey } from '../core/key';
 import * as THREE from 'three';
 import { triangulateFace } from '../core/convex';
 import { FACE_BEHIND, FACE_DOUBLE, FACE_UNLIT, faceColorOf, type Piece } from '../core/piece';
@@ -170,7 +171,7 @@ export class PieceBatches {
             lineColors.push(edge.r, edge.g, edge.b, edge.r, edge.g, edge.b);
           }
           if (this.wireframe) {
-            const key = a.map((v) => Math.round(v * 1e5)).join(',');
+            const key = vertexKey(a);
             if (!seen.has(key)) {
               seen.add(key);
               vertexPositions.push(a[0], a[1], a[2]);

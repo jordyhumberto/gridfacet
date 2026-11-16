@@ -1,3 +1,4 @@
+import { vertexKey } from './key';
 import { isConvex } from './convex';
 import type { Change } from './cut';
 import { clipPiece, faceNormal, planeFromPoints, type Piece, type Plane, type Vec3 } from './piece';
@@ -16,7 +17,7 @@ const add = (a: Vec3, b: Vec3): Vec3 => [a[0] + b[0], a[1] + b[1], a[2] + b[2]];
 const scale = (a: Vec3, k: number): Vec3 => [a[0] * k, a[1] * k, a[2] * k];
 const dot = (a: Vec3, b: Vec3): number => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
 const unit = (a: Vec3): Vec3 => scale(a, 1 / (Math.hypot(a[0], a[1], a[2]) || 1));
-const key = (p: Vec3): string => p.map((v) => Math.round(v * 1e5)).join(',');
+const key = vertexKey;
 
 /** Aristas de la pieza con sus dos caras (las que solo tienen una cara, que no deberían existir en un cuerpo cerrado, se ignoran). */
 export function pieceEdges(piece: Piece): PieceEdge[] {

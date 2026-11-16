@@ -84,6 +84,7 @@ export interface Plane {
 }
 
 const EPS = 1e-9;
+/** Distancia bajo la que dos puntos de un contorno se funden al recortar (no es la clave de vértice de key.ts: aquí se mide una distancia, con más precisión para no deformar el recorte). */
 const WELD = 1e-7;
 
 let nextId = 1;

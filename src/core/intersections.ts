@@ -1,3 +1,4 @@
+import { vertexKey } from './key';
 import { faceNormal, type Piece, type Vec3 } from './piece';
 
 const EPS = 1e-7;
@@ -37,7 +38,7 @@ function pairPoints(a: Piece, b: Piece, found: Map<string, Vec3>): void {
         const p1 = face[(i + 1) % face.length];
         for (const target of other.faces) {
           const p = segmentThroughFace(p0, p1, target);
-          if (p) found.set(p.map((v) => Math.round(v * 1e5)).join(','), p);
+          if (p) found.set(vertexKey(p), p);
         }
       }
     }
@@ -66,7 +67,7 @@ export function intersectionPoints(pieces: Piece[]): Vec3[] {
           const b = face[(i + 1) % face.length];
           for (const target of other.faces) {
             const p = segmentThroughFace(a, b, target);
-            if (p) found.set(p.map((v) => Math.round(v * 1e5)).join(','), p);
+            if (p) found.set(vertexKey(p), p);
           }
         }
       }
