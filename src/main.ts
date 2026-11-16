@@ -3550,7 +3550,7 @@ if (import.meta.env.DEV) {
   // Utilidad de verificación: exporta y vuelve a cargar el GLB para inspeccionarlo.
   (window as unknown as { __glbCheck: unknown }).__glbCheck = async (exportMode: ExportMode) => {
     const { GLTFLoader } = await import('three/addons/loaders/GLTFLoader.js');
-    const buffer = await exportGlb(model.all(), exportMode, undefined, animation);
+    const buffer = await exportGlb(model.all(), exportMode, undefined, pruneTracks(animation, model.all()));
     const gltf = await new GLTFLoader().parseAsync(buffer, '');
     const meshes: { name: string; triangles: number; color: string }[] = [];
     gltf.scene.traverse((o) => {
@@ -4924,7 +4924,7 @@ const modelChanged = model.onChange;
 model.onChange = (change) => {
   if (animPlayer.active) stopAnimationView();
   modelChanged(change);
-  animation = pruneTracks(animation, model.all());
+  // Las pistas de grupos que ya no existen se dejan: si se deshace el borrado vuelven con sus claves. Se podan al guardar y exportar.
   refreshAnimationPanel();
 };
 const selectionChanged = selection.onChange;
