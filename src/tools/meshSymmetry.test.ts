@@ -629,3 +629,73 @@ describe('Malla vuelve a calcular lo caro solo cuando hace falta', () => {
     expect(s.tool.unpairedCount).toBe(0);
   });
 });
+
+describe('giros, escalas y deformaciones simulados con el ratón', () => {
+  const key = (name: string) => ({ key: name, ctrlKey: false, metaKey: false, altKey: false, shiftKey: false }) as KeyboardEvent;
+  const mouse = (s: ReturnType<typeof setup>, x: number, y: number) => {
+    for (const fn of s.handlers.get('pointermove') ?? []) fn({ clientX: x, clientY: y, ctrlKey: true, metaKey: false, altKey: false, shiftKey: false, buttons: 0 });
+  };
+  const bounds = (model: ModelScene) => {
+    const verts = uniqueVertices(model.all()[0]);
+    return { top: Math.max(...verts.map((p) => p[1])), bottom: Math.min(...verts.map((p) => p[1])), wide: Math.max(...verts.map((p) => p[0])) - Math.min(...verts.map((p) => p[0])) };
+  };
+
+  it('afinar con el ratón y Esc deja el modelo como estaba y sin paso de deshacer', () => {
+    const s = setup();
+    s.choose(() => true);
+    const before = s.model.all()[0].faces;
+    const depth = s.model.undoDepth;
+    s.tool.beginTransform('taper');
+    mouse(s, 100, 100);
+    mouse(s, 220, 100);
+    expect(s.tool.busy).toBe(true);
+    expect(JSON.stringify(s.model.all()[0].faces)).not.toBe(JSON.stringify(before));
+    s.tool.handleKey(key('Escape'));
+    expect(s.tool.busy).toBe(false);
+    expect(s.model.all()[0].faces).toEqual(before);
+    expect(s.model.undoDepth).toBe(depth);
+  });
+
+  it('afinar con el ratón e Intro es un solo paso de deshacer, simétrico, y se deshace entero', () => {
+    const s = setup();
+    s.choose(() => true);
+    const before = s.model.all()[0].faces;
+    const depth = s.model.undoDepth;
+    s.tool.beginTransform('taper');
+    mouse(s, 100, 100);
+    mouse(s, 160, 100);
+    mouse(s, 220, 100);
+    s.tool.handleKey(key('Enter'));
+    expect(s.model.undoDepth).toBe(depth + 1);
+    expect(isSymmetric(s.model.all())).toBe(true);
+    expect(bounds(s.model).wide).toBeGreaterThan(0);
+    s.model.undo();
+    expect(s.model.all()[0].faces).toEqual(before);
+  });
+
+  it('un modal sin movimiento del ratón no cambia nada al confirmar', () => {
+    const s = setup();
+    s.choose(() => true);
+    const depth = s.model.undoDepth;
+    s.tool.beginTransform('twist');
+    s.tool.handleKey(key('Enter'));
+    expect(s.model.undoDepth).toBe(depth);
+    expect(s.tool.busy).toBe(false);
+  });
+
+  it('cancel() en medio de un arrastre devuelve el modelo y no anota paso', () => {
+    const s = setup();
+    s.choose((p) => p[0] > 0);
+    const before = s.model.all()[0].faces;
+    const depth = s.model.undoDepth;
+    const inner = s.tool as unknown as { buildTargets: () => unknown[]; drag: unknown; preview: (d: Vec3) => void; pendingBefore: unknown };
+    inner.pendingBefore = new Map();
+    inner.drag = { targets: inner.buildTargets(), anchor: [0, 0, 0], plane: null, grab: null, startX: 0, startY: 0, moved: true, delta: [0.3, 0, 0] };
+    inner.preview([0.3, 0, 0]);
+    expect(JSON.stringify(s.model.all()[0].faces)).not.toBe(JSON.stringify(before));
+    s.tool.cancel();
+    expect(s.tool.busy).toBe(false);
+    expect(s.model.all()[0].faces).toEqual(before);
+    expect(s.model.undoDepth).toBe(depth);
+  });
+});
