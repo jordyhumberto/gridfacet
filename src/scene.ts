@@ -3,6 +3,15 @@ import type { Piece, Vec3 } from './core/piece';
 
 const markKey = (p: Vec3): string => p.map((v) => Math.round(v * 1e5)).join(',');
 
+/** ¿Es la misma pieza con la misma forma y los mismos colores y propiedades por cara? (Las texturas solo se miran por referencia.) */
+function sameGeometry(a: Piece, b: Piece): boolean {
+  if (a === b) return true;
+  if (a.id !== b.id || a.color !== b.color || a.faces.length !== b.faces.length || a.group !== b.group || a.layer !== b.layer) return false;
+  if (a.faceTextures !== b.faceTextures && JSON.stringify(a.faceTextures?.map((t) => t !== null)) !== JSON.stringify(b.faceTextures?.map((t) => t !== null))) return false;
+  if (JSON.stringify(a.faceColors) !== JSON.stringify(b.faceColors) || JSON.stringify(a.faceFlags) !== JSON.stringify(b.faceFlags)) return false;
+  return a.faces.every((face, i) => face.length === b.faces[i].length && face.every((p, k) => p[0] === b.faces[i][k][0] && p[1] === b.faces[i][k][1] && p[2] === b.faces[i][k][2]));
+}
+
 /** Estado del modelo, independiente del dibujo, con historial de cambios. */
 export class ModelScene {
   private pieces = new Map<number, Piece>();
@@ -76,6 +85,10 @@ export class ModelScene {
 
   /** Anota en el historial un cambio ya aplicado con `preview`, como un único paso de deshacer. */
   commitPreview(change: Change): void {
+    // Una pieza que se quedó igual que estaba (un arrastre sin desplazamiento, por imán, eje bloqueado o tope) no es un cambio: no se anota,
+    // y así no hay un paso de deshacer vacío que además borre lo rehacible.
+    const unchanged = new Set(change.added.filter((piece) => change.removed.some((old) => sameGeometry(piece, old))).map((piece) => piece.id));
+    if (unchanged.size > 0) change = { ...change, added: change.added.filter((p) => !unchanged.has(p.id)), removed: change.removed.filter((p) => !unchanged.has(p.id)) };
     if (change.added.length === 0 && change.removed.length === 0) return;
     this.undoStack.push(change);
     this.redoStack = [];

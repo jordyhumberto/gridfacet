@@ -95,3 +95,34 @@ describe('historial', () => {
     expect(model.get(a.id)).toBeDefined();
   });
 });
+
+describe('un arrastre que no cambia nada', () => {
+  it('commitPreview con piezas iguales no añade un paso ni borra lo rehacible', () => {
+    const model = new ModelScene();
+    const piece = buildPiece(CATALOG[0], 0, 0, 0, 0, 0x336699);
+    const other = buildPiece(CATALOG[0], 3, 0, 0, 0, 0x336699);
+    model.apply({ added: [piece], removed: [] });
+    model.apply({ added: [other], removed: [] });
+    model.undo();
+    expect(model.redoDepth).toBe(1);
+    const depth = model.undoDepth;
+    const serial = model.serial;
+    // La pieza de la vista previa es otro objeto con la misma geometría.
+    const copy = { ...piece, faces: piece.faces.map((face) => face.map((p) => [...p] as typeof p)) };
+    model.preview({ added: [copy], removed: [piece] });
+    model.commitPreview({ added: [copy], removed: [piece] });
+    expect(model.undoDepth).toBe(depth);
+    expect(model.redoDepth).toBe(1);
+    expect(model.serial).toBe(serial);
+  });
+
+  it('commitPreview con una pieza movida sí se anota', () => {
+    const model = new ModelScene();
+    const piece = buildPiece(CATALOG[0], 0, 0, 0, 0, 0x336699);
+    model.apply({ added: [piece], removed: [] });
+    const moved = { ...piece, faces: piece.faces.map((face) => face.map((p) => [p[0] + 1, p[1], p[2]] as typeof p)) };
+    model.preview({ added: [moved], removed: [piece] });
+    model.commitPreview({ added: [moved], removed: [piece] });
+    expect(model.undoDepth).toBe(2);
+  });
+});

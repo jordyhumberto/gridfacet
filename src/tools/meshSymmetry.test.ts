@@ -378,3 +378,29 @@ describe('con un arrastre, un modal o un recuadro en marcha', () => {
     expect((s.tool as unknown as { modal: unknown }).modal).toBeNull();
   });
 });
+
+describe('un arrastre sin desplazamiento', () => {
+  it('no anota un paso de deshacer ni deja la elección de antes sin su paso', () => {
+    const { model, tool, choose } = setup();
+    choose((p) => p[0] > 0);
+    const depth = model.undoDepth;
+    const before = model.all()[0];
+    dragChosen(tool, [0, 0, 0]);
+    expect(model.undoDepth).toBe(depth);
+    expect(model.all()[0].faces).toEqual(before.faces);
+    // Un arrastre de verdad después sigue anotándose.
+    dragChosen(tool, [0.1, 0, 0]);
+    expect(model.undoDepth).toBe(depth + 1);
+  });
+
+  it('un giro o escala sin movimiento del ratón tampoco', () => {
+    const { model, tool, choose } = setup();
+    choose((p) => p[0] > 0);
+    const depth = model.undoDepth;
+    tool.beginTransform('scale');
+    const inner = tool as unknown as { modal: { moved: boolean }; finishModal: (commit: boolean) => void };
+    inner.modal.moved = true;
+    inner.finishModal(true);
+    expect(model.undoDepth).toBe(depth);
+  });
+});

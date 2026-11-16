@@ -1048,8 +1048,10 @@ export class MeshTool {
       if (current) finals.push(current);
       originals.push(target.original);
     }
+    const depthBefore = this.host.model.undoDepth;
     this.host.model.commitPreview({ added: finals, removed: originals });
-    if (this.pendingBefore) this.record(this.pendingBefore);
+    // Si no cambió nada (un arrastre sin desplazamiento) el modelo no anotó un paso: tampoco se anota la elección.
+    if (this.pendingBefore && this.host.model.undoDepth > depthBefore) this.record(this.pendingBefore);
     this.refresh();
     if (flattened > 0) this.host.status(`Aplanar al soltar: ${flattened} vértice(s) ajustados para que las caras no queden torcidas`);
   }
@@ -1445,8 +1447,10 @@ export class MeshTool {
       if (current) finals.push(current);
       originals.push(target.original);
     }
+    const depthBefore = this.host.model.undoDepth;
     this.host.model.commitPreview({ added: finals, removed: originals });
-    if (this.pendingBefore) this.record(this.pendingBefore);
+    // Si no cambió nada (un arrastre sin desplazamiento) el modelo no anotó un paso: tampoco se anota la elección.
+    if (this.pendingBefore && this.host.model.undoDepth > depthBefore) this.record(this.pendingBefore);
     this.refresh();
     this.host.status({ rotate: 'Giro aplicado', scale: 'Escala aplicada', taper: 'Afinado aplicado', twist: 'Torcido aplicado', bend: 'Curvado aplicado', push: 'Cara empujada' }[modal.kind]);
   }
