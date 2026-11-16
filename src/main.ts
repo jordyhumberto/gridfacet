@@ -945,9 +945,15 @@ function applyLayerState(): void {
     if (layer.locked) selection.remove(ids);
   }
 }
+/** Un cambio de capas (crear, renombrar, ocultar, bloquear, quitar) cuenta como cambio sin guardar; elegir la capa activa no. */
+function markLayersEdited(): void {
+  dirty = true;
+  syncFileName();
+}
 function toggleLayerHidden(id: number): void {
   const layer = layers.get(id);
   if (!layer) return;
+  markLayersEdited();
   layers.setHidden(id, !layer.hidden);
   if (layer.hidden) applyLayerState();
   else showHidden(idsOfLayer(id).filter((pid) => hidden.has(pid)));
@@ -955,19 +961,24 @@ function toggleLayerHidden(id: number): void {
 function toggleLayerLocked(id: number): void {
   const layer = layers.get(id);
   if (!layer) return;
+  markLayersEdited();
   layers.setLocked(id, !layer.locked);
   applyLayerState();
 }
 function removeLayer(id: number): void {
   const layer = layers.get(id);
   if (!layer || id === 1) return;
-  // Sus piezas pasan a la primera capa.
-  const ids = idsOfLayer(id);
-  for (const piece of model.all()) if (layerOf(piece) === id) delete piece.layer;
+  // Sus piezas pasan a la primera capa, como un cambio más del modelo (se puede deshacer y marca «sin guardar»).
+  const moved = model.all().filter((piece) => layerOf(piece) === id);
   const wasHidden = layer.hidden;
   layers.remove(id);
   model.activeLayer = layers.active;
-  if (wasHidden) showHidden(ids.filter((pid) => hidden.has(pid)));
+  if (moved.length > 0) {
+    const added = moved.map((piece) => withLayer(piece, 1));
+    model.apply({ added, removed: moved });
+    if (wasHidden) showHidden(added.map((piece) => piece.id).filter((pid) => hidden.has(pid)));
+  }
+  markLayersEdited();
   applyLayerState();
 }
 /** Pasa las piezas elegidas a la capa activa. */
@@ -996,7 +1007,10 @@ function refreshLayers(): void {
     name.addEventListener('click', () => layers.setActive(layer.id));
     name.addEventListener('dblclick', () => {
       const next = window.prompt('Nombre de la capa', layer.name);
-      if (next !== null) layers.rename(layer.id, next);
+      if (next !== null) {
+        layers.rename(layer.id, next);
+        markLayersEdited();
+      }
     });
     const eye = document.createElement('button');
     eye.className = `tool${layer.hidden ? ' on' : ''}`;
@@ -1026,7 +1040,10 @@ layers.onChange = () => {
   refreshLayers();
   scheduleAutosave();
 };
-document.getElementById('layerAdd')!.addEventListener('click', () => layers.add());
+document.getElementById('layerAdd')!.addEventListener('click', () => {
+  layers.add();
+  markLayersEdited();
+});
 layerMoveEl.addEventListener('click', moveSelectionToActiveLayer);
 refreshLayers();
 function hideSelected(): void {
@@ -4150,12 +4167,19 @@ const sizeInput = document.getElementById('gridSize') as HTMLInputElement;
 const sizeLabel = document.getElementById('sizeLabel')!;
 function setGridSize(requested: number): void {
   const even = Math.round(requested / 2) * 2;
+  const before = gridSize;
   gridSize = Math.min(MAX_GRID_SIZE, Math.max(MIN_GRID_SIZE, Number.isFinite(even) ? even : gridSize));
   buildRoom();
   if (typeof syncSymmetry === 'function') syncSymmetry();
   sizeInput.value = String(gridSize);
   sizeLabel.textContent = `${gridSize} × ${gridSize} × ${gridSize} celdas (${gridSize * 3} placas de alto)`;
   const outside = model.all().filter((piece) => piece.faces.some((face) => face.some((p) => Math.abs(p[0]) > gridSize / 2 || Math.abs(p[2]) > gridSize / 2 || p[1] > gridSize))).length;
+  // Cambiar el tamaño de la sala se guarda con el proyecto: cuenta como cambio sin guardar (al abrir un archivo se limpia después).
+  if (gridSize !== before) {
+    dirty = true;
+    syncFileName();
+    scheduleAutosave();
+  }
   statusEl.textContent = outside > 0 ? `Malla de ${gridSize}: ${outside} pieza(s) quedan fuera; se conservan` : `Malla de ${gridSize} × ${gridSize} × ${gridSize}`;
 }
 sizeInput.addEventListener('change', () => setGridSize(Number(sizeInput.value)));
