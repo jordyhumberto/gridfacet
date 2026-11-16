@@ -897,3 +897,32 @@ describe('corte en anillo', () => {
     expect(ringCut(c, [100, 100, 100], [101, 100, 100])).toBeNull();
   });
 });
+
+describe('vértices canónicos', () => {
+  /** Cubo cuya esquina compartida difiere un pelo entre dos caras (misma clave, distinto valor). */
+  const drifted = () => {
+    const c = cube();
+    const a = c.faces[0][0];
+    const b = c.faces.slice(1).flat().find((p) => vertexKey(p) === vertexKey(a))!;
+    expect(b).toBeDefined();
+    const faces = c.faces.map((face) => face.map((p) => (p === b ? ([p[0] + 2e-6, p[1], p[2]] as Vec3) : p)));
+    return { piece: makePiece(faces, c.color), key: vertexKey(a) };
+  };
+  const copies = (faces: Vec3[][], key: string) => faces.flat().filter((p) => vertexKey(p) === key);
+
+  it('tras rebuild, las esquinas con la misma clave tienen valores idénticos', () => {
+    const { piece, key } = drifted();
+    expect(new Set(copies(piece.faces, key).map((p) => p.join(','))).size).toBe(2);
+    const moved = moveVertices(piece, new Set(['no-existe']), [0, 0, 0])!;
+    expect(new Set(copies(moved.faces, key).map((p) => p.join(','))).size).toBe(1);
+  });
+
+  it('canonPiece junta las esquinas y conserva el id; si ya estaban juntas devuelve la misma pieza', async () => {
+    const { canonPiece } = await import('./vertices');
+    const { piece, key } = drifted();
+    const fixed = canonPiece(piece);
+    expect(fixed.id).toBe(piece.id);
+    expect(new Set(copies(fixed.faces, key).map((p) => p.join(','))).size).toBe(1);
+    expect(canonPiece(fixed)).toBe(fixed);
+  });
+});

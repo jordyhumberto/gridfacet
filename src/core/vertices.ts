@@ -15,6 +15,33 @@ export function uniqueVertices(piece: Piece): Vec3[] {
 const same = (a: Vec3, b: Vec3): boolean => vertexKey(a) === vertexKey(b);
 
 /**
+ * Las caras con una sola posición por vértice: todas las esquinas con la misma clave comparten exactamente el mismo punto (el primero que aparece).
+ * Así dos esquinas que el editor trata como una no se van separando poco a poco con cada edición. Devuelve las mismas caras si ya era así.
+ */
+export function canonFaces(faces: Vec3[][]): Vec3[][] {
+  const first = new Map<string, Vec3>();
+  let changed = false;
+  const out = faces.map((face) =>
+    face.map((p) => {
+      const key = vertexKey(p);
+      const known = first.get(key);
+      if (!known) {
+        first.set(key, p);
+        return p;
+      }
+      if (known !== p && (known[0] !== p[0] || known[1] !== p[1] || known[2] !== p[2])) changed = true;
+      return known;
+    }),
+  );
+  return changed ? out : faces;
+}
+
+/** La pieza con sus vértices canónicos (ver `canonFaces`), con el mismo id; la misma pieza si ya lo estaba. */
+export function canonPiece(piece: Piece): Piece {
+  return canonFaces(piece.faces) === piece.faces ? piece : (rebuild(piece, (face) => face, true) ?? piece);
+}
+
+/**
  * Rehace la pieza con otras caras. `mapFace` devuelve la cara nueva o null para quitarla; el color de cada cara sigue a la suya
  * y su textura se remuestrea al marco nuevo, así los píxeles se quedan pegados a la superficie. Devuelve null si no queda ninguna cara.
  * Con `keepId` la pieza resultante conserva el id (para vistas previas en vivo).
@@ -37,7 +64,7 @@ function rebuild(piece: Piece, mapFace: (face: Vec3[], index: number) => Vec3[] 
     textures.push(texture ? (moved ? remapTexture(texture, face, next, (p) => p) : texture) : null);
   });
   if (faces.length === 0) return null;
-  const result = makePiece(faces, piece.color, colors, piece.faceTextures ? textures : undefined, flags);
+  const result = makePiece(canonFaces(faces), piece.color, colors, piece.faceTextures ? textures : undefined, flags);
   if (piece.group !== undefined) result.group = piece.group;
   if (piece.groupName) result.groupName = piece.groupName;
   if (piece.layer !== undefined) result.layer = piece.layer;

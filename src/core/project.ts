@@ -3,7 +3,7 @@ import { isConvex } from './convex';
 import type { Layer } from './layers';
 import { makePiece, volume, type Piece, type Vec3 } from './piece';
 import { parseReferences, type RefImage } from './references';
-import { cleanRepeats } from './vertices';
+import { canonPiece, cleanRepeats } from './vertices';
 import { packTexture, unpackTexture, type PackedTexture } from './texture';
 
 /** Las capas guardadas con el proyecto. */
@@ -94,7 +94,7 @@ export function parseProjectFull(text: string): { pieces: Piece[]; marks: Vec3[]
     const textures = Array.isArray(faceTextures) && faceTextures.length === faces.length ? faceTextures.map((t) => unpackTexture(t)) : undefined;
     const flags = Array.isArray(faceFlags) && faceFlags.length === faces.length && faceFlags.every((f) => Number.isInteger(f) && f >= 0 && f <= 7) ? faceFlags : undefined;
     // Los proyectos guardados con vértices repetidos en una cara (ver cleanRepeats) se reparan al abrirlos.
-    const piece = cleanRepeats(makePiece(faces, color, painted, textures, flags));
+    const piece = canonPiece(cleanRepeats(makePiece(faces, color, painted, textures, flags)));
     if (Number.isInteger(group) && (group as number) > 0) {
       piece.group = group as number;
       if (typeof groupName === 'string' && groupName.trim()) piece.groupName = groupName.trim().slice(0, 60);

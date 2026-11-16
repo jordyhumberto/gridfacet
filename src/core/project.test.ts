@@ -76,3 +76,17 @@ describe('propiedades de cara en el proyecto', () => {
     expect(back[0].faceFlags?.[0]).toBe(7);
   });
 });
+
+describe('vértices canónicos al abrir', () => {
+  it('dos esquinas con la misma clave y distinto valor quedan idénticas', () => {
+    const cube = buildPiece(CATALOG[0], 0, 0, 0, 0, 0x123456);
+    const faces = cube.faces.map((face, i) => (i === 1 ? face.map((p) => [p[0] + 2e-6, p[1], p[2]] as [number, number, number]) : face));
+    const loaded = parseProject(serializeProject([makePiece(faces, 0x123456)]))[0];
+    const byKey = new Map<string, Set<string>>();
+    for (const p of loaded.faces.flat()) {
+      const key = p.map((v) => Math.round(v * 1e5)).join(',');
+      byKey.set(key, (byKey.get(key) ?? new Set()).add(p.join(',')));
+    }
+    expect([...byKey.values()].every((values) => values.size === 1)).toBe(true);
+  });
+});
