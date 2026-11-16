@@ -1,6 +1,5 @@
 import { panStep, type PanState } from './core/pan';
 import { MODE_INFO, GUIDE, setupHelp } from './ui/help';
-import { meshNeedReason, titleWithReason } from './core/meshNeeds';
 import { ctrlBeatsField, escLeavesTool, isTextField, meshIgnoresKey, toolForKey, toolKey, undoRedoKey, verticalMoveKey, type KeyMode } from './core/shortcuts';
 import * as THREE from 'three';
 import { axisAllowed, lockLabel, planeNormal, type AxisLock } from './core/axisLock';
@@ -20,6 +19,7 @@ import type { Command } from './core/commands';
 import { parseHexColors, parsePalettes, toHexText, upsertPalette, type Palette } from './core/palettes';
 import { serializeProject } from './core/project';
 import { createFiles } from './ui/files';
+import { createMeshPanel } from './ui/meshPanel';
 import { createCommandPalette } from './ui/commandPalette';
 import { createReferencesPanel } from './ui/referencesPanel';
 import { emptyAnimation, pruneTracks } from './core/animation';
@@ -43,10 +43,10 @@ import { connectedPieces, sizeOf } from './core/connected';
 import { bevelChange, edgeBetween, nearestEdge, type PieceEdge } from './core/bevel';
 import { buildShape, MAX_RINGS, MAX_SIDES, MIN_RINGS, MIN_SIDES, SECTIONS, SHAPES, type ShapeKind, type ShapeSpec, type SphereSection } from './core/shapes';
 import { facesAt, paintChange, type FaceRef } from './core/paint';
-import { FACE_BEHIND, FACE_DOUBLE, FACE_UNLIT, faceColorOf, faceNormal, newGroupId, reserveGroupIds, withGroup, withLayer } from './core/piece';
+import { faceColorOf, faceNormal, newGroupId, reserveGroupIds, withGroup, withLayer } from './core/piece';
 import { VertexTool } from './tools/vertexTool';
 import { FaceEditor } from './tools/faceEditor';
-import { AXIS_COLORS, MeshTool } from './tools/meshTool';
+import { AXIS_COLORS } from './tools/meshTool';
 import { isConvex } from './core/convex';
 import { excavateChange, extrudeFaceChange, findSlivers, joinChange, mergeChange, repeatChange, sinkCutters, sinkFacesChange, splitFaceChange, triangleCount } from './core/modeling';
 
@@ -2169,7 +2169,6 @@ renderer.domElement.addEventListener('dblclick', (e) => {
 });
 
 // Malla: elegir y mover los vértices de las piezas. Una pieza con un vértice hundido deja de ser convexa y pasa a ser malla libre.
-const meshActionsEl = document.getElementById('meshActions')!;
 // «Mover en / Plano» es un solo componente: con Elegir limita el arrastre de las piezas (`pieceAxis`) y en Malla el de los vértices (`meshTool.axis`).
 const axisRowEl = document.getElementById('axisRow')!;
 function syncAxisRow(): void {
@@ -2192,53 +2191,25 @@ axisRowEl.querySelectorAll<HTMLButtonElement>('button[data-axis]').forEach((butt
     statusEl.textContent = pieceAxis === null ? 'Arrastre libre' : `Las piezas solo se mueven en ${lockLabel(pieceAxis)}`;
   }),
 );
-const meshInfoEl = document.getElementById('meshInfo')!;
-const meshDoubleEl = document.getElementById('meshDouble') as HTMLInputElement;
-/** Lo que se deja elegido en el panel de Malla se recuerda entre sesiones (sin fallar si el navegador no deja guardar). */
-const meshPref = {
-  get: (name: string): string | null => {
-    try {
-      return localStorage.getItem(`gridfacet.mesh.${name}`);
-    } catch {
-      return null;
-    }
-  },
-  set: (name: string, value: string): void => {
-    try {
-      localStorage.setItem(`gridfacet.mesh.${name}`, value);
-    } catch {
-      // Sin almacenamiento la opción vale solo para esta sesión.
-    }
-  },
-};
-const meshAutoFlatEl = document.getElementById('meshAutoFlat') as HTMLInputElement;
-meshAutoFlatEl.checked = meshPref.get('autoFlat') === '1';
-meshAutoFlatEl.addEventListener('change', () => {
-  meshPref.set('autoFlat', meshAutoFlatEl.checked ? '1' : '0');
-  meshTool.flattenOnRelease = meshAutoFlatEl.checked;
-  statusEl.textContent = meshAutoFlatEl.checked ? 'Aplanar al soltar activado: al soltar un vértice, las caras que queden torcidas se aplanan solas' : 'Aplanar al soltar desactivado: las caras torcidas solo se marcan en naranja';
-});
-const meshUnlitEl = document.getElementById('meshUnlit') as HTMLInputElement;
-const meshBehindEl = document.getElementById('meshBehind') as HTMLInputElement;
-const meshTool = new MeshTool({
-  scene: scene3d,
+const meshPanel = createMeshPanel({
+  scene3d,
   camera,
-  domElement: renderer.domElement,
-  setOrbit: (on) => {
-    controls.enabled = on;
-  },
+  renderer,
+  controls,
   model,
+  statusEl,
   selectedPieces: () => selectedPieces(),
   isHidden: (piece) => hidden.has(piece.id) || layers.isHidden(piece),
   symmetry: () => symmetry,
-  status: (message) => (statusEl.textContent = message),
+  gridSize: () => gridSize,
+  inMeshMode: () => mode === 'mesh',
   // Un clic que Malla se queda no llega al resto: el «pulsar» pendiente del lienzo quedaría viejo y el siguiente soltar lo tomaría por un clic.
   consumed: () => {
     down = null;
   },
-  onSelectionChange: () => syncMeshActions(),
+  syncAxisRow: () => syncAxisRow(),
 });
-model.onHistory = (kind) => meshTool.historyMoved(kind);
+const meshTool = meshPanel.tool;
 syncAxisRow();
 meshTool.magnet = magnet;
 const magnetEl = document.getElementById('magnet') as HTMLInputElement;
@@ -2255,142 +2226,6 @@ magnetEl.addEventListener('change', () => {
   statusEl.textContent = magnet ? 'Imán activado: piezas y vértices caen en la rejilla' : 'Imán desactivado: piezas y vértices siguen al ratón';
 });
 if (import.meta.env.DEV) (window as unknown as Record<string, unknown>).__mesh = meshTool;
-/** Un botón o casilla de Malla apagado dice en su título qué hay que elegir (el título de siempre se guarda en `data-title`). */
-function setReasonTitle(element: HTMLElement, reason: string | null): void {
-  element.dataset.title ??= element.title;
-  element.title = titleWithReason(element.dataset.title, reason);
-}
-function syncMeshActions(): void {
-  meshActionsEl.hidden = mode !== 'mesh';
-  const count = meshTool.count;
-  const warped = meshTool.warpedCount;
-  const fullFaces = meshTool.faceFlagCount(FACE_DOUBLE).total;
-  const unpaired = meshTool.unpairedCount;
-  meshInfoEl.textContent = (count === 0 ? 'Ningún vértice elegido' : `${count} vértice(s) elegidos`) + (warped > 0 ? ` · ${warped} cara(s) torcida(s) en naranja` : '') + (unpaired > 0 ? ` · ${unpaired} vértice(s) sin gemelo en rosa (Simetrizar)` : '');
-  document.getElementById('meshAdd')!.classList.toggle('active', meshTool.addMode);
-  document.getElementById('meshSlide')!.classList.toggle('active', meshTool.slideMode);
-  document.getElementById('meshRemove')!.classList.toggle('active', meshTool.removeMode);
-  syncAxisRow();
-  meshActionsEl.querySelectorAll<HTMLButtonElement>('button[data-mesh]').forEach((button) => {
-    const reason = meshNeedReason(button.dataset.mesh!, { count, mostInOnePiece: meshTool.mostInOnePiece, fullFaces, symmetric: symmetry.x || symmetry.y || symmetry.z });
-    button.disabled = reason !== null;
-    setReasonTitle(button, reason);
-  });
-  // Las casillas reflejan las caras elegidas (todos sus vértices): marcadas si todas la tienen, a medias si solo algunas.
-  for (const [input, flag] of [[meshDoubleEl, FACE_DOUBLE], [meshUnlitEl, FACE_UNLIT], [meshBehindEl, FACE_BEHIND]] as const) {
-    const { total, on } = meshTool.faceFlagCount(flag);
-    input.disabled = total === 0;
-    setReasonTitle(input.parentElement!, total === 0 ? 'necesita elegir caras con todos sus vértices elegidos (no hay ninguna)' : null);
-    input.checked = total > 0 && on === total;
-    input.indeterminate = on > 0 && on < total;
-  }
-}
-for (const [input, flag] of [[meshDoubleEl, FACE_DOUBLE], [meshUnlitEl, FACE_UNLIT], [meshBehindEl, FACE_BEHIND]] as const) {
-  input.addEventListener('change', () => meshTool.setFaceFlag(flag, input.checked));
-}
-document.getElementById('meshSlide')!.addEventListener('click', (event) => {
-  (event.currentTarget as HTMLButtonElement).blur();
-  meshTool.setSlideMode(!meshTool.slideMode);
-});
-document.getElementById('meshRemove')!.addEventListener('click', (event) => {
-  (event.currentTarget as HTMLButtonElement).blur();
-  meshTool.setRemoveMode(!meshTool.removeMode);
-});
-const meshGrowAmountEl = document.getElementById('meshGrowAmount') as HTMLInputElement;
-{
-  const saved = Number(meshPref.get('grow'));
-  if (saved > 0 && saved <= gridSize) {
-    meshGrowAmountEl.value = String(saved);
-    meshTool.growDistance = saved;
-  }
-}
-meshGrowAmountEl.addEventListener('input', () => {
-  const value = Number(meshGrowAmountEl.value);
-  if (value > 0 && value <= gridSize) {
-    meshTool.growDistance = value;
-    meshPref.set('grow', String(value));
-  }
-});
-// El tamaño del chaflán es uno solo: lo comparten la herramienta Chaflán (J) y la acción «Chaflán» de Malla, y se recuerda entre sesiones.
-const meshBevelSizeEl = document.getElementById('meshBevelSize') as HTMLInputElement;
-function setBevelSize(value: number): void {
-  meshTool.bevelSize = value;
-  meshPref.set('bevel', String(value));
-  for (const input of [bevelSizeEl, meshBevelSizeEl]) if (Number(input.value) !== value) input.value = String(value);
-}
-{
-  const saved = Number(meshPref.get('bevel'));
-  if (saved > 0 && saved <= gridSize) setBevelSize(saved);
-}
-for (const input of [bevelSizeEl, meshBevelSizeEl]) {
-  input.addEventListener('input', () => {
-    const value = Number(input.value);
-    if (value > 0 && value <= gridSize) setBevelSize(value);
-  });
-}
-const meshWeldDistanceEl = document.getElementById('meshWeldDistance') as HTMLInputElement;
-{
-  const saved = Number(meshPref.get('weld'));
-  if (saved > 0 && saved <= 1) {
-    meshWeldDistanceEl.value = String(saved);
-    meshTool.weldDistance = saved;
-  }
-}
-meshWeldDistanceEl.addEventListener('input', () => {
-  const value = Number(meshWeldDistanceEl.value);
-  if (value > 0 && value <= 1) {
-    meshTool.weldDistance = value;
-    meshPref.set('weld', String(value));
-  }
-});
-const meshSeeBehindEl = document.getElementById('meshSeeBehind') as HTMLInputElement;
-// La casilla arranca con lo último que se eligió y la herramienta con ella (si no, se veían los vértices al revés).
-meshSeeBehindEl.checked = meshPref.get('seeBehind') !== '0';
-meshTool.setSeeBehind(meshSeeBehindEl.checked, false);
-meshTool.flattenOnRelease = meshAutoFlatEl.checked;
-meshSeeBehindEl.addEventListener('change', () => {
-  meshPref.set('seeBehind', meshSeeBehindEl.checked ? '1' : '0');
-  meshTool.setSeeBehind(meshSeeBehindEl.checked);
-  meshSeeBehindEl.blur();
-});
-document.getElementById('meshAdd')!.addEventListener('click', (event) => {
-  (event.currentTarget as HTMLButtonElement).blur();
-  meshTool.setAddMode(!meshTool.addMode);
-});
-meshActionsEl.querySelectorAll<HTMLButtonElement>('button[data-mesh]').forEach((button) =>
-  button.addEventListener('click', () => {
-    button.blur();
-    // Con un arrastre, un giro o un recuadro en marcha, las acciones del panel no hacen nada.
-    if (meshTool.busy) return;
-    const action = button.dataset.mesh;
-    if (action === 'all') meshTool.selectAll();
-    else if (action === 'merge') meshTool.mergeSelected();
-    else if (action === 'delete') meshTool.deleteSelected();
-    else if (action === 'snap') meshTool.snapToGrid();
-    else if (action === 'weld') meshTool.weldNearby();
-    else if (action === 'rotate') meshTool.beginTransform('rotate');
-    else if (action === 'scale') meshTool.beginTransform('scale');
-    else if (action === 'taper') meshTool.beginTransform('taper');
-    else if (action === 'twist') meshTool.beginTransform('twist');
-    else if (action === 'bend') meshTool.beginTransform('bend');
-    else if (action === 'face') meshTool.createFace();
-    else if (action === 'delface') meshTool.deleteFacesSelected();
-    else if (action === 'fillhole') meshTool.fillHolesSelected();
-    else if (action === 'flip') meshTool.flipSelected();
-    else if (action === 'triangulate') meshTool.triangulateSelected();
-    else if (action === 'extrude') meshTool.extrudeSelected();
-    else if (action === 'tip') meshTool.tipSelected();
-    else if (action === 'push') meshTool.beginTransform('push');
-    else if (action === 'growedge') meshTool.growFaceFromEdge();
-    else if (action === 'connect') meshTool.connectSelected();
-    else if (action === 'ring') meshTool.ringCutSelected();
-    else if (action === 'bevel') meshTool.bevelSelected();
-    else if (action === 'dissolve') meshTool.dissolveSelected();
-    else if (action === 'straighten') meshTool.straightenSelected();
-    else if (action === 'flatten') meshTool.flattenSelected();
-    else if (action === 'symmetrize') meshTool.symmetrizeAll();
-  }),
-);
 
 function finishPixelStroke(commit: boolean): boolean {
   if (pixelSelecting) {
@@ -3141,7 +2976,7 @@ function setMode(next: Mode): void {
   syncFillActions();
   syncOutlineActions();
   syncVertexActions();
-  syncMeshActions();
+  meshPanel.sync();
   syncShapeActions();
   syncBevelActions();
   syncPixelActions();
@@ -3619,7 +3454,7 @@ function syncSymmetry(): void {
   }
   refreshGhost();
   meshTool.refresh();
-  syncMeshActions();
+  meshPanel.sync();
 }
 function toggleSymmetry(axis: 'x' | 'y' | 'z'): void {
   symmetry[axis] = !symmetry[axis];
