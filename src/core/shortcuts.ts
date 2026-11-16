@@ -34,7 +34,7 @@ export function escLeavesTool(mode: string): boolean {
 }
 
 /** En Malla estas teclas pertenecen a la herramienta; si ella no las toma, no hacen nada (reflejar, ocultar o aislar piezas, sumar conectadas). */
-const MESH_FREE_KEYS = new Set(['m', 'n', 'u', 'k', 'o', 'i']);
+const MESH_FREE_KEYS = new Set(['m', 'n', 'u', 'k', 'o']);
 /**
  * ¿Debe ignorarse esta tecla en Malla, una vez que `MeshTool.handleKey` no la tomó?
  * Los dígitos solo estorban cuando hay vértices elegidos (cambiar de herramienta los soltaría).
@@ -172,6 +172,7 @@ export const SHORTCUTS: readonly Shortcut[] = [
   row('b', ['mesh'], 'borrar caras', { by: 'mesh' }),
   row('n', ['mesh'], 'empujar la cara', { by: 'mesh' }),
   row('k', ['mesh'], 'tapar un hueco', { by: 'mesh' }),
+  row('i', ['mesh'], 'sacar una punta: duplicar los vértices elegidos y jalar la copia', { by: 'mesh' }),
   row('delete', ['mesh'], 'borrar los vértices elegidos', { by: 'mesh' }),
   row('backspace', ['mesh'], 'borrar los vértices elegidos', { by: 'mesh' }),
 ];

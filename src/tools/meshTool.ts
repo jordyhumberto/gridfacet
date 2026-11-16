@@ -4,7 +4,7 @@ import { faceNormal, type Piece, type Vec3 } from '../core/piece';
 import { MIRROR_TOLERANCE, pieceKey, reflectPiece, reflections, symmetrize, type Reflection, type Symmetry } from '../core/symmetry';
 import { triangulateFace } from '../core/convex';
 import { collapses } from '../core/selfIntersect';
-import { ringCut, bevelEdge, triangulateFaces, edgeLoop, pieceEdges, fillHoles, connectVertices, dissolveEdge, slideSegment, straightenVertices, flattenVertices, flattenWarped, warpedFaces, finFaces, flagFins, splitFacesAtCenter, addFace, deleteFaces, deleteVertices, extrudeEdge, extrudeFaces, facesWithin, flipFaces, mergeVertices, weldVertices, placeVertices, rotateAbout, scaleAbout, setFaceFlags, splitEdge, addMirrorPairOnFace, addVertexOnFace, taperPoint, twistPoint, bendPoint, uniqueVertices, vertexKey } from '../core/vertices';
+import { ringCut, bevelEdge, triangulateFaces, edgeLoop, pieceEdges, fillHoles, connectVertices, dissolveEdge, slideSegment, straightenVertices, flattenVertices, flattenWarped, warpedFaces, finFaces, flagFins, splitFacesAtCenter, addFace, deleteFaces, deleteVertices, extrudeEdge, extrudeFaces, tipVertices, facesWithin, flipFaces, mergeVertices, weldVertices, placeVertices, rotateAbout, scaleAbout, setFaceFlags, splitEdge, addMirrorPairOnFace, addVertexOnFace, taperPoint, twistPoint, bendPoint, uniqueVertices, vertexKey } from '../core/vertices';
 import type { ModelScene } from '../scene';
 
 /** Paso de la rejilla de imán, en celdas. */
@@ -56,6 +56,7 @@ const NEEDS_SELECTION: Record<string, string> = {
   b: 'Borrar cara (B): elige todos los vértices de la cara',
   n: 'Empujar cara (N): elige todos los vértices de una o más caras',
   k: 'Tapar hueco (K): elige un vértice del borde abierto que quieres cerrar',
+  i: 'Punta (I): elige los vértices de los que quieres sacar una copia para jalarla',
   r: 'Girar (R): elige los vértices que quieres girar',
   t: 'Escalar (T): elige los vértices que quieres escalar',
   delete: 'Borrar vértices (Supr): elige los vértices que quieres quitar',
@@ -1297,6 +1298,11 @@ export class MeshTool {
       this.fillHolesSelected();
       return true;
     }
+    // I (de «sacar una punta») duplica los vértices elegidos y deja elegidas las copias para jalarlas, igual que el botón «Punta».
+    if (key === 'i' && !this.drag && !e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey) {
+      this.tipSelected();
+      return true;
+    }
     if (key === 'delete' || key === 'backspace') {
       this.deleteSelected();
       return true;
@@ -1839,6 +1845,34 @@ export class MeshTool {
       return { piece: sameId(result.piece, piece), select: own.size > 0 ? this.oneSide(own, result.piece, piece, parts) : ownKeys(parts) };
     });
     this.host.status(any ? `Extruir cara: ${count} cara(s) subidas ${+distance.toFixed(3)}; los vértices de arriba quedan elegidos para moverlos` : 'Extruir cara: elige todos los vértices de la cara');
+  }
+
+  /**
+   * Punta: saca una copia de cada vértice elegido y la une al original con caras nuevas; el original se queda donde estaba. Las copias quedan
+   * elegidas (solo las del lado de quien eligió) para jalarlas con el ratón. Con simetría, el espejo saca la suya a la vez.
+   */
+  tipSelected(distance = this.growDistance): void {
+    let tips = 0;
+    let faces = 0;
+    this.change((piece, _keys, _dirAt, parts) => {
+      let current = piece;
+      const select = new Set<string>();
+      for (const part of parts) {
+        const result = tipVertices(current, part.full, distance, piece.faces.length);
+        if (!result) continue;
+        current = result.piece;
+        faces += result.faces;
+        if (!part.mirror) for (const key of result.keys) select.add(key);
+      }
+      if (current === piece) return null;
+      tips += select.size;
+      return { piece: sameId(current, piece), select: select.size > 0 ? select : ownKeys(parts) };
+    });
+    this.host.status(
+      tips > 0
+        ? `Punta: ${tips} copia(s) sacadas ${+distance.toFixed(3)} (${faces} caras nuevas); las copias quedan elegidas: jálalas con el ratón`
+        : 'Punta (I): elige vértices que tengan caras para sacar la copia',
+    );
   }
 
   /**

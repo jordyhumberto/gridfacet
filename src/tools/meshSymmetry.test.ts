@@ -247,6 +247,15 @@ describe('la elección tras una operación se queda en el lado elegido (no crece
       symmetric: true,
     },
     {
+      name: 'Punta',
+      run: ({ model, tool, choose }) => {
+        const e = extremes(model);
+        choose((p) => p[0] === e.right && p[1] === e.top);
+        tool.tipSelected(0.5);
+      },
+      symmetric: true,
+    },
+    {
       name: 'Cara desde segmento',
       run: ({ model, tool, choose }) => {
         const e = extremes(model);
@@ -697,5 +706,30 @@ describe('giros, escalas y deformaciones simulados con el ratón', () => {
     expect(s.tool.busy).toBe(false);
     expect(s.model.all()[0].faces).toEqual(before);
     expect(s.model.undoDepth).toBe(depth);
+  });
+});
+
+describe('Punta (tecla I)', () => {
+  const press = (tool: MeshTool, key: string) => tool.handleKey({ key, ctrlKey: false, metaKey: false, altKey: false, shiftKey: false } as KeyboardEvent);
+
+  it('sin vértices elegidos avisa y no cambia el modelo', () => {
+    const { model, tool, messages } = setup();
+    const depth = model.undoDepth;
+    expect(press(tool, 'i')).toBe(true);
+    expect(model.undoDepth).toBe(depth);
+    expect(messages[messages.length - 1]).toContain('Punta (I)');
+  });
+
+  it('con vértices elegidos saca la copia, es un solo paso de deshacer y respeta la simetría', () => {
+    const s = setup();
+    s.choose((p) => p[0] === Math.max(...uniqueVertices(s.model.all()[0]).map((q) => q[0])) && p[1] === Math.max(...uniqueVertices(s.model.all()[0]).map((q) => q[1])));
+    const depth = s.model.undoDepth;
+    const faces = s.model.all()[0].faces.length;
+    expect(press(s.tool, 'i')).toBe(true);
+    expect(s.model.undoDepth).toBe(depth + 1);
+    expect(s.model.all()[0].faces.length).toBeGreaterThan(faces);
+    expect(isSymmetric(s.model.all())).toBe(true);
+    s.model.undo();
+    expect(s.model.all()[0].faces.length).toBe(faces);
   });
 });

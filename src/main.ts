@@ -2195,7 +2195,7 @@ magnetEl.addEventListener('change', () => {
 });
 if (import.meta.env.DEV) (window as unknown as Record<string, unknown>).__mesh = meshTool;
 /** Cuántos vértices (de una misma pieza) pide cada acción de Malla para poder usarse; «face» pide al menos una cara con todos sus vértices elegidos. */
-const NEEDS: Record<string, number | 'face'> = { weld: 0, merge: 2, ring: 2, bevel: 2, face: 3, fillhole: 1, delface: 'face', triangulate: 'face', push: 'face', flip: 'face', extrude: 'face', connect: 2, dissolve: 2, growedge: 2, straighten: 3, flatten: 3, taper: 2, twist: 2, bend: 2 };
+const NEEDS: Record<string, number | 'face'> = { weld: 0, merge: 2, ring: 2, bevel: 2, face: 3, fillhole: 1, delface: 'face', triangulate: 'face', push: 'face', flip: 'face', extrude: 'face', connect: 2, dissolve: 2, growedge: 2, tip: 1, straighten: 3, flatten: 3, taper: 2, twist: 2, bend: 2 };
 function syncMeshActions(): void {
   meshActionsEl.hidden = mode !== 'mesh';
   const count = meshTool.count;
@@ -2327,6 +2327,7 @@ meshActionsEl.querySelectorAll<HTMLButtonElement>('button[data-mesh]').forEach((
     else if (action === 'flip') meshTool.flipSelected();
     else if (action === 'triangulate') meshTool.triangulateSelected();
     else if (action === 'extrude') meshTool.extrudeSelected();
+    else if (action === 'tip') meshTool.tipSelected();
     else if (action === 'push') meshTool.beginTransform('push');
     else if (action === 'growedge') meshTool.growFaceFromEdge();
     else if (action === 'connect') meshTool.connectSelected();

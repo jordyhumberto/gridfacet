@@ -1294,3 +1294,49 @@ export function ringCut(piece: Piece, from: Vec3, to: Vec3): { piece: Piece; cre
   });
   return { piece: withFaces(piece, faces, colors, textures, flags), created: new Set([...midpoints.values()].map(vertexKey)), cut: cutFaces.size };
 }
+
+/**
+ * «Punta»: saca una copia de cada vértice elegido `distance` celdas hacia fuera (la media de las normales de las caras que lo usan) y la une
+ * al vértice original con caras nuevas; el original se queda donde está y la pieza no se deforma. Cada segmento que sale de un vértice elegido
+ * recibe una cara: un triángulo si solo un extremo está elegido, un cuadrilátero si lo están los dos. Las caras nuevas se ven por los dos lados.
+ * Devuelve la pieza, las claves de las copias (para moverlas) y cuántas caras se añadieron; null si no hay nada que sacar.
+ * Las normales y los segmentos se miran solo en las primeras `baseFaces` caras (por defecto todas): así, sacar varias puntas seguidas en una
+ * misma pieza (la elegida y su espejo) no deja que las caras de una cambien la dirección de la otra.
+ */
+export function tipVertices(piece: Piece, keys: ReadonlySet<string>, distance: number, baseFaces = piece.faces.length): { piece: Piece; keys: Set<string>; faces: number } | null {
+  if (Math.abs(distance) < 1e-9) return null;
+  const chosen = uniqueVertices(piece).filter((p) => keys.has(vertexKey(p)));
+  if (chosen.length === 0) return null;
+  const base: Piece = baseFaces >= piece.faces.length ? piece : { ...piece, faces: piece.faces.slice(0, baseFaces) };
+  const tips = new Map<string, Vec3>();
+  for (const p of chosen) {
+    const sum: Vec3 = [0, 0, 0];
+    for (const face of base.faces) {
+      if (!face.some((q) => vertexKey(q) === vertexKey(p))) continue;
+      const n = faceNormal(face);
+      const length = Math.hypot(...n) || 1;
+      for (let i = 0; i < 3; i++) sum[i] += n[i] / length;
+    }
+    // Sin caras con normal clara (suma nula), la punta sube en vertical.
+    const length = Math.hypot(...sum);
+    const dir: Vec3 = length < 1e-6 ? [0, 1, 0] : [sum[0] / length, sum[1] / length, sum[2] / length];
+    tips.set(vertexKey(p), [p[0] + dir[0] * distance, p[1] + dir[1] * distance, p[2] + dir[2] * distance]);
+  }
+  const added: Vec3[][] = [];
+  for (const edge of pieceEdges(base)) {
+    const ta = tips.get(vertexKey(edge.a));
+    const tb = tips.get(vertexKey(edge.b));
+    if (ta && tb) added.push([edge.a, edge.b, tb, ta]);
+    else if (ta) added.push([edge.a, edge.b, ta]);
+    else if (tb) added.push([edge.a, edge.b, tb]);
+  }
+  if (added.length === 0) return null;
+  const result = withFaces(
+    piece,
+    [...piece.faces, ...added],
+    [...piece.faces.map((_, i) => piece.faceColors?.[i] ?? piece.color), ...added.map(() => piece.color)],
+    [...(piece.faceTextures ?? piece.faces.map(() => null)), ...added.map(() => null)],
+    [...piece.faces.map((_, i) => piece.faceFlags?.[i] ?? 0), ...added.map(() => FACE_DOUBLE)],
+  );
+  return { piece: result, keys: new Set([...tips.values()].map(vertexKey)), faces: added.length };
+}

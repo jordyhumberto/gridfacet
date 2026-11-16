@@ -45,8 +45,8 @@ describe('E y la selección', () => {
 });
 
 describe('teclas que no actúan en Malla', () => {
-  it('M, N, U, K, O e I se ignoran (reflejar, ocultar y aislar piezas)', () => {
-    for (const k of ['m', 'n', 'u', 'k', 'o', 'i']) expect(meshIgnoresKey(k, 2)).toBe(true);
+  it('M, N, U, K y O se ignoran (reflejar y ocultar piezas)', () => {
+    for (const k of ['m', 'n', 'u', 'k', 'o']) expect(meshIgnoresKey(k, 2)).toBe(true);
   });
   it('los dígitos no cambian de herramienta si hay vértices elegidos', () => {
     expect(meshIgnoresKey('3', 2)).toBe(true);
