@@ -1687,7 +1687,7 @@ export class MeshTool {
       }
       return current === piece ? null : sameId(current, piece);
     }, keepPosition);
-    if (made > 0) this.host.status(made > 1 ? `Cara creada: ${made} (la del espejo también)` : 'Cara creada');
+    if (made > 0) this.host.status(made > 1 ? `Cara creada: ${made} (la del espejo también)` : 'Cara creada (se ve por los dos lados; si quieres un solo lado, quita «Doble cara»)');
     else this.host.status(`No se creó ninguna cara: elige tres o más vértices de una misma pieza que no formen ya una cara${this.seeBehind ? '' : ' (si te faltan vértices, están tapados: marca «Ver vértices de atrás»)'}`);
   }
 

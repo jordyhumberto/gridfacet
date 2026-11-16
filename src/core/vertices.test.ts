@@ -151,6 +151,14 @@ describe('caras', () => {
     expect(faceNormal(added)[1]).toBeLessThan(0);
   });
 
+  it('la cara creada se ve por los dos lados (no queda transparente desde el lado contrario)', () => {
+    const { piece, keys } = tetraWithoutBase(1);
+    const closed = addFace(piece, keys)!;
+    expect((closed.faceFlags?.[3] ?? 0) & FACE_DOUBLE).toBe(FACE_DOUBLE);
+    // Las caras que ya había no cambian.
+    expect((closed.faceFlags?.[0] ?? 0) & FACE_DOUBLE).toBe(0);
+  });
+
   it('al cerrar un hueco la cara mira hacia el mismo lado que las vecinas, aunque ese lado sea hacia dentro', () => {
     const { piece, keys } = tetraWithoutBase(-1);
     const closed = addFace(piece, keys)!;
