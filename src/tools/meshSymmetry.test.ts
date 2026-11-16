@@ -545,3 +545,50 @@ describe('pequeños de Malla', () => {
 function makeTriangle(side: number) {
   return makePiece([[[side, 0, 0], [side * 2, 0, 0], [side, 1, 0]]], 0x336699);
 }
+
+describe('Soldar cercanos con simetría', () => {
+  /** El cubo cruzado por el espejo, con la cara de delante abierta 1 mm en sus esquinas de arriba: R' y L' casi encima de R y L. */
+  function withGaps() {
+    const ctx = setup();
+    const piece = ctx.model.all()[0];
+    const verts = uniqueVertices(piece);
+    const top = Math.max(...verts.map((p) => p[1]));
+    const front = Math.max(...verts.map((p) => p[2]));
+    const faces = piece.faces.map((face) =>
+      face.every((p) => p[2] === front) ? face.map((p) => (p[1] === top ? ([p[0] + Math.sign(p[0]) * 0.001, p[1], p[2]] as Vec3) : p)) : face,
+    );
+    const gapped = makePiece(faces, piece.color);
+    ctx.model.apply({ added: [gapped], removed: [piece] });
+    ctx.tool.refresh();
+    return { ...ctx, top, front };
+  }
+
+  it('sin elección suelta todos los pares cercanos y deja el modelo simétrico', () => {
+    const { model, tool, messages } = withGaps();
+    expect(isSymmetric(model.all())).toBe(true);
+    const before = uniqueVertices(model.all()[0]).length;
+    const depth = model.undoDepth;
+    tool.weldNearby(0.002);
+    expect(uniqueVertices(model.all()[0]).length).toBe(before - 2);
+    expect(isSymmetric(model.all())).toBe(true);
+    expect(model.undoDepth).toBe(depth + 1);
+    expect(messages[messages.length - 1]).toMatch(/2 vértices soldados/);
+  });
+
+  it('con un lado elegido también suelda su espejo', () => {
+    const { model, tool, choose, top, front } = withGaps();
+    const before = uniqueVertices(model.all()[0]).length;
+    choose((p) => p[0] > 0 && p[1] === top && p[2] === front);
+    tool.weldNearby(0.002);
+    expect(uniqueVertices(model.all()[0]).length).toBe(before - 2);
+    expect(isSymmetric(model.all())).toBe(true);
+  });
+
+  it('si no hay nada cerca lo dice y no crea un paso de deshacer', () => {
+    const { model, tool, messages } = setup();
+    const depth = model.undoDepth;
+    tool.weldNearby(0.002);
+    expect(model.undoDepth).toBe(depth);
+    expect(messages[messages.length - 1]).toMatch(/ningún vértice/i);
+  });
+});

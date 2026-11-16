@@ -376,6 +376,8 @@
             <button data-mesh="merge" title="Junta los vértices elegidos de cada pieza en uno solo, en su centro">Fusionar vértices</button>
             <button data-mesh="delete" title="Quita los vértices elegidos (Supr)">Borrar vértices (Supr)</button>
             <button data-mesh="snap" title="Lleva los vértices elegidos a la rejilla de ¼ de celda">Vértices a la rejilla</button>
+            <button data-mesh="weld" title="Junta los vértices que están casi uno encima de otro (a menos de la distancia que pongas): cada grupo pasa a su punto medio y las caras que se quedan sin superficie desaparecen. Con vértices elegidos actúa solo sobre ellos; sin elegir ninguno, sobre todas las piezas que se ven. Con simetría el resultado sigue siendo simétrico">Soldar cercanos</button>
+            <label title="Distancia máxima, en celdas, para que dos vértices cuenten como «casi encima»"><input type="number" id="meshWeldDistance" min="0.0001" step="0.001" value="0.002" style="width:64px" /> Distancia</label>
             </div>
             <div class="meshGroup">
               <span class="groupTitle">Transformar</span>

@@ -48,7 +48,8 @@ import { MAX_GENERATIONS, addGeneration, describeGeneration, parseGenerations, s
 import { FACE_BEHIND, FACE_DOUBLE, FACE_UNLIT, faceColorOf, faceNormal, newGroupId, reserveGroupIds, withGroup, withLayer } from './core/piece';
 import { VertexTool } from './tools/vertexTool';
 import { FaceEditor } from './tools/faceEditor';
-import { AXIS_COLORS, MeshTool } from './tools/meshTool';
+import { AXIS_COLORS, MeshTool, WELD_DISTANCE } from './tools/meshTool';
+import { nearVertexCount } from './core/vertices';
 import { isConvex } from './core/convex';
 import { excavateChange, extrudeFaceChange, findSlivers, joinChange, mergeChange, repeatChange, sinkCutters, sinkFacesChange, splitFaceChange, triangleCount } from './core/modeling';
 
@@ -2185,7 +2186,7 @@ magnetEl.addEventListener('change', () => {
 });
 if (import.meta.env.DEV) (window as unknown as Record<string, unknown>).__mesh = meshTool;
 /** Cuántos vértices (de una misma pieza) pide cada acción de Malla para poder usarse; «face» pide al menos una cara con todos sus vértices elegidos. */
-const NEEDS: Record<string, number | 'face'> = { merge: 2, ring: 2, bevel: 2, face: 3, fillhole: 1, delface: 'face', triangulate: 'face', push: 'face', flip: 'face', extrude: 'face', connect: 2, dissolve: 2, growedge: 2, straighten: 3, flatten: 3, taper: 2, twist: 2, bend: 2 };
+const NEEDS: Record<string, number | 'face'> = { weld: 0, merge: 2, ring: 2, bevel: 2, face: 3, fillhole: 1, delface: 'face', triangulate: 'face', push: 'face', flip: 'face', extrude: 'face', connect: 2, dissolve: 2, growedge: 2, straighten: 3, flatten: 3, taper: 2, twist: 2, bend: 2 };
 function syncMeshActions(): void {
   meshActionsEl.hidden = mode !== 'mesh';
   const count = meshTool.count;
@@ -2260,6 +2261,21 @@ meshBevelSizeEl.addEventListener('input', () => {
     meshPref.set('bevel', String(value));
   }
 });
+const meshWeldDistanceEl = document.getElementById('meshWeldDistance') as HTMLInputElement;
+{
+  const saved = Number(meshPref.get('weld'));
+  if (saved > 0 && saved <= 1) {
+    meshWeldDistanceEl.value = String(saved);
+    meshTool.weldDistance = saved;
+  }
+}
+meshWeldDistanceEl.addEventListener('input', () => {
+  const value = Number(meshWeldDistanceEl.value);
+  if (value > 0 && value <= 1) {
+    meshTool.weldDistance = value;
+    meshPref.set('weld', String(value));
+  }
+});
 const meshSeeBehindEl = document.getElementById('meshSeeBehind') as HTMLInputElement;
 // La casilla arranca con lo último que se eligió y la herramienta con ella (si no, se veían los vértices al revés).
 meshSeeBehindEl.checked = meshPref.get('seeBehind') !== '0';
@@ -2290,6 +2306,7 @@ meshActionsEl.querySelectorAll<HTMLButtonElement>('button[data-mesh]').forEach((
     else if (action === 'merge') meshTool.mergeSelected();
     else if (action === 'delete') meshTool.deleteSelected();
     else if (action === 'snap') meshTool.snapToGrid();
+    else if (action === 'weld') meshTool.weldNearby();
     else if (action === 'rotate') meshTool.beginTransform('rotate');
     else if (action === 'scale') meshTool.beginTransform('scale');
     else if (action === 'taper') meshTool.beginTransform('taper');
@@ -3358,6 +3375,9 @@ async function openProject(file: File, handle: FileHandle | null = null): Promis
     const project = parseProjectFull(await file.text());
     replaceProject(project, file.name, handle);
     statusEl.textContent = `Abierto ${file.name} (${project.pieces.length} piezas)`;
+    // Vértices que parecen soldados y no lo están: se avisa, sin tocar nada.
+    const near = project.pieces.reduce((sum, piece) => sum + nearVertexCount(piece, WELD_DISTANCE), 0);
+    if (near > 0) statusEl.textContent += ` · ${near} ${near === 1 ? 'vértice casi encima de otro' : 'vértices casi encima de otro'}: Soldar cercanos (en Malla) los junta`;
   } catch (error) {
     fileProblem(error instanceof Error ? `No se pudo abrir: ${error.message}` : 'No se pudo abrir el archivo');
   }
@@ -3971,7 +3991,8 @@ const GUIDE: Record<Mode, [string, string][]> = {
     ['Ver vértices de atrás (casilla)', 'marcada se ven y se pueden elegir todos los vértices; sin marcar, solo los que dan a la cámara'],
     ['+ Vértice (panel)', 'activa el modo añadir: clic en una arista (en cuartos; Ctrl: donde pulses) o dentro de una cara le pone un vértice nuevo, que queda elegido para moverlo. Arrastrar sigue girando la cámara'],
     ['Alt+clic en una arista', 'ponerle un vértice nuevo sin activar el modo (en cuartos; Ctrl: donde hagas clic)'],
-    ['Panel', 'Elegir todos · Fusionar vértices (junta los elegidos en uno) · Borrar vértices · Vértices a la rejilla'],
+    ['Panel', 'Elegir todos · Fusionar vértices (junta los elegidos en uno) · Borrar vértices · Vértices a la rejilla · Soldar cercanos'],
+    ['Soldar cercanos (botón)', 'junta los vértices que están a menos de la «Distancia» (por defecto 0,002 celdas) de otro, cada grupo en su punto medio, y quita las caras que se quedan sin superficie. Con vértices elegidos solo actúa sobre ellos; sin elegir ninguno, sobre todas las piezas que se ven. Con simetría el modelo sigue simétrico. Al abrir un proyecto la barra de estado avisa si hay pares así'],
     ['Panel (caras)', 'Crear cara con tres o más vértices · Borrar / Invertir / Extruir las caras cuyos vértices están todos elegidos'],
     ['Clic en una pieza', 'elegirla: solo se muestran sus vértices; en vacío suelta todo'],
     ['Simetría', 'con sus casillas X / Y / Z activas (en el panel Simetría; en Malla las teclas X / Y / Z fijan el eje de movimiento) el movimiento se refleja en las piezas espejo'],

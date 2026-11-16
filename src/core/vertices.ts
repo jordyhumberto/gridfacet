@@ -94,10 +94,72 @@ export function cleanRepeats(piece: Piece): Piece {
   return rebuild(piece, (face) => face, true) ?? piece;
 }
 
-/** Quita de la cara los vértices consecutivos que quedaron en el mismo sitio. */
+/** Área mínima (doble, la longitud de la normal de Newell) para que una cara cuente como superficie. */
+const MIN_SURFACE = 1e-12;
+
+/**
+ * Quita de la cara los vértices consecutivos que quedaron en el mismo sitio. Una cara con menos de tres vértices distintos o sin área
+ * (como [c, B, c, D], que sale de fundir dos esquinas opuestas de un cuadrilátero) no es superficie: se devuelve vacía.
+ */
 function dedupe(face: Vec3[]): Vec3[] {
   const ring = face.filter((p, i) => !same(p, face[(i + 1) % face.length]));
-  return ring.length >= 3 ? ring : [];
+  if (ring.length < 3 || new Set(ring.map(vertexKey)).size < 3) return [];
+  const n = faceNormal(ring);
+  return Math.hypot(n[0], n[1], n[2]) > MIN_SURFACE ? ring : [];
+}
+
+/** Grupos de vértices (uno por posición) a menos de `tolerance` unos de otros, encadenados; solo los de `only` si se da. Cada grupo con más de uno. */
+function nearGroups(piece: Piece, tolerance: number, only?: ReadonlySet<string>): Vec3[][] {
+  const points = uniqueVertices(piece).filter((p) => !only || only.has(vertexKey(p)));
+  const parent = points.map((_, i) => i);
+  const find = (i: number): number => (parent[i] === i ? i : (parent[i] = find(parent[i])));
+  const cell = (p: Vec3): number[] => p.map((v) => Math.floor(v / tolerance));
+  const grid = new Map<string, number[]>();
+  points.forEach((p, i) => {
+    const k = cell(p).join(',');
+    const list = grid.get(k);
+    if (list) list.push(i);
+    else grid.set(k, [i]);
+  });
+  points.forEach((p, i) => {
+    const [cx, cy, cz] = cell(p);
+    for (let dx = -1; dx <= 1; dx++)
+      for (let dy = -1; dy <= 1; dy++)
+        for (let dz = -1; dz <= 1; dz++)
+          for (const j of grid.get(`${cx + dx},${cy + dy},${cz + dz}`) ?? []) {
+            if (j <= i) continue;
+            const q = points[j];
+            if (Math.hypot(p[0] - q[0], p[1] - q[1], p[2] - q[2]) <= tolerance) parent[find(i)] = find(j);
+          }
+  });
+  const groups = new Map<number, Vec3[]>();
+  points.forEach((p, i) => groups.set(find(i), [...(groups.get(find(i)) ?? []), p]));
+  return [...groups.values()].filter((group) => group.length > 1);
+}
+
+/** Cuántos vértices de la pieza se soldarían con `weldVertices` (los que están a menos de `tolerance` de otro, sin contar uno por grupo). */
+export function nearVertexCount(piece: Piece, tolerance: number, only?: ReadonlySet<string>): number {
+  return nearGroups(piece, tolerance, only).reduce((sum, group) => sum + group.length - 1, 0);
+}
+
+/**
+ * Suelda los vértices que están a menos de `tolerance` unos de otros: cada grupo pasa a su punto medio y las caras que se quedan sin superficie
+ * desaparecen. Con `only` solo cuentan esos vértices. Devuelve la pieza (con el mismo id) y cuántos vértices se soldaron;
+ * la misma pieza y 0 si no había nada que soldar o si soldar la dejaría sin caras.
+ */
+export function weldVertices(piece: Piece, tolerance: number, only?: ReadonlySet<string>): { piece: Piece; welded: number } {
+  if (!(tolerance > 0)) return { piece, welded: 0 };
+  const groups = nearGroups(piece, tolerance, only);
+  if (groups.length === 0) return { piece, welded: 0 };
+  const target = new Map<string, Vec3>();
+  let welded = 0;
+  for (const group of groups) {
+    const centre = [0, 1, 2].map((k) => group.reduce((sum, p) => sum + p[k], 0) / group.length) as Vec3;
+    for (const p of group) target.set(vertexKey(p), centre);
+    welded += group.length - 1;
+  }
+  const result = rebuild(piece, (face) => dedupe(face.map((p) => target.get(vertexKey(p)) ?? p)), true);
+  return result ? { piece: result, welded } : { piece, welded: 0 };
 }
 
 /** Junta los vértices elegidos en uno solo, en su centro. Las caras que se quedan sin superficie desaparecen. */

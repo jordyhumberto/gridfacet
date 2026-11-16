@@ -926,3 +926,64 @@ describe('vértices canónicos', () => {
     expect(canonPiece(fixed)).toBe(fixed);
   });
 });
+
+describe('mergeVertices con esquinas opuestas', () => {
+  it('fundir dos esquinas opuestas de un cuadrilátero quita la cara sin superficie', () => {
+    const quad: Vec3[] = [[0, 0, 0], [1, 0, 0], [1, 0, 1], [0, 0, 1]];
+    const tri: Vec3[] = [[5, 0, 0], [6, 0, 0], [5, 0, 1]];
+    const piece = makePiece([quad, tri], 0x336699);
+    const merged = mergeVertices(piece, new Set([vertexKey(quad[0]), vertexKey(quad[2])]))!;
+    expect(merged.faces).toHaveLength(1);
+    expect(merged.faces[0]).toEqual(tri);
+  });
+});
+
+describe('weldVertices', () => {
+  /** Dos cuadrados contiguos con un hueco de 1 mm entre sus bordes: parecen soldados y no lo están. */
+  const gap = 0.001;
+  const left: Vec3[] = [[0, 0, 0], [1, 0, 0], [1, 1, 0], [0, 1, 0]];
+  const right: Vec3[] = [[1 + gap, 0, 0], [2, 0, 0], [2, 1, 0], [1 + gap, 1, 0]];
+  const pair = () => makePiece([left, right], 0x336699, [0xff0000, 0x00ff00], undefined, [FACE_DOUBLE, 0]);
+
+  it('suelda los vértices a menos de la distancia, en su punto medio', async () => {
+    const { weldVertices } = await import('./vertices');
+    const result = weldVertices(pair(), 0.002);
+    expect(result.welded).toBe(2);
+    expect(uniqueVertices(result.piece)).toHaveLength(6);
+    const joined = uniqueVertices(result.piece).filter((p) => Math.abs(p[0] - (1 + gap / 2)) < 1e-9);
+    expect(joined).toHaveLength(2);
+  });
+
+  it('no suelda los vértices lejanos y devuelve la misma pieza', async () => {
+    const { weldVertices } = await import('./vertices');
+    const piece = pair();
+    const result = weldVertices(piece, 0.0005);
+    expect(result.welded).toBe(0);
+    expect(result.piece).toBe(piece);
+  });
+
+  it('quita las caras que se quedan sin superficie y conserva colores y propiedades por cara', async () => {
+    const { weldVertices } = await import('./vertices');
+    const sliver: Vec3[] = [[5, 0, 0], [5 + gap, 0, 0], [5, 0, 1]];
+    const piece = makePiece([left, sliver, right], 0x336699, [0xff0000, 0x0000ff, 0x00ff00], undefined, [FACE_DOUBLE, FACE_UNLIT, 0]);
+    const result = weldVertices(piece, 0.002).piece;
+    expect(result.faces).toHaveLength(2);
+    expect(result.faceColors).toEqual([0xff0000, 0x00ff00]);
+    expect(result.faceFlags).toEqual([FACE_DOUBLE, 0]);
+    expect(result.id).toBe(piece.id);
+  });
+
+  it('solo suelda entre los vértices permitidos', async () => {
+    const { weldVertices } = await import('./vertices');
+    const only = new Set([vertexKey([1, 0, 0]), vertexKey([1 + gap, 0, 0])]);
+    const result = weldVertices(pair(), 0.002, only);
+    expect(result.welded).toBe(1);
+    expect(uniqueVertices(result.piece)).toHaveLength(7);
+  });
+
+  it('nearVertexCount cuenta los vértices que se soldarían sin tocar nada', async () => {
+    const { nearVertexCount } = await import('./vertices');
+    expect(nearVertexCount(pair(), 0.002)).toBe(2);
+    expect(nearVertexCount(pair(), 0.0005)).toBe(0);
+  });
+});

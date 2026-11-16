@@ -4,7 +4,7 @@ import { faceNormal, type Piece, type Vec3 } from '../core/piece';
 import { MIRROR_TOLERANCE, pieceKey, reflectPiece, reflections, symmetrize, type Reflection, type Symmetry } from '../core/symmetry';
 import { triangulateFace } from '../core/convex';
 import { collapses } from '../core/selfIntersect';
-import { ringCut, bevelEdge, triangulateFaces, edgeLoop, pieceEdges, fillHoles, connectVertices, dissolveEdge, slideSegment, straightenVertices, flattenVertices, flattenWarped, warpedFaces, finFaces, flagFins, splitFacesAtCenter, addFace, deleteFaces, deleteVertices, extrudeEdge, extrudeFaces, facesWithin, flipFaces, mergeVertices, placeVertices, rotateAbout, scaleAbout, setFaceFlags, splitEdge, addMirrorPairOnFace, addVertexOnFace, taperPoint, twistPoint, bendPoint, uniqueVertices, vertexKey } from '../core/vertices';
+import { ringCut, bevelEdge, triangulateFaces, edgeLoop, pieceEdges, fillHoles, connectVertices, dissolveEdge, slideSegment, straightenVertices, flattenVertices, flattenWarped, warpedFaces, finFaces, flagFins, splitFacesAtCenter, addFace, deleteFaces, deleteVertices, extrudeEdge, extrudeFaces, facesWithin, flipFaces, mergeVertices, weldVertices, placeVertices, rotateAbout, scaleAbout, setFaceFlags, splitEdge, addMirrorPairOnFace, addVertexOnFace, taperPoint, twistPoint, bendPoint, uniqueVertices, vertexKey } from '../core/vertices';
 import type { ModelScene } from '../scene';
 
 /** Paso de la rejilla de imán, en celdas. */
@@ -38,6 +38,8 @@ const PUSH_FALLBACK_PIXELS = 120;
 export type TransformKind = 'rotate' | 'scale' | 'taper' | 'twist' | 'bend' | 'push';
 /** Lo que hay que mover el cursor antes de que un clic pase a ser un arrastre. */
 const DRAG_THRESHOLD = 3;
+/** Distancia por defecto de «Soldar cercanos»: 2 mm con la celda en 1 (los pares casi encima de otro suelen estar a menos de 1 mm). */
+export const WELD_DISTANCE = 0.002;
 
 const NORMAL_COLOR = 0xe6e8ee;
 /** Vértice sin gemelo al otro lado del espejo mientras la simetría está activa. */
@@ -252,6 +254,8 @@ export class MeshTool {
   growDistance = EXTRUDE_DISTANCE;
   /** Cuánto se corta la esquina al biselar una arista (en celdas, sobre los segmentos vecinos). */
   bevelSize = 0.25;
+  /** Distancia bajo la que «Soldar cercanos» junta dos vértices (en celdas); se cambia desde el panel. */
+  weldDistance = WELD_DISTANCE;
   /** Con el modo «Añadir vértice», un clic sobre una arista o una cara le pone un vértice nuevo (sin Alt). */
   private adding = false;
   /** Con el modo «Quitar vértice», un clic sobre un vértice lo quita (con su espejo si hay simetría). */
@@ -1549,6 +1553,49 @@ export class MeshTool {
       return any ? sameId(current, piece) : null;
     });
     this.host.status(merged > 0 ? `Fusionar: ${merged === 1 ? 'los vértices elegidos pasan a ser uno' : `${merged} grupos de vértices fusionados (el espejo también)`}` : 'Fusionar: elige al menos dos vértices de la misma pieza');
+  }
+
+  /**
+   * Suelda los vértices que están a menos de `distance` de otro: de los elegidos (y sus imágenes en el espejo) o, sin elección, de todas las piezas que se ven.
+   * Cada grupo pasa a su punto medio, así que con simetría el resultado sigue siendo simétrico. Un solo paso de deshacer.
+   */
+  weldNearby(distance = this.weldDistance): void {
+    if (this.busy) return;
+    if (!(distance > 0)) {
+      this.host.status('Soldar cercanos: la distancia tiene que ser mayor que cero');
+      return;
+    }
+    let welded = 0;
+    if (this.count > 0) {
+      this.change((piece, keys) => {
+        const result = weldVertices(piece, distance, keys);
+        if (result.welded === 0) return null;
+        welded += result.welded;
+        return result.piece;
+      });
+    } else {
+      const removed: Piece[] = [];
+      const added: Piece[] = [];
+      for (const piece of new Map(this.shown.map((entry) => [entry.piece.id, entry.piece])).values()) {
+        const result = weldVertices(piece, distance);
+        if (result.welded === 0) continue;
+        welded += result.welded;
+        removed.push(piece);
+        added.push(result.piece);
+      }
+      if (added.length > 0) {
+        const before = cloneSelection(this.selection);
+        const depthBefore = this.host.model.undoDepth;
+        this.host.model.apply({ added, removed });
+        if (this.host.model.undoDepth > depthBefore) this.record(before);
+        this.refresh();
+      }
+    }
+    this.host.status(
+      welded > 0
+        ? `Soldar cercanos: ${welded} ${welded === 1 ? 'vértice soldado' : 'vértices soldados'} (a menos de ${+distance.toFixed(4)} de otro)`
+        : `Soldar cercanos: ningún vértice está a menos de ${+distance.toFixed(4)} de otro${this.count > 0 ? ' entre los elegidos' : ''}`,
+    );
   }
 
   deleteSelected(): void {
