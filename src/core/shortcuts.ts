@@ -80,7 +80,7 @@ const TOOL_KEYS: [string, KeyMode, readonly KeyMode[], string][] = [
   ['s', 'select', ['mesh'], 'Elegir'],
   ['b', 'erase', ['mesh'], 'Borrar'],
   ['l', 'fill', ['mesh'], 'Rellenar'],
-  ['v', 'vertex', [], 'Vértice'],
+  ['v', 'vertex', [], 'Punto guía'],
   ['e', 'mesh', [], 'Malla'],
   ['j', 'bevel', [], 'Chaflán'],
   ['f', 'face', ['cut', 'mesh'], 'Cara'],
@@ -96,7 +96,7 @@ export const SHORTCUTS: readonly Shortcut[] = [
   // Siempre disponibles
   row('?', 'all', 'abrir la ayuda', { when: 'fuera de un campo de texto' }),
   row('f1', 'all', 'abrir la ayuda'),
-  row('k', 'all', 'abrir la paleta de comandos', { mods: 'ctrl' }),
+  row('k', 'all', 'abrir Comandos (el buscador de acciones)', { mods: 'ctrl' }),
   row('s', 'all', 'guardar', { mods: 'ctrl' }),
   row('s', 'all', 'guardar como', { mods: 'ctrl+alt' }),
   row('o', 'all', 'abrir', { mods: 'ctrl' }),

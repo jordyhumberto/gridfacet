@@ -437,12 +437,14 @@ function showGuides(guides: Guides | null, center?: Vec3): void {
   }
 }
 
-/** En cuántas partes se divide cada arista y cada cara para marcar puntos en Cortar, Rellenar y Figura. */
+/** «Puntos por arista»: en cuántas partes se divide cada arista y cada cara para marcar puntos en Cortar, Rellenar, Figura y Punto guía, y al añadir un vértice en Malla (0: solo vértices / libre). */
 let snapDivisions = 4;
 const snapRowEl = document.getElementById('snapRow')!;
 const snapDensityEl = document.getElementById('snapDensity') as HTMLSelectElement;
 snapDensityEl.addEventListener('change', () => {
   snapDivisions = Number(snapDensityEl.value);
+  vertexTool.setDivisions(snapDivisions);
+  meshTool.edgeDivisions = snapDivisions;
   snapDensityEl.blur();
 });
 
@@ -610,7 +612,7 @@ function updateHover(event: PointerEvent): void {
     if (mark) {
       setEraseHover(undefined);
       setMarkHover(mark);
-      statusEl.textContent = 'Clic para borrar el punto de referencia';
+      statusEl.textContent = 'Clic para borrar el punto guía';
       return;
     }
     setMarkHover(null);
@@ -1175,7 +1177,7 @@ function selectionLabel(): string {
   const size = sizeOf(selectedPieces());
   if (!size) return '';
   const round = (v: number) => Math.round(v * 100) / 100;
-  return `${selection.size} seleccionada(s) · ${round(size[0])} × ${round(size[2])} celdas, alto ${round(size[1])} celdas (X × Z, Y)`;
+  return `${selection.size} elegida(s) · ${round(size[0])} × ${round(size[2])} celdas, alto ${round(size[1])} celdas (X × Z, Y)`;
 }
 
 /** Clic elige una pieza (y su grupo); Ctrl+clic la añade o quita; clic en vacío limpia la selección. */
@@ -1279,7 +1281,7 @@ function mirrorCopySelected(axis: 'x' | 'z'): void {
   const change = mirrorCopyChange(selectedPieces(), axis, center, newGroupId);
   model.apply(change);
   selection.set(change.added.map((piece) => piece.id));
-  statusEl.textContent = `Copia en espejo sobre ${axis.toUpperCase()} = ${center}: ${change.added.length} pieza(s)`;
+  statusEl.textContent = `Copia reflejada sobre ${axis.toUpperCase()} = ${center}: ${change.added.length} pieza(s)`;
 }
 
 const selActionsEl = document.getElementById('selActions')!;
@@ -1663,7 +1665,7 @@ function mergeSelected(): void {
     return;
   }
   commitTransform(result.change);
-  statusEl.textContent = 'error' in hull ? 'Piezas fusionadas en un solo bloque (con todas sus caras)' : 'Piezas fusionadas en una';
+  statusEl.textContent = 'error' in hull ? 'Piezas unidas en un solo bloque (con todas sus caras)' : 'Piezas unidas en una';
 }
 
 const repeatEl = document.getElementById('repeatRow')!;
@@ -1913,7 +1915,7 @@ function applyPixelTool(stroke: NonNullable<typeof pixelStroke>, point: Vec3): v
   previewStroke(stroke);
 }
 
-/** Región elegida en la vista 3D con la herramienta Seleccionar: sobre qué cara y qué casillas. La sigue un recuadro amarillo. */
+/** Región elegida en la vista 3D con la herramienta Elegir de los píxeles: sobre qué cara y qué casillas. La sigue un recuadro amarillo. */
 let pixelSelection: { pieceId: number; faceIndex: number; rect: Rect } | null = null;
 let pixelSelecting: { piece: Piece; faceIndex: number; start: { x: number; y: number }; moved: boolean } | null = null;
 const pixelSelectionBox = new THREE.LineLoop(new THREE.BufferGeometry(), new THREE.LineBasicMaterial({ color: 0xffd24a, depthTest: false }));
@@ -2227,11 +2229,6 @@ function syncMeshActions(): void {
 for (const [input, flag] of [[meshDoubleEl, FACE_DOUBLE], [meshUnlitEl, FACE_UNLIT], [meshBehindEl, FACE_BEHIND]] as const) {
   input.addEventListener('change', () => meshTool.setFaceFlag(flag, input.checked));
 }
-const meshDensityEl = document.getElementById('meshDensity') as HTMLSelectElement;
-meshDensityEl.addEventListener('change', () => {
-  meshTool.edgeDivisions = Number(meshDensityEl.value);
-  meshDensityEl.blur();
-});
 document.getElementById('meshSlide')!.addEventListener('click', (event) => {
   (event.currentTarget as HTMLButtonElement).blur();
   meshTool.setSlideMode(!meshTool.slideMode);
@@ -2255,21 +2252,23 @@ meshGrowAmountEl.addEventListener('input', () => {
     meshPref.set('grow', String(value));
   }
 });
+// El tamaño del chaflán es uno solo: lo comparten la herramienta Chaflán (J) y la acción «Chaflán» de Malla, y se recuerda entre sesiones.
 const meshBevelSizeEl = document.getElementById('meshBevelSize') as HTMLInputElement;
+function setBevelSize(value: number): void {
+  meshTool.bevelSize = value;
+  meshPref.set('bevel', String(value));
+  for (const input of [bevelSizeEl, meshBevelSizeEl]) if (Number(input.value) !== value) input.value = String(value);
+}
 {
   const saved = Number(meshPref.get('bevel'));
-  if (saved > 0 && saved <= gridSize) {
-    meshBevelSizeEl.value = String(saved);
-    meshTool.bevelSize = saved;
-  }
+  if (saved > 0 && saved <= gridSize) setBevelSize(saved);
 }
-meshBevelSizeEl.addEventListener('input', () => {
-  const value = Number(meshBevelSizeEl.value);
-  if (value > 0 && value <= gridSize) {
-    meshTool.bevelSize = value;
-    meshPref.set('bevel', String(value));
-  }
-});
+for (const input of [bevelSizeEl, meshBevelSizeEl]) {
+  input.addEventListener('input', () => {
+    const value = Number(input.value);
+    if (value > 0 && value <= gridSize) setBevelSize(value);
+  });
+}
 const meshWeldDistanceEl = document.getElementById('meshWeldDistance') as HTMLInputElement;
 {
   const saved = Number(meshPref.get('weld'));
@@ -2652,7 +2651,7 @@ function clampToGrid(dx: number, dy: number, dz: number): [number, number, numbe
 function moveSelectionBy(dx: number, dy: number, dz: number): void {
   const [x, y, z] = clampToGrid(dx, dy, dz);
   if (x === 0 && y === 0 && z === 0) {
-    statusEl.textContent = 'Límite de la malla';
+    statusEl.textContent = 'Límite de la rejilla';
     return;
   }
   commitTransform(moveChange(selectedPieces(), x, y, z));
@@ -2973,7 +2972,7 @@ const selectButton = toolButton('select', 'Elegir');
 const eraseButton = toolButton('erase', 'Borrar', 'Clic en una pieza la borra');
 const fillButton = toolButton('fill', 'Rellenar', 'Marca puntos y se llena el volumen que encierran');
 const outlineButton = toolButton('outline', 'Figura', 'Marca los puntos de una figura sobre una superficie y haz crecer o hundir solo esa figura');
-const vertexButton = toolButton('vertex', 'Vértice', 'Añade un vértice de referencia a la pieza elegida');
+const vertexButton = toolButton('vertex', 'Punto guía', 'Añade un punto guía (un vértice de referencia que no se exporta) a la pieza elegida');
 const meshButton = toolButton('mesh', 'Malla', 'Elige y mueve los vértices de las piezas: estira, tuerce y modela formas libres');
 const bevelButton = toolButton('bevel', 'Chaflán', 'Corta una arista en chaflán');
 const faceButton = toolButton('face', 'Cara', 'Extruye, cava o divide a partir de una cara');
@@ -2995,17 +2994,13 @@ function syncCutActions(): void {
 }
 cutTool.onPhaseChange = syncCutActions;
 const vertexActionsEl = document.getElementById('vertexActions')!;
-const vertexInfoEl = document.getElementById('vertexInfo')!;
 function syncVertexActions(): void {
   vertexActionsEl.hidden = mode !== 'vertex';
-  vertexInfoEl.textContent = `×${vertexTool.divisions}`;
 }
 vertexTool.onPhaseChange = syncVertexActions;
 vertexActionsEl.addEventListener('click', (e) => {
   const action = (e.target as HTMLElement).dataset.vertex;
-  if (action === 'more') vertexTool.morePoints();
-  else if (action === 'less') vertexTool.fewerPoints();
-  else if (action === 'done') setMode('place');
+  if (action === 'done') setMode('place');
 });
 document.getElementById('vertexFaces')!.addEventListener('change', (e) => {
   vertexTool.setFaces((e.target as HTMLInputElement).checked);
@@ -3026,7 +3021,9 @@ fillActionsEl.addEventListener('click', (e) => {
 const outlineActionsEl = document.getElementById('outlineActions')!;
 function syncOutlineActions(): void {
   outlineActionsEl.hidden = mode !== 'outline';
-  snapRowEl.hidden = mode !== 'outline' && mode !== 'cut' && mode !== 'fill' && mode !== 'vertex';
+  snapRowEl.hidden = mode !== 'outline' && mode !== 'cut' && mode !== 'fill' && mode !== 'vertex' && mode !== 'mesh';
+  // «Solo visibles» es de los puntos de Cortar, Rellenar, Figura y Punto guía; en Malla lo hace «Ver vértices de atrás».
+  document.getElementById('visibleOnlyLabel')!.hidden = mode === 'mesh';
   // El plano de trabajo solo vale al marcar puntos para cortar, rellenar o hacer una figura.
   document.getElementById('planeRow')!.hidden = mode !== 'outline' && mode !== 'cut' && mode !== 'fill';
   outlineActionsEl.querySelector<HTMLButtonElement>('[data-outline="undo"]')!.hidden = !outlineTool.hasPoints;
@@ -3302,7 +3299,7 @@ const setHelp = help.setHelp;
 // Barra de ayuda contextual: dice qué se puede hacer ahora y cambia con el modo, la fase y la selección.
 const hintEl = document.getElementById('hint')!;
 
-// Paleta de comandos (Ctrl+K): busca cualquier acción por nombre y la ejecuta.
+// Comandos (Ctrl+K): busca cualquier acción por nombre y la ejecuta.
 const hasSelection = (): boolean => selection.size > 0;
 const commands: Command[] = [
   ...(Object.keys(MODE_INFO) as Mode[]).map((name): Command => ({ name: `Herramienta: ${MODE_INFO[name].name}`, keywords: 'modo', run: () => setMode(name) })),
@@ -3316,10 +3313,10 @@ const commands: Command[] = [
   { name: 'Desagrupar', enabled: hasSelection, run: ungroupSelected },
   { name: 'Ocultar selección', enabled: hasSelection, run: hideSelected },
   { name: 'Aislar selección', keywords: 'solo', enabled: hasSelection, run: isolateSelected },
-  { name: 'Seleccionar conectadas', enabled: hasSelection, run: selectConnected },
+  { name: 'Elegir conectadas', enabled: hasSelection, run: selectConnected },
   { name: 'Excavar', keywords: 'restar hueco', enabled: hasSelection, run: excavateSelected },
-  ...(['x', 'y', 'z'] as const).map((axis): Command => ({ name: `Voltear en ${axis.toUpperCase()}`, keywords: 'espejo reflejar simetria', enabled: hasSelection, run: () => mirrorSelected(axis) })),
-  ...(['x', 'z'] as const).map((axis): Command => ({ name: `Espejo-copia en ${axis.toUpperCase()}`, keywords: 'duplicar reflejar simetria copia', enabled: hasSelection, run: () => mirrorCopySelected(axis) })),
+  ...(['x', 'y', 'z'] as const).map((axis): Command => ({ name: `Reflejar en ${axis.toUpperCase()}`, keywords: 'espejo reflejar simetria', enabled: hasSelection, run: () => mirrorSelected(axis) })),
+  ...(['x', 'z'] as const).map((axis): Command => ({ name: `Reflejar y copiar en ${axis.toUpperCase()}`, keywords: 'duplicar reflejar simetria copia', enabled: hasSelection, run: () => mirrorCopySelected(axis) })),
   ...(['x', 'y', 'z'] as const).map((axis): Command => ({ name: `Girar 90° sobre ${axis.toUpperCase()}`, keywords: 'rotar giro tumbar', enabled: hasSelection, run: () => commitTransform(rotateQuarterChange(selectedPieces(), axis, 1)) })),
   ...(['x', 'y', 'z'] as const).flatMap((axis) =>
     ([['min', 'al borde menor'], ['center', 'al centro'], ['max', 'al borde mayor']] as const).map(([edge, label]): Command => ({
@@ -3470,7 +3467,7 @@ function hintText(): string {
     case 'mesh':
       return meshTool.count === 0 ? 'Clic en un vértice para elegirlo y arrástralo para moverlo (Ctrl+arrastrar en vacío: recuadro)' : `${meshTool.count} vértice(s): arrastra o usa Supr (las flechas mueven la cámara)`;
     case 'vertex':
-      return 'Clic en un punto amarillo para crear un punto de referencia';
+      return 'Clic en un punto amarillo para crear un punto guía';
     case 'fill': {
       const n = fillTool.pointCount;
       if (n === 0) return 'Rellenar: marca 4 o más puntos que no estén en un mismo plano; se pegan a vértices y a la rejilla';
@@ -3586,7 +3583,7 @@ document.querySelectorAll<HTMLElement>('#hud section').forEach((section) => {
 
 document.getElementById('helpFloat')!.addEventListener('click', () => setHelp(true));
 
-// Tamaño de la malla: número de celdas por lado (par, para que la cuadrícula siga alineada con las piezas).
+// Tamaño de la rejilla (la sala): número de celdas por lado (par, para que la cuadrícula siga alineada con las piezas).
 const sizeInput = document.getElementById('gridSize') as HTMLInputElement;
 const sizeLabel = document.getElementById('sizeLabel')!;
 function setGridSize(requested: number): void {
@@ -3604,7 +3601,7 @@ function setGridSize(requested: number): void {
     files.syncFileName();
     files.scheduleAutosave();
   }
-  statusEl.textContent = outside > 0 ? `Malla de ${gridSize}: ${outside} pieza(s) quedan fuera; se conservan` : `Malla de ${gridSize} × ${gridSize} × ${gridSize}`;
+  statusEl.textContent = outside > 0 ? `Rejilla de ${gridSize}: ${outside} pieza(s) quedan fuera; se conservan` : `Rejilla de ${gridSize} × ${gridSize} × ${gridSize}`;
 }
 sizeInput.addEventListener('change', () => setGridSize(Number(sizeInput.value)));
 document.querySelectorAll<HTMLButtonElement>('[data-size]').forEach((button) =>

@@ -148,9 +148,9 @@
         <canvas id="faceCanvas"></canvas>
       </div>
     </div>
-    <div id="palette" hidden role="dialog" aria-modal="true" aria-label="Paleta de comandos">
+    <div id="palette" hidden role="dialog" aria-modal="true" aria-label="Comandos">
       <div id="paletteBox">
-        <input type="search" id="paletteInput" placeholder="Buscar un comando (por ejemplo: espejo, rotar, guardar)" autocomplete="off" />
+        <input type="search" id="paletteInput" placeholder="Buscar un comando (por ejemplo: reflejar, rotar, guardar)" autocomplete="off" />
         <div id="paletteList" role="listbox"></div>
       </div>
     </div>
@@ -190,9 +190,9 @@
             <button data-sel="merge" title="Une las piezas en una sola: si la unión es convexa queda un solo cuerpo limpio; si no, se juntan con todas sus caras en un solo bloque">Unir piezas</button>
             <button data-sel="copy" title="Ctrl+C">Copiar</button>
             <button data-sel="paste" title="Ctrl+V">Pegar</button>
-            <button data-sel="mirror-x" title="M">Espejo X (M)</button>
-            <button data-sel="mirror-z" title="N">Espejo Z (N)</button>
-            <button data-sel="mirror-y" title="U">Espejo Y (U)</button>
+            <button data-sel="mirror-x" title="Refleja la selección en X, sobre su propio centro (M)">Reflejar X (M)</button>
+            <button data-sel="mirror-z" title="Refleja la selección en Z, sobre su propio centro (N)">Reflejar Z (N)</button>
+            <button data-sel="mirror-y" title="Refleja la selección en Y, sobre su propio centro (U)">Reflejar Y (U)</button>
             <button data-sel="delete" title="Supr">Borrar (Supr)</button>
           </div>
           <div class="row" id="cutActions" hidden>
@@ -217,22 +217,19 @@
             <button data-outline="cancel">Cancelar (Esc)</button>
           </div>
           <div class="row" id="vertexActions" hidden>
-            <button data-vertex="less" title="Menos puntos por arista">− puntos</button>
-            <small id="vertexInfo"></small>
-            <button data-vertex="more" title="Más puntos por arista">+ puntos</button>
             <label title="Cuadrícula de puntos dentro de cada cara"><input type="checkbox" id="vertexFaces" /> Caras</label>
             <button data-vertex="done">Listo (Esc)</button>
           </div>
-          <div class="row" id="snapRow" hidden title="Puntos que se ofrecen al marcar en Cortar, Rellenar y Figura: cada arista y cada cara se divide en esa cantidad de partes (se ven como puntos claros cerca del cursor)">
-            <small>Cantidad de vértices:</small>
+          <div class="row" id="snapRow" hidden title="Cada arista y cada cara se divide en esa cantidad de partes. Es el único control de este tipo: vale al marcar puntos en Cortar, Rellenar, Figura y Punto guía (se ven como puntos claros cerca del cursor) y al añadir un vértice en Malla (Ctrl siempre lo pone donde pulses)">
+            <small>Puntos por arista:</small>
             <select id="snapDensity">
-              <option value="0">Bajo (solo vértices)</option>
-              <option value="2">Medio (mitades)</option>
-              <option value="4" selected>Alto (cuartos)</option>
-              <option value="8">Muy alto (octavos)</option>
-              <option value="16">Máximo (dieciseisavos)</option>
+              <option value="0">Ninguno (solo vértices; en Malla, libre)</option>
+              <option value="2">×2 (mitades)</option>
+              <option value="4" selected>×4 (cuartos)</option>
+              <option value="8">×8 (octavos)</option>
+              <option value="16">×16 (dieciseisavos)</option>
             </select>
-            <label title="Con la casilla marcada solo se ven los puntos de las caras que se ven; sin marcar, también los que quedan detrás"><input type="checkbox" id="visibleOnly" checked /> Solo visibles</label>
+            <label id="visibleOnlyLabel" title="Con la casilla marcada solo se ven los puntos de las caras que se ven; sin marcar, también los que quedan detrás"><input type="checkbox" id="visibleOnly" checked /> Solo visibles</label>
           </div>
           <div class="row" id="planeRow" hidden title="Marca los puntos de Cortar y Rellenar sobre un plano, también en el aire">
             <small>Plano:</small>
@@ -298,7 +295,7 @@
               <option value="ellipsefill">Elipse llena</option>
               <option value="replace">Reemplazar color</option>
               <option value="dither">Tramado</option>
-              <option value="select">Seleccionar (Ctrl+C / Ctrl+V copian)</option>
+              <option value="select">Elegir (Ctrl+C / Ctrl+V copian)</option>
               <option value="move">Mover (la selección o toda la cara)</option>
             </select>
             <select id="pixelSize" title="Lado del pincel, en píxeles">
@@ -314,8 +311,8 @@
               <option value="square">Cuadrado</option>
               <option value="round">Redondo</option>
             </select>
-            <label title="Espejo dentro de la cara: lo que pintas se repite reflejado de izquierda a derecha"><input type="checkbox" id="pixelMirrorX" /> Espejo ↔</label>
-            <label title="Espejo dentro de la cara: lo que pintas se repite reflejado de arriba abajo"><input type="checkbox" id="pixelMirrorY" /> Espejo ↕</label>
+            <label title="Simetría dentro de la cara: lo que pintas se repite reflejado de izquierda a derecha"><input type="checkbox" id="pixelMirrorX" /> Simetría ↔</label>
+            <label title="Simetría dentro de la cara: lo que pintas se repite reflejado de arriba abajo"><input type="checkbox" id="pixelMirrorY" /> Simetría ↕</label>
             <span id="pixelEdits" title="Actúan sobre la selección o, si no hay, sobre toda la cara">
               <button data-pixeledit="flipH" title="Voltear de izquierda a derecha">↔ Voltear</button>
               <button data-pixeledit="flipV" title="Voltear de arriba abajo">↕ Voltear</button>
@@ -358,17 +355,10 @@
             </div>
             <div class="meshGroup">
               <span class="groupTitle">Modos</span>
-            <button id="meshAdd" title="Añadir vértice: con el modo activo, un clic sobre una arista (según la cantidad de vértices elegida; Ctrl donde pulses) o dentro de una cara le pone un vértice nuevo, que queda elegido para moverlo. Alt+clic en una arista sigue funcionando. Atajo: tecla A">+ Vértice (A)</button>
+            <button id="meshAdd" title="Añadir vértice: con el modo activo, un clic sobre una arista (según los «Puntos por arista» elegidos; Ctrl donde pulses) o dentro de una cara le pone un vértice nuevo, que queda elegido para moverlo. Alt+clic en una arista sigue funcionando. Atajo: tecla A">+ Vértice (A)</button>
             <button id="meshSlide" title="Deslizar: con el modo activo, el vértice que arrastras (puesto en medio de un segmento) solo se mueve por ese segmento, sin deformar la pieza ni llegar a los vértices vecinos. Atajo: tecla S (con vértices elegidos)">Deslizar vértice (S)</button>
             <button id="meshRemove" title="Quitar vértice: con el modo activo, un clic en un vértice lo quita. Las caras que lo usaban se quedan con uno menos (un triángulo desaparece); con el espejo activo quita también el de enfrente. Atajo: tecla D">− Vértice (D)</button>
             <label title="Con la casilla marcada se ven y se pueden elegir todos los vértices, también los que quedan detrás de una cara. Sin marcar, solo los que dan a la cámara"><input type="checkbox" id="meshSeeBehind" autocomplete="off" checked /> Ver vértices de atrás</label>
-            <select id="meshDensity" title="Cantidad de vértices: en cuántas partes se divide una arista al añadir un vértice (Ctrl siempre lo pone donde pulses)">
-              <option value="2">Bajo (mitades)</option>
-              <option value="4" selected>Medio (cuartos)</option>
-              <option value="8">Alto (octavos)</option>
-              <option value="16">Muy alto (dieciseisavos)</option>
-              <option value="0">Libre (donde pulses)</option>
-            </select>
             </div>
             <div class="meshGroup">
               <span class="groupTitle">Elegir y borrar</span>
@@ -402,8 +392,8 @@
             </div>
             <div class="meshGroup">
               <span class="groupTitle">Segmentos</span>
-            <label title="Cuánto se corta la esquina al biselar una arista, en celdas (medido sobre los segmentos vecinos; tiene que ser menor que ellos)"><input type="number" id="meshBevelSize" min="0.02" step="0.05" value="0.25" style="width:56px" /> Tamaño del bisel</label>
-            <button data-mesh="bevel" title="Bisela la arista entre dos vértices elegidos: corta sus esquinas y deja una cara nueva entre las dos caras de la arista. Cada extremo tiene que tocar tres caras, como la esquina de un cubo">Biselar arista</button>
+            <label title="Cuánto se corta la esquina en un chaflán, en celdas (medido sobre los segmentos vecinos; tiene que ser menor que ellos). Es el mismo tamaño que el de la herramienta Chaflán (J)"><input type="number" id="meshBevelSize" min="0.02" step="0.05" value="0.25" style="width:56px" /> Tamaño del chaflán</label>
+            <button data-mesh="bevel" title="Chaflán de la arista entre dos vértices elegidos: corta sus esquinas y deja una cara nueva entre las dos caras de la arista. Cada extremo tiene que tocar tres caras, como la esquina de un cubo">Chaflán</button>
             <button data-mesh="ring" title="Con los dos vértices de una arista elegidos, parte por la mitad todas las caras de cuatro lados que atraviesa en fila (la vuelta entera si cierra): pone un vértice nuevo en medio de cada arista y los deja elegidos. La forma no cambia">Corte en anillo</button>
             <button data-mesh="connect" title="Con dos vértices elegidos de una misma cara (no vecinos, con el camino libre entre ellos), traza el segmento que los une: la cara se parte en dos. Con el espejo activo también parte la cara espejo. Atajo: tecla U">Trazar segmento (U)</button>
             <button data-mesh="dissolve" title="Quita el segmento entre dos vértices elegidos: las dos caras que separa, si están en el mismo plano, pasan a ser una (lo contrario de Trazar segmento). No borra vértices. Atajo: tecla Q">Quitar segmento (Q)</button>
@@ -425,7 +415,7 @@
             <small>R: girar · T: escalar (mueve el ratón, clic confirma) · Clic en un segmento: elige sus dos vértices (doble clic: lo sigue recto) · Shift+clic en una cara: elige sus vértices · Alt+clic en una arista: vértice nuevo · Arrastra un vértice · X/Y/Z fija el eje · Ctrl+arrastrar en vacío: recuadro · Ctrl al arrastrar: sin imán</small>
           </div>
           <div class="row" id="bevelActions" hidden>
-            <label title="Distancia de la arista a cada lado del chaflán, en celdas">Tamaño <input type="number" id="bevelSize" min="0.02" step="0.05" value="0.25" /></label>
+            <label title="Distancia de la arista a cada lado del chaflán, en celdas. Es el mismo tamaño que el de «Chaflán» en Malla">Tamaño <input type="number" id="bevelSize" min="0.02" step="0.05" value="0.25" /></label>
             <small>Clic en una arista la corta en chaflán</small>
           </div>
           <div class="row" id="faceActions" hidden>
@@ -588,7 +578,7 @@
           </div>
           <div class="row">
             <label title="Sin perspectiva: las líneas paralelas se ven paralelas, ideal para modelar de frente, de lado y desde arriba (teclado numérico 5). Las vistas del teclado numérico la activan"><input type="checkbox" id="orthoToggle" /> Ortográfica</label>
-            <label><input type="checkbox" id="gridToggle" checked /> Malla</label>
+            <label title="Muestra u oculta la cuadrícula del suelo y las paredes"><input type="checkbox" id="gridToggle" checked /> Rejilla</label>
             <button id="showHidden" hidden title="Alt+O">Mostrar ocultas</button>
             <label title="Solo aristas y vértices, sin caras (W)"><input type="checkbox" id="wireToggle" /> Solo líneas</label>
             <label title="Redondea el aspecto de las formas curvas (no cambia la geometría ni el GLB)"><input type="checkbox" id="smoothToggle" /> Suave</label>
@@ -679,7 +669,7 @@
         <dl>
           <dt><kbd>F</kbd> Cara</dt><dd>Apunta a una cara y haz clic. <b>Extruir</b>: con distancia positiva sale un cuerpo nuevo pegado a la cara; con distancia negativa se cava hacia dentro. “Punta” estrecha el extremo (0,5 = mitad, 0 = en punta) y “Borde” deja un reborde alrededor, así salen cráteres de paredes inclinadas, pirámides y muñones. <b>Dividir</b>: parte la pieza en dos con un plano paralelo a la cara (“Corte” 0,5 es por la mitad).</dd>
           <dt>Excavar</dt><dd>Con una pieza elegida (por ejemplo una forma colocada dentro de otra), el botón <i>Excavar</i> la resta de las demás piezas que toca y la borra. Sirve para agujeros, ventanas, bocas y cráteres. Las piezas cavadas se reparten en varias convexas.</dd>
-          <dt>Unir piezas</dt><dd>Botón de “Herramientas” (con piezas elegidas): une las piezas en una sola. Si su unión es convexa queda un solo cuerpo limpio (baja la cuenta de piezas y triángulos); si no lo es, las junta tal cual en un solo bloque, con todas sus caras. No confundir con “Fusionar vértices” de Malla, que junta vértices.</dd>
+          <dt>Unir piezas</dt><dd>Botón de “Herramientas” (con piezas elegidas): une las piezas en una sola. Si su unión es convexa queda un solo cuerpo limpio (baja la cuenta de piezas y triángulos); si no lo es, las junta tal cual en un solo bloque, con todas sus caras. “Unir” es para piezas; para juntar vértices está “Fusionar vértices” en Malla.</dd>
           <dt>Repetir</dt><dd>En “Selección”: copia lo elegido N veces; cada copia suma otro desplazamiento, giro (grados) y escala. Escaleras, dientes, escamas, ramas, espirales.</dd>
           <dt>Triángulos</dt><dd>En “Piezas” se cuentan los triángulos de todas las piezas y se compara con el máximo que pongas (se pone en rojo al pasarlo). Es un conteo de las piezas; el modo fusionado del GLB suele quitar caras interiores.</dd>
         </dl>
@@ -706,29 +696,29 @@
           <dt><kbd>I</kbd> Aislar</dt><dd>Oculta todo menos la selección; otra pulsación de <kbd>I</kbd> (sin selección) muestra todo.</dd>
           <dt>Sección “Capas”</dt><dd>Cada pieza está en una capa. <b>+ Capa</b> crea una (queda activa: lo que coloques va a ella); doble clic en el nombre la renombra. <b>Ojo</b> oculta la capa y <b>Candado</b> la bloquea: se ve y choca con lo que colocas, pero no se puede elegir ni modificar (ni cortar, crecer, hundir…). “Selección → activa” pasa lo elegido a la capa activa. Se guardan en el proyecto.</dd>
           <dt>Giro y volteo</dt><dd><kbd>R</kbd> gira la selección 90° sobre el eje vertical (<kbd>Alt</kbd>+<kbd>R</kbd> al revés); <kbd>Alt</kbd>+flechas la tumba 90° hacia la flecha (dos veces: de cabeza). En “Selección” → Girar, cualquier ángulo sobre X, Y o Z.</dd>
-          <dt>Paleta de comandos</dt><dd><kbd>Ctrl</kbd>+<kbd>K</kbd> abre un buscador de acciones: escribe “espejo”, “rotar” o “guardar”, elige con las flechas y <kbd>Intro</kbd>. Incluye “Espejo-copia” en X o Z, que añade el reflejo de la selección respecto al plano de simetría (el origen por defecto).</dd>
-          <dt>Alinear, repartir, suelo y medida</dt><dd>En la paleta (<kbd>Ctrl</kbd>+<kbd>K</kbd>): “Alinear en X/Y/Z” deja las partes a ras por un borde o por el centro; “Distribuir” reparte tres o más con huecos iguales (las de los extremos no se mueven); “Mover al suelo” apoya la selección en y = 0; “Redimensionar…” fija la dimensión mayor conservando proporciones. Un grupo cuenta como una sola parte.</dd>
+          <dt>Comandos</dt><dd><kbd>Ctrl</kbd>+<kbd>K</kbd> abre un buscador de acciones: escribe “reflejar”, “rotar” o “guardar”, elige con las flechas y <kbd>Intro</kbd>. Incluye “Reflejar y copiar” en X o Z, que añade el reflejo de la selección respecto al plano de simetría (el origen por defecto).</dd>
+          <dt>Alinear, repartir, suelo y medida</dt><dd>En Comandos (<kbd>Ctrl</kbd>+<kbd>K</kbd>): “Alinear en X/Y/Z” deja las partes a ras por un borde o por el centro; “Distribuir” reparte tres o más con huecos iguales (las de los extremos no se mueven); “Mover al suelo” apoya la selección en y = 0; “Redimensionar…” fija la dimensión mayor conservando proporciones. Un grupo cuenta como una sola parte.</dd>
           <dt>Copia automática</dt><dd>La escena se copia sola en el navegador. Al abrir la página siempre empiezas con una hoja en blanco; si no guardaste el trabajo anterior, búscalo con el comando «Recuperar el trabajo anterior». Guarda en un archivo para conservarlo de verdad.</dd>
           <dt>Exportar con texturas</dt><dd>Los píxeles pintados salen en los sprites PNG, en el GLB (mallas aparte pegadas a su cara, con textura de vecino más cercano y recorte por transparencia) y en “Exportar OBJ”, que baja tres archivos: .obj, .mtl y un PNG con todas las texturas. Guárdalos juntos y, en Blender, pon la interpolación de la textura en “Closest”.</dd>
           <dt>Exportar sprites</dt><dd>En Archivo: elige cámara (isométrica, lateral o cenital), 1, 4, 8 o 16 vistas alrededor del modelo, tamaño de 16 a 256 px, sombreado plano o con luz, y contorno. Se dibuja sin suavizado y con fondo transparente. Con “Hoja” sale un solo PNG con las vistas por filas; sin ella, un PNG por vista. Todas las vistas comparten escala.</dd>
           <dt>Pintar píxeles</dt><dd>En Pintar, la casilla “Píxeles” cambia el pincel: en vez de teñir la cara entera se pinta casilla a casilla (16 por celda), arrastrando, con lápiz (1, 2, 3, 4 u 8 px), borrador (deja ver el color de la cara) o relleno. <kbd>Alt</kbd>+clic toma el color del píxel. Un trazo se deshace de una vez, y el trazo se queda en la cara donde empezó. Las texturas se guardan con el proyecto y se conservan al mover, girar, espejar, repetir, cortar y hundir; al crecer una cara, la de arriba del cuerpo nuevo hereda sus píxeles y las caras nuevas de un corte nacen sin pintar. Salen en los sprites, en el GLB y en el OBJ.</dd>
           <dt>Paletas de colores</dt><dd>Debajo de los colores recientes: “Guardar” convierte los últimos colores en una paleta con nombre; “Importar” abre un archivo .hex (un color por línea, como los de Lospec); “Exportar” la guarda como .hex. El selector alterna entre los recientes y tus paletas.</dd>
-          <dt>Limpiar astillas</dt><dd>En la paleta (<kbd>Ctrl</kbd>+<kbd>K</kbd>): quita las piezas diminutas que dejan los cortes muy seguidos (menos de un cuarto de cuarto de cuarto de celda cúbica). Actúa sobre la selección o, sin ella, sobre todo; se deshace con <kbd>Ctrl</kbd>+<kbd>Z</kbd>.</dd>
+          <dt>Limpiar astillas</dt><dd>En Comandos (<kbd>Ctrl</kbd>+<kbd>K</kbd>): quita las piezas diminutas que dejan los cortes muy seguidos (menos de un cuarto de cuarto de cuarto de celda cúbica). Actúa sobre la selección o, sin ella, sobre todo; se deshace con <kbd>Ctrl</kbd>+<kbd>Z</kbd>.</dd>
           <dt>GLB por capas</dt><dd>En Archivo, “Una unión por capa” exporta cada capa como sus propias mallas, con el nombre de la capa. Mover piezas a otra capa ahora se puede deshacer.</dd>
           <dt>Cortar solo la capa activa</dt><dd>En Cortar, la casilla “Solo la capa activa” limita el corte a las piezas de esa capa, aunque otras estén cruzadas por el plano.</dd>
-          <dt>“Solo visibles”</dt><dd>En Cortar, Rellenar, Figura y Vértice: con la casilla marcada los puntos tapados por otra cara no se dibujan ni se pueden elegir.</dd>
+          <dt>“Solo visibles”</dt><dd>En Cortar, Rellenar, Figura y Punto guía: con la casilla marcada los puntos tapados por otra cara no se dibujan ni se pueden elegir.</dd>
           <dt>Sección “Grupos”</dt><dd>Lista los grupos del modelo: un clic en el nombre elige el grupo, el botón “ojo” lo oculta o muestra (como una capa). Con un grupo elegido puedes darle nombre; ese nombre se usa en los objetos del GLB con “Una pieza por objeto” (por ejemplo <code>Cola_12</code>), útil para reconocer las partes en Blender. Se guarda en el proyecto.</dd>
         </dl>
         <h3>Grupos y medidas</h3>
         <dl>
-          <dt><kbd>Ctrl</kbd>+<kbd>G</kbd> Agrupar</dt><dd>Une las piezas elegidas: desde entonces un clic elige el grupo entero, y mover, girar, copiar, espejo y borrar actúan sobre todo el grupo. Cortar conserva el grupo en los trozos. Se guarda en el proyecto.</dd>
+          <dt><kbd>Ctrl</kbd>+<kbd>G</kbd> Agrupar</dt><dd>Une las piezas elegidas: desde entonces un clic elige el grupo entero, y mover, girar, copiar, reflejar y borrar actúan sobre todo el grupo. Cortar conserva el grupo en los trozos. Se guarda en el proyecto.</dd>
           <dt><kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>G</kbd></dt><dd>Deshace el grupo de las piezas elegidas.</dd>
           <dt><kbd>K</kbd> Conectadas</dt><dd>Suma a la selección todas las piezas que tocan a las elegidas por una cara (o se solapan), una detrás de otra. Dos piezas que solo comparten una arista o una esquina no cuentan.</dd>
           <dt>Medidas</dt><dd>Con piezas elegidas, la línea de estado muestra el tamaño de la caja que ocupan: ancho (X) × fondo (Z) y alto (Y), todo en celdas.</dd>
         </dl>
         <h3>Pintar</h3>
         <dl>
-          <dt><kbd>P</kbd> Pintar</dt><dd>Elige el color (selector junto a “Piezas”) y haz clic en una cara para pintarla. <kbd>Ctrl</kbd>+clic pinta toda la pieza. <kbd>Alt</kbd>+clic toma el color de la cara (cuentagotas). Respeta la simetría y se deshace con <kbd>Ctrl</kbd>+<kbd>Z</kbd>.</dd>
+          <dt><kbd>P</kbd> Pintar</dt><dd>Elige el color (selector de la sección “Colores”) y haz clic en una cara para pintarla. <kbd>Ctrl</kbd>+clic pinta toda la pieza. <kbd>Alt</kbd>+clic toma el color de la cara (cuentagotas). Respeta la simetría y se deshace con <kbd>Ctrl</kbd>+<kbd>Z</kbd>.</dd>
           <dt>Al exportar</dt><dd>Con “Unión por color” cada color es un material del GLB. Con “Una pieza por objeto”, una pieza con caras de varios colores sale como varios objetos <code>Pieza_n_color</code>. Cortar, espejo y mover conservan los colores de las caras.</dd>
         </dl>
         <h3>Cortar y rellenar</h3>
@@ -738,13 +728,13 @@
           <dt>Figura</dt><dd>Botón de la barra de herramientas (no tiene tecla): marca 3 o más puntos sobre una misma cara y, con clic en el primero o <kbd>Enter</kbd>, hace crecer o hundir solo esa figura, en perpendicular a la cara. Crecer / Hundir y “Cuánto” se eligen en el panel.</dd>
           <dt><kbd>Ctrl</kbd>+<kbd>Z</kbd> al marcar</dt><dd>Con puntos marcados quita el último punto, no el último bloque.</dd>
         </dl>
-        <h3>Seleccionar y mover</h3>
+        <h3>Elegir y mover</h3>
         <dl>
           <dt><kbd>S</kbd> Elegir</dt><dd>Clic elige una pieza. <kbd>Ctrl</kbd>+clic suma o quita. <kbd>Ctrl</kbd>+arrastrar en un hueco dibuja un recuadro que suma las piezas de dentro. <kbd>Ctrl</kbd>+<kbd>A</kbd> elige todo.</dd>
           <dt>Arrastrar una pieza</dt><dd>Mueve la selección. <kbd>Alt</kbd>: en vertical. <kbd>Ctrl</kbd>: paso doble. <kbd>Esc</kbd> cancela.</dd>
           <dt>Flechas</dt><dd>Con selección mueven un cuarto de celda. <kbd>Re Pág</kbd>/<kbd>Av Pág</kbd> suben y bajan un cuarto de celda. <kbd>Ctrl</kbd> duplica el paso.</dd>
           <dt><kbd>R</kbd></dt><dd>Con selección la gira 90° (<kbd>Alt</kbd>+<kbd>R</kbd> al revés).</dd>
-          <dt><kbd>M</kbd> / <kbd>N</kbd> / <kbd>U</kbd></dt><dd>Espejo de la selección en X / Z / Y, sobre su propio centro.</dd>
+          <dt><kbd>M</kbd> / <kbd>N</kbd> / <kbd>U</kbd></dt><dd>Reflejar la selección en X / Z / Y, sobre su propio centro.</dd>
           <dt><kbd>Ctrl</kbd>+<kbd>C</kbd> / <kbd>V</kbd> / <kbd>D</kbd></dt><dd>Copiar, pegar y duplicar. Lo pegado queda seleccionado para moverlo.</dd>
           <dt><kbd>Supr</kbd></dt><dd>Borra la selección.</dd>
         </dl>
@@ -754,22 +744,22 @@
           <dt>Mover en</dt><dd>Libre, X, Y o Z (botones del panel o teclas <kbd>X</kbd> / <kbd>Y</kbd> / <kbd>Z</kbd>): limitan el movimiento a un eje. En Malla las flechas mueven la cámara, no los vértices.</dd>
           <dt><kbd>R</kbd> / <kbd>T</kbd></dt><dd>Giran o escalan los vértices elegidos alrededor de su centro: mueve el ratón, clic confirma, <kbd>Esc</kbd> cancela. Afinar, Torcer y Curvar (panel) deforman a lo largo de un eje.</dd>
           <dt><kbd>Supr</kbd></dt><dd>Quita los vértices elegidos. Sin vértices elegidos no borra nada: en Malla ninguna tecla borra piezas enteras.</dd>
-          <dt>Otras acciones</dt><dd>Fusionar vértices, Vértices a la rejilla y Soldar cercanos limpian vértices repetidos o casi encima de otro; Crear cara, Trazar segmento, Quitar segmento, Triangular, Biselar arista, Corte en anillo, Extruir y Empujar cara modelan la superficie. Cada botón explica en su título qué necesita. La lista completa de teclas está en la guía de la barra inferior.</dd>
+          <dt>Otras acciones</dt><dd>Fusionar vértices, Vértices a la rejilla y Soldar cercanos limpian vértices repetidos o casi encima de otro; Crear cara, Trazar segmento, Quitar segmento, Triangular, Chaflán, Corte en anillo, Extruir y Empujar cara modelan la superficie. Cada botón explica en su título qué necesita. La lista completa de teclas está en la guía de la barra inferior.</dd>
           <dt>Simetría</dt><dd>Con la simetría activa, lo que haces en un lado se repite en el otro; <b>Simetrizar</b> iguala los dos lados y los vértices sin gemelo se ven en rosa.</dd>
         </dl>
-        <h3>Vértices de referencia</h3>
+        <h3>Puntos guía</h3>
         <dl>
-          <dt><kbd>V</kbd> Vértice</dt><dd>Elige antes (<kbd>S</kbd>) la pieza o piezas, y pulsa <kbd>V</kbd>. Sobre ellas aparecen puntos amarillos con las posiciones válidas: subdivisiones de las aristas, los cruces con otras piezas y, con la casilla “Caras”, una cuadrícula dentro de cada cara. Clic en uno crea el vértice.</dd>
-          <dt>− puntos / + puntos</dt><dd>Cambian en cuántas partes se divide cada arista (×2, ×4, ×6, ×8, ×12).</dd>
+          <dt><kbd>V</kbd> Punto guía</dt><dd>Elige antes (<kbd>S</kbd>) la pieza o piezas, y pulsa <kbd>V</kbd>. Sobre ellas aparecen puntos amarillos con las posiciones válidas: subdivisiones de las aristas, los cruces con otras piezas y, con la casilla “Caras”, una cuadrícula dentro de cada cara. Clic en uno crea el punto guía. No crea vértices de la pieza: para eso está Malla.</dd>
+          <dt>Puntos por arista</dt><dd>Bajo las herramientas: en cuántas partes se divide cada arista (×2, ×4, ×8, ×16; “Ninguno” solo ofrece vértices). Es un solo control para Cortar, Rellenar, Figura, Punto guía y para añadir vértices en Malla (ahí, “Ninguno” es libre: donde pulses).</dd>
           <dt><kbd>Alt</kbd></dt><dd>Libre sobre la arista: el punto se desliza por la arista bajo el cursor en cualquier posición.</dd>
-          <dt>Qué es</dt><dd>Un punto de referencia (azul claro): no cambia la forma de la pieza ni se exporta al GLB. Al marcar puntos en Cortar o Rellenar se ofrece como un vértice más. Se borra con <kbd>B</kbd>, se deshace con <kbd>Ctrl</kbd>+<kbd>Z</kbd>, se guarda en el proyecto y respeta la simetría.</dd>
+          <dt>Qué es</dt><dd>Un punto guía (azul claro): no cambia la forma de la pieza ni se exporta al GLB. Al marcar puntos en Cortar o Rellenar se ofrece como un vértice más. Se borra con <kbd>B</kbd>, se deshace con <kbd>Ctrl</kbd>+<kbd>Z</kbd>, se guarda en el proyecto y respeta la simetría.</dd>
         </dl>
         <h3>Simetría</h3>
         <dl>
           <dt>Casillas X / Y / Z</dt><dd>Con un eje activo, todo lo que colocas, borras, haces crecer, rellenas o cortas se repite reflejado al otro lado del plano de ese eje. Con varios ejes activos salen todas las combinaciones (X y Z: 4 copias; X, Y y Z: 8).</dd>
           <dt><kbd>X</kbd> / <kbd>Y</kbd> / <kbd>Z</kbd></dt><dd>Activan o desactivan cada eje desde el teclado.</dd>
-          <dt>Números junto a cada eje</dt><dd>Posición del plano de espejo (0 en X y Z es el centro del suelo; en Y es la altura). Cada plano activo se ve como un velo de color.</dd>
-          <dt>Qué no refleja</dt><dd>Mover, rotar, pegar y los botones de espejo (<kbd>M</kbd> <kbd>N</kbd> <kbd>U</kbd>) actúan solo sobre lo elegido. Al cortar con selección, solo se cortan las piezas elegidas.</dd>
+          <dt>Números junto a cada eje</dt><dd>Posición del plano de simetría (0 en X y Z es el centro del suelo; en Y es la altura). Cada plano activo se ve como un velo de color.</dd>
+          <dt>Qué no refleja</dt><dd>Mover, rotar, pegar y los botones de reflejar (<kbd>M</kbd> <kbd>N</kbd> <kbd>U</kbd>) actúan solo sobre lo elegido. Al cortar con selección, solo se cortan las piezas elegidas.</dd>
         </dl>
         <h3>Cámara y vista</h3>
         <dl>
@@ -778,13 +768,13 @@
           <dt>Solo líneas (<kbd>W</kbd>)</dt><dd>Oculta las caras y deja solo las aristas (con el color de cada pieza) y los vértices como puntos, para ver la estructura. Se puede seguir apuntando y editando como siempre.</dd>
         </dl>
         <dl>
-          <dt>Malla (− / +)</dt><dd>Cambia el tamaño de la sala en celdas por lado (de 4 a 128, siempre par), en pasos de 2. Las piezas que queden fuera se conservan. Se ve al lado de “Malla:” en el menú.</dd>
+          <dt>Tamaño (− / +)</dt><dd>En “Vista”: cambia el tamaño de la sala (la rejilla) en celdas por lado (de 4 a 128, siempre par), en pasos de 2. Las piezas que queden fuera se conservan.</dd>
         </dl>
         <dl>
           <dt>Arrastrar / clic derecho</dt><dd>Orbitar / mover la vista.</dd>
           <dt>Flechas (sin selección)</dt><dd>Desplazan la cámara por la pantalla, con suavidad. <kbd>Ctrl</kbd> más rápido.</dd>
           <dt>Botones +X … −Z</dt><dd>Miran la escena desde cada eje.</dd>
-          <dt>Casilla Malla</dt><dd>Oculta o muestra la cuadrícula del suelo y las paredes.</dd>
+          <dt>Casilla Rejilla</dt><dd>Oculta o muestra la cuadrícula del suelo y las paredes. “Malla” queda para la herramienta que edita vértices.</dd>
           <dt><kbd>H</kbd></dt><dd>Oculta o muestra el menú.</dd>
           <dt><kbd>A</kbd> Guía</dt><dd>Oculta o muestra la guía de la barra inferior (también con su botón). La guía lista todo lo que se puede hacer con ratón y teclado en la herramienta activa.</dd>
         </dl>

@@ -8,7 +8,7 @@ export const MODE_INFO: Record<Mode, { name: string; color: string }> = {
   cut: { name: 'Cortar', color: '#ff9a3d' },
   fill: { name: 'Rellenar', color: '#45d19a' },
   outline: { name: 'Figura', color: '#b58cff' },
-  vertex: { name: 'Vértice', color: '#ffd34d' },
+  vertex: { name: 'Punto guía', color: '#ffd34d' },
   grow: { name: 'Crecer', color: '#b58cff' },
   sink: { name: 'Hundir', color: '#ff6b8b' },
   paint: { name: 'Pintar', color: '#ff7ad1' },
@@ -56,7 +56,7 @@ export const GUIDE: Record<Mode, [string, string][]> = {
     ['Re Pág / Av Pág', 'subir / bajar un cuarto de celda (Ctrl: media celda)'],
     ['R · Alt+R', 'girar 90° · girar al revés'],
     ['Alt + flechas', 'tumbar 90°: la parte de arriba va hacia la flecha (según la cámara); dos veces la deja de cabeza'],
-    ['M · N · U', 'espejo en X · Z · Y'],
+    ['M · N · U', 'reflejar en X · Z · Y'],
     ['Ctrl+G · Ctrl+Alt+G', 'agrupar · desagrupar'],
     ['Ctrl+C · V · D', 'copiar · pegar · duplicar'],
     ['Supr', 'borrar la selección'],
@@ -65,7 +65,7 @@ export const GUIDE: Record<Mode, [string, string][]> = {
     ...VIEW_GUIDE.slice(0, 1),
   ],
   erase: [
-    ['Clic', 'borrar la pieza marcada en rojo (también los puntos de referencia)'],
+    ['Clic', 'borrar la pieza marcada en rojo (también los puntos guía)'],
     ['Esc', 'volver a Colocar'],
     ...VIEW_GUIDE,
   ],
@@ -97,10 +97,10 @@ export const GUIDE: Record<Mode, [string, string][]> = {
     ...VIEW_GUIDE.slice(0, 2),
   ],
   vertex: [
-    ['Clic', 'crear un punto de referencia en el punto amarillo (no se exporta)'],
+    ['Clic', 'crear un punto guía en el punto amarillo (no se exporta)'],
     ['Alt', 'puntos libres sobre la arista'],
-    ['+ / − puntos', 'densidad de puntos sobre cada arista (panel)'],
-    ['B', 'borrar puntos de referencia'],
+    ['Puntos por arista', 'en cuántas partes se divide cada arista (panel): ×2, ×4, ×8 o ×16'],
+    ['B', 'borrar puntos guía'],
     ['Esc', 'volver a Colocar'],
     ...VIEW_GUIDE.slice(0, 2),
   ],
@@ -126,7 +126,7 @@ export const GUIDE: Record<Mode, [string, string][]> = {
     ['Clic en un segmento', 'elige sus dos vértices (sustituye la elección anterior); doble clic en el mismo segmento sigue en línea recta por todos los segmentos que continúan. Con varias piezas a la vista, elige primero una pieza con un clic en su cara. Shift+clic en una cara elige sus vértices'],
     ['N', 'empujar cara: con todos los vértices de una o más caras elegidos, mueve el ratón en la dirección de la cara para empujarla o jalarla sin torcerla; clic confirma, Esc cancela'],
     ['Triangular (botón)', 'parte en triángulos las caras de cuatro o más lados cuyos vértices están todos elegidos; la forma no cambia. Para juntar triángulos otra vez: Quitar segmento (Q)'],
-    ['Biselar arista (botón)', 'con los dos vértices de una arista elegidos, corta sus esquinas y deja una cara nueva entre las dos caras de la arista; el tamaño se pone en «Tamaño del bisel». Cada extremo tiene que tocar tres caras'],
+    ['Chaflán (botón)', 'con los dos vértices de una arista elegidos, corta sus esquinas y deja una cara nueva entre las dos caras de la arista; el tamaño se pone en «Tamaño del chaflán», el mismo que usa la herramienta Chaflán. Cada extremo tiene que tocar tres caras'],
     ['Corte en anillo (botón)', 'con los dos vértices de una arista elegidos, parte por la mitad la fila de caras de cuatro lados que atraviesa (la vuelta entera si cierra) y deja elegidos los vértices nuevos para moverlos o escalarlos juntos'],
     ['K', 'tapar hueco: con un vértice elegido del borde abierto de una pieza, cierra ese contorno con una cara que mira hacia el mismo lado que sus vecinas'],
     ['P', 'aplanar en plano: lleva los vértices elegidos (tres o más, por ejemplo los de una cara chueca) al plano que mejor se ajusta a todos; con vértices elegidos sustituye a la P que abre el modo Pintar'],
@@ -229,6 +229,7 @@ export function setupHelp(): Help {
     ['escal', 'tamano', 'tamaño', 'agrand'],
     ['color', 'pint'],
     ['deshac', 'undo', 'rehac', 'redo'],
+    ['espej', 'reflej', 'simetr'],
   ];
   function searchHelp(): void {
     const words = plain(helpSearchEl.value).split(/\s+/).filter(Boolean);
