@@ -341,7 +341,7 @@ function pieceIdOf(hit: THREE.Intersection | undefined): number | undefined {
 function updateCursor(overPiece: boolean): void {
   const canvas = renderer.domElement;
   if (drag) canvas.style.cursor = 'grabbing';
-  else if (mode === 'cut' || mode === 'fill' || mode === 'vertex') canvas.style.cursor = 'crosshair';
+  else if (mode === 'cut' || mode === 'fill' || mode === 'vertex' || mode === 'outline') canvas.style.cursor = 'crosshair';
   else if (growDrag) canvas.style.cursor = 'grabbing';
   else if (mode === 'select') canvas.style.cursor = overPiece ? 'grab' : 'default';
   else if (mode === 'erase' || mode === 'grow' || mode === 'sink' || mode === 'paint' || mode === 'shape' || mode === 'bevel' || mode === 'face') canvas.style.cursor = overPiece ? 'pointer' : 'default';
@@ -1294,7 +1294,7 @@ function mirrorCopySelected(axis: 'x' | 'z'): void {
 
 const selActionsEl = document.getElementById('selActions')!;
 function syncSelectionActions(): void {
-  selActionsEl.hidden = mode === 'cut' || mode === 'fill' || mode === 'vertex' || mode === 'mesh' || (selection.size === 0 && clipboard.length === 0);
+  selActionsEl.hidden = mode === 'cut' || mode === 'fill' || mode === 'outline' || mode === 'vertex' || mode === 'mesh' || (selection.size === 0 && clipboard.length === 0);
   for (const button of selActionsEl.querySelectorAll<HTMLButtonElement>('button')) {
     button.disabled = button.dataset.sel === 'paste' ? clipboard.length === 0 : selection.size === 0;
   }
@@ -1404,6 +1404,8 @@ function finishMarquee(commit: boolean, event?: PointerEvent): void {
   const inside: number[] = [];
   const center = new THREE.Vector3();
   for (const piece of model.all()) {
+    // Como Ctrl+A: lo que está oculto (también por su capa) no se elige.
+    if (hidden.has(piece.id)) continue;
     center.set(0, 0, 0);
     let count = 0;
     for (const face of piece.faces) for (const p of face) {
@@ -1660,7 +1662,7 @@ function excavateSelected(): void {
   statusEl.textContent = `Excavado: ${change.added.length} pieza(s) resultantes`;
 }
 
-/** Une las piezas elegidas en una sola si su unión es convexa. */
+/** Une las piezas elegidas en una sola: un cuerpo limpio si su unión es convexa; si no, las junta tal cual con todas sus caras. */
 function mergeSelected(): void {
   const pieces = selectedPieces();
   const hull = mergeChange(pieces);
@@ -3936,7 +3938,7 @@ const GUIDE: Record<Mode, [string, string][]> = {
     ['Ctrl+C · V · D', 'copiar · pegar · duplicar'],
     ['Supr', 'borrar la selección'],
     ['O · Alt+O · I', 'ocultar · mostrar ocultas · aislar'],
-    ['Panel “Selección”', 'fusionar, excavar, repetir; centro, tamaño y giro exactos'],
+    ['Panel “Selección”', 'espejo, repetir, centro, tamaño y giro exactos; Unir piezas y Excavar están en el panel Herramientas'],
     ...VIEW_GUIDE.slice(0, 1),
   ],
   erase: [
@@ -4063,7 +4065,7 @@ const GUIDE: Record<Mode, [string, string][]> = {
     ...VIEW_GUIDE.slice(0, 2),
   ],
   face: [
-    ['Clic', 'elegir la cara y abrir sus acciones en el panel'],
+    ['Clic', 'aplicar directamente la acción elegida en el panel (Extruir / cavar o Dividir) a la cara apuntada'],
     ['Extruir', 'distancia positiva: sale un cuerpo · negativa: cava; “Punta” estrecha el extremo'],
     ['Dividir', 'parte la pieza en dos paralelamente a la cara'],
     ['Esc', 'volver a Colocar'],
@@ -4450,14 +4452,14 @@ window.addEventListener('keydown', (e) => {
   }
 
   // Sin selección (o cortando, o en Malla) las flechas desplazan la cámara en pantalla; con selección mueven las piezas.
-  if (key in PAN_KEYS && (mode === 'cut' || mode === 'fill' || mode === 'vertex' || mode === 'mesh' || selection.size === 0)) {
+  if (key in PAN_KEYS && (mode === 'cut' || mode === 'fill' || mode === 'outline' || mode === 'vertex' || mode === 'mesh' || selection.size === 0)) {
     e.preventDefault();
     panKeys.add(key);
     panFast = fast;
     return;
   }
 
-  if (mode !== 'cut' && mode !== 'fill' && mode !== 'vertex' && mode !== 'mesh' && selection.size > 0) {
+  if (mode !== 'cut' && mode !== 'fill' && mode !== 'outline' && mode !== 'vertex' && mode !== 'mesh' && selection.size > 0) {
     // Ctrl duplica el paso: de un cuarto a media celda.
     const stepXZ = fast ? 2 * STEP_XZ : STEP_XZ;
     const stepY = fast ? 2 * STEP_Y : STEP_Y;
@@ -4502,7 +4504,8 @@ window.addEventListener('keydown', (e) => {
   if (key === 'd') setMode(mode === 'sink' ? 'place' : 'sink');
   if (key === 'p') setMode(mode === 'paint' ? 'place' : 'paint');
   if (key === 'o') {
-    if (e.altKey) showHidden();
+    // Alt+O muestra solo las piezas ocultas una a una: las de capas ocultas siguen ocultas (se muestran con el botón «Mostrar ocultas» o el ojo de la capa).
+    if (e.altKey) showHidden([...hidden].filter((id) => { const piece = model.get(id); return !piece || !layers.isHidden(piece); }));
     else hideSelected();
   }
   if (key === 'i') isolateSelected();
