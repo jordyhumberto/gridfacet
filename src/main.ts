@@ -1109,13 +1109,17 @@ groupNameInput.addEventListener('change', () => {
   groupNameInput.blur();
 });
 
-// Inspector de la selección: centro, tamaño y giro con números.
+// Panel «Selección»: las acciones sobre las piezas elegidas (selActions) y sus campos de centro, tamaño y giro (inspectorFields).
+// Aparece al elegir algo; con el portapapeles lleno y nada elegido se queda solo con las acciones (para poder pegar).
 const inspectorEl = document.getElementById('inspector')!;
+const inspectorFieldsEl = document.getElementById('inspectorFields')!;
+const selActionsEl = document.getElementById('selActions')!;
 const insInput = (name: string) => inspectorEl.querySelector<HTMLInputElement>(`[data-ins="${name}"]`)!;
 let rotSign = 1;
 function syncInspector(): void {
   const box = boundsOf(selectedPieces());
-  inspectorEl.hidden = !box;
+  inspectorFieldsEl.hidden = !box;
+  inspectorEl.hidden = !box && selActionsEl.hidden;
   if (!box || inspectorEl.contains(document.activeElement)) return;
   const r = (v: number) => String(Math.round(v * 1000) / 1000);
   (['x', 'y', 'z'] as const).forEach((axis, i) => {
@@ -1285,16 +1289,62 @@ function mirrorCopySelected(axis: 'x' | 'z'): void {
   statusEl.textContent = `Copia reflejada sobre ${axis.toUpperCase()} = ${center}: ${change.added.length} pieza(s)`;
 }
 
-const selActionsEl = document.getElementById('selActions')!;
 function syncSelectionActions(): void {
   selActionsEl.hidden = mode === 'cut' || mode === 'fill' || mode === 'outline' || mode === 'vertex' || mode === 'mesh' || (selection.size === 0 && clipboard.length === 0);
+  inspectorEl.hidden = selActionsEl.hidden && inspectorFieldsEl.hidden;
+  const parts = partsOf(selectedPieces()).length;
   for (const button of selActionsEl.querySelectorAll<HTMLButtonElement>('button')) {
-    button.disabled = button.dataset.sel === 'paste' ? clipboard.length === 0 : selection.size === 0;
+    const action = button.dataset.sel;
+    button.disabled = action === 'paste' ? clipboard.length === 0 : action === 'slivers' ? false : action === 'align' ? parts < 2 : action === 'distribute' ? parts < 3 : selection.size === 0;
   }
 }
+
+/** Alinea a ras las partes de la selección (un grupo cuenta como una) por el borde menor, el centro o el borde mayor. */
+function alignSelected(axis: 'x' | 'y' | 'z', edge: 'min' | 'center' | 'max'): void {
+  commitTransform(alignChange(selectedPieces(), axis, edge));
+}
+/** Reparte las partes de la selección con huecos iguales; las de los extremos no se mueven. */
+function distributeSelected(axis: 'x' | 'y' | 'z'): void {
+  commitTransform(distributeChange(selectedPieces(), axis));
+}
+function groundSelected(): void {
+  commitTransform(groundChange(selectedPieces()));
+}
+/** Pregunta la medida de la dimensión mayor y escala la selección conservando las proporciones. */
+function resizeSelected(): void {
+  const box = boundsOf(selectedPieces());
+  if (!box) return;
+  const current = Math.max(...[0, 1, 2].map((k) => box.max[k] - box.min[k]));
+  const text = window.prompt('Medida de la dimensión mayor, en celdas (se conservan las proporciones)', String(Math.round(current * 1000) / 1000));
+  const value = text === null ? NaN : Number(text.replace(',', '.'));
+  if (Number.isFinite(value) && value > 0) commitTransform(resizeLongestChange(selectedPieces(), value));
+}
+/** Quita las piezas diminutas que dejan los cortes muy seguidos: con selección actúa sobre ella; sin selección, sobre las piezas que se pueden editar. */
+function cleanSlivers(): void {
+  const scope = selection.size > 0 ? selectedPieces() : model.editable();
+  const slivers = findSlivers(scope);
+  if (slivers.length === 0) {
+    statusEl.textContent = 'No hay astillas: ninguna pieza es tan pequeña';
+    return;
+  }
+  model.apply({ added: [], removed: slivers });
+  statusEl.textContent = `Quitadas ${slivers.length} astilla(s). Ctrl+Z para volver atrás`;
+}
+const alignEdgeEl = document.getElementById('alignEdge') as HTMLSelectElement;
+alignEdgeEl.addEventListener('change', () => alignEdgeEl.blur());
+
 selActionsEl.addEventListener('click', (e) => {
-  const action = (e.target as HTMLElement).dataset.sel;
-  if (action === 'hide') hideSelected();
+  const button = (e.target as HTMLElement).closest<HTMLElement>('[data-sel]');
+  const action = button?.dataset.sel;
+  const axis = button?.dataset.ax as 'x' | 'y' | 'z' | undefined;
+  if (action === 'align' && axis) alignSelected(axis, alignEdgeEl.value as 'min' | 'center' | 'max');
+  else if (action === 'distribute' && axis) distributeSelected(axis);
+  else if (action === 'ground') groundSelected();
+  else if (action === 'resize') resizeSelected();
+  else if (action === 'slivers') cleanSlivers();
+  else if (action === 'mirror-copy-x') mirrorCopySelected('x');
+  else if (action === 'mirror-copy-z') mirrorCopySelected('z');
+  else if (action === 'hide') hideSelected();
   else if (action === 'isolate') isolateSelected();
   else if (action === 'group') groupSelected();
   else if (action === 'ungroup') ungroupSelected();
@@ -3330,44 +3380,18 @@ const commands: Command[] = [
       name: `Alinear en ${axis.toUpperCase()} ${label}`,
       keywords: 'alinear ras',
       enabled: () => partsOf(selectedPieces()).length >= 2,
-      run: () => commitTransform(alignChange(selectedPieces(), axis, edge)),
+      run: () => alignSelected(axis, edge),
     })),
   ),
   ...(['x', 'y', 'z'] as const).map((axis): Command => ({
     name: `Distribuir en ${axis.toUpperCase()} con huecos iguales`,
     keywords: 'repartir separar espaciar',
     enabled: () => partsOf(selectedPieces()).length >= 3,
-    run: () => commitTransform(distributeChange(selectedPieces(), axis)),
+    run: () => distributeSelected(axis),
   })),
-  {
-    name: 'Limpiar astillas',
-    keywords: 'cortes diminutas pequeñas quitar basura',
-    run: () => {
-      // Con selección actúa sobre ella; sin selección, sobre las piezas que se pueden editar.
-      const scope = selection.size > 0 ? selectedPieces() : model.editable();
-      const slivers = findSlivers(scope);
-      if (slivers.length === 0) {
-        statusEl.textContent = 'No hay astillas: ninguna pieza es tan pequeña';
-        return;
-      }
-      model.apply({ added: [], removed: slivers });
-      statusEl.textContent = `Quitadas ${slivers.length} astilla(s). Ctrl+Z para volver atrás`;
-    },
-  },
-  { name: 'Mover al suelo', keywords: 'bajar apoyar y 0', enabled: hasSelection, run: () => commitTransform(groundChange(selectedPieces())) },
-  {
-    name: 'Redimensionar…',
-    keywords: 'escalar tamaño medida proporcion',
-    enabled: hasSelection,
-    run: () => {
-      const box = boundsOf(selectedPieces());
-      if (!box) return;
-      const current = Math.max(...[0, 1, 2].map((k) => box.max[k] - box.min[k]));
-      const text = window.prompt('Medida de la dimensión mayor, en celdas (se conservan las proporciones)', String(Math.round(current * 1000) / 1000));
-      const value = text === null ? NaN : Number(text.replace(',', '.'));
-      if (Number.isFinite(value) && value > 0) commitTransform(resizeLongestChange(selectedPieces(), value));
-    },
-  },
+  { name: 'Limpiar astillas', keywords: 'cortes diminutas pequeñas quitar basura', run: cleanSlivers },
+  { name: 'Mover al suelo', keywords: 'bajar apoyar y 0', enabled: hasSelection, run: groundSelected },
+  { name: 'Redimensionar…', keywords: 'escalar tamaño medida proporcion', enabled: hasSelection, run: resizeSelected },
   { name: 'Nueva capa', keywords: 'capas', run: () => layers.add() },
   { name: 'Recuperar el trabajo anterior', keywords: 'copia automatica restaurar sesion anterior', run: files.toggleRecoverList },
   { name: 'Nuevo proyecto', keywords: 'nuevo en blanco lienzo vacio', run: files.newProject },

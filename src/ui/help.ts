@@ -61,7 +61,7 @@ export const GUIDE: Record<Mode, [string, string][]> = {
     ['Ctrl+C · V · D', 'copiar · pegar · duplicar'],
     ['Supr', 'borrar la selección'],
     ['O · Alt+O · I', 'ocultar · mostrar ocultas · aislar'],
-    ['Panel “Selección”', 'espejo, repetir, centro, tamaño y giro exactos; Unir piezas y Excavar están en el panel Herramientas'],
+    ['Panel “Selección”', 'aparece al elegir piezas y reúne todo lo que se hace con ellas: ocultar, aislar, agrupar, copiar, reflejar (y copiar), unir, excavar, limpiar astillas, alinear, repartir, al suelo, redimensionar, pasar a la capa activa y, debajo, centro, tamaño, giro y repetir exactos'],
     ...VIEW_GUIDE.slice(0, 1),
   ],
   erase: [

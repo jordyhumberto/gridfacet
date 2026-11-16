@@ -249,21 +249,6 @@
             <label title="Con imán, al arrastrar, las piezas y los vértices caen en la rejilla (¼ de celda); sin imán siguen al ratón con suavidad. En Malla, Ctrl invierte el imán mientras arrastras"><input type="checkbox" id="magnet" /> Imán (rejilla)</label>
           </div>
           <small id="status"></small>
-          <div class="row" id="selActions" hidden>
-            <button data-sel="hide" title="O">Ocultar (O)</button>
-            <button data-sel="isolate" title="I">Aislar (I)</button>
-            <button data-sel="group" title="Ctrl+G">Agrupar</button>
-            <button data-sel="ungroup" title="Ctrl+Alt+G">Desagrupar</button>
-            <button data-sel="connected" title="K">Conectadas (K)</button>
-            <button data-sel="excavate" title="Resta la selección de las piezas que toca (cráteres, agujeros)">Excavar</button>
-            <button data-sel="merge" title="Une las piezas en una sola: si la unión es convexa queda un solo cuerpo limpio; si no, se juntan con todas sus caras en un solo bloque">Unir piezas</button>
-            <button data-sel="copy" title="Ctrl+C">Copiar</button>
-            <button data-sel="paste" title="Ctrl+V">Pegar</button>
-            <button data-sel="mirror-x" title="Refleja la selección en X, sobre su propio centro (M)">Reflejar X (M)</button>
-            <button data-sel="mirror-z" title="Refleja la selección en Z, sobre su propio centro (N)">Reflejar Z (N)</button>
-            <button data-sel="mirror-y" title="Refleja la selección en Y, sobre su propio centro (U)">Reflejar Y (U)</button>
-            <button data-sel="delete" title="Supr">Borrar (Supr)</button>
-          </div>
           <div class="row" id="cutActions" hidden>
             <button data-cut="close">Cerrar región</button>
             <button data-cut="undo">Quitar punto (Ctrl+Z)</button>
@@ -476,6 +461,90 @@
             <label title="Dónde corta, contando desde la cara: 0,5 es por la mitad">Corte <input type="number" id="faceFraction" min="0.05" max="0.95" step="0.05" value="0.5" /></label>
           </div>
         </section>
+        <section id="inspector" hidden>
+          <h4><span class="title">Selección</span></h4>
+          <div id="selActions" hidden>
+            <div class="meshGroup">
+              <span class="groupTitle">Elegidas</span>
+              <button data-sel="hide" title="Esconde las piezas elegidas para trabajar en lo que queda detrás (O)">Ocultar (O)</button>
+              <button data-sel="isolate" title="Oculta todo menos la selección (I)">Aislar (I)</button>
+              <button data-sel="connected" title="Suma a la selección las piezas que tocan a las elegidas por una cara (K)">Conectadas (K)</button>
+              <button id="layerMove" title="Pasa las piezas elegidas a la capa activa" hidden>A la capa activa</button>
+            </div>
+            <div class="meshGroup">
+              <span class="groupTitle">Grupo y copia</span>
+              <button data-sel="group" title="Une las piezas elegidas en un grupo (Ctrl+G)">Agrupar</button>
+              <button data-sel="ungroup" title="Deshace el grupo de las piezas elegidas (Ctrl+Alt+G)">Desagrupar</button>
+              <button data-sel="copy" title="Ctrl+C">Copiar</button>
+              <button data-sel="paste" title="Ctrl+V">Pegar</button>
+              <button data-sel="delete" title="Borra las piezas elegidas (Supr)">Borrar (Supr)</button>
+            </div>
+            <div class="meshGroup">
+              <span class="groupTitle">Reflejar</span>
+              <button data-sel="mirror-x" title="Refleja la selección en X, sobre su propio centro (M)">Reflejar X (M)</button>
+              <button data-sel="mirror-z" title="Refleja la selección en Z, sobre su propio centro (N)">Reflejar Z (N)</button>
+              <button data-sel="mirror-y" title="Refleja la selección en Y, sobre su propio centro (U)">Reflejar Y (U)</button>
+              <button data-sel="mirror-copy-x" title="Añade una copia reflejada de la selección respecto al plano de simetría X (el origen por defecto); la copia queda elegida">Reflejar y copiar X</button>
+              <button data-sel="mirror-copy-z" title="Añade una copia reflejada de la selección respecto al plano de simetría Z (el origen por defecto); la copia queda elegida">Reflejar y copiar Z</button>
+            </div>
+            <div class="meshGroup">
+              <span class="groupTitle">Unir y limpiar</span>
+              <button data-sel="merge" title="Une las piezas en una sola: si la unión es convexa queda un solo cuerpo limpio; si no, se juntan con todas sus caras en un solo bloque">Unir piezas</button>
+              <button data-sel="excavate" title="Resta la selección de las piezas que toca (cráteres, agujeros)">Excavar</button>
+              <button data-sel="slivers" title="Quita las piezas diminutas que dejan los cortes muy seguidos. Actúa sobre la selección o, sin ella, sobre todo">Limpiar astillas</button>
+            </div>
+            <div class="meshGroup">
+              <span class="groupTitle">Alinear y repartir</span>
+              <select id="alignEdge" title="Por dónde se alinean las partes: el borde de menor coordenada, el centro o el borde de mayor coordenada">
+                <option value="min">Borde menor</option>
+                <option value="center">Centro</option>
+                <option value="max">Borde mayor</option>
+              </select>
+              <button data-sel="align" data-ax="x" title="Deja las partes a ras en X (hacen falta dos o más; un grupo cuenta como una)">Alinear X</button>
+              <button data-sel="align" data-ax="y" title="Deja las partes a ras en Y (hacen falta dos o más; un grupo cuenta como una)">Alinear Y</button>
+              <button data-sel="align" data-ax="z" title="Deja las partes a ras en Z (hacen falta dos o más; un grupo cuenta como una)">Alinear Z</button>
+              <button data-sel="distribute" data-ax="x" title="Reparte las partes en X con huecos iguales; las de los extremos no se mueven (hacen falta tres o más)">Repartir X</button>
+              <button data-sel="distribute" data-ax="y" title="Reparte las partes en Y con huecos iguales; las de los extremos no se mueven (hacen falta tres o más)">Repartir Y</button>
+              <button data-sel="distribute" data-ax="z" title="Reparte las partes en Z con huecos iguales; las de los extremos no se mueven (hacen falta tres o más)">Repartir Z</button>
+            </div>
+            <div class="meshGroup">
+              <span class="groupTitle">Suelo y medida</span>
+              <button data-sel="ground" title="Apoya la selección en el suelo (y = 0)">Al suelo</button>
+              <button data-sel="resize" title="Fija la medida de la dimensión mayor de la selección, conservando las proporciones">Redimensionar…</button>
+            </div>
+          </div>
+          <div id="inspectorFields" hidden>
+            <div class="row" id="inspectorPos" title="Centro de la selección, en celdas">
+              <small>Centro</small>
+              <label>X <input type="number" data-ins="px" step="0.25" /></label>
+              <label>Y <input type="number" data-ins="py" step="0.25" /></label>
+              <label>Z <input type="number" data-ins="pz" step="0.25" /></label>
+            </div>
+            <div class="row" id="inspectorSize" title="Tamaño de la caja de la selección, en celdas; al cambiarlo se escala">
+              <small>Tamaño</small>
+              <label>X <input type="number" data-ins="sx" min="0.01" step="0.25" /></label>
+              <label>Y <input type="number" data-ins="sy" min="0.01" step="0.25" /></label>
+              <label>Z <input type="number" data-ins="sz" min="0.01" step="0.25" /></label>
+            </div>
+            <div class="row" id="inspectorRot" title="Gira la selección ese ángulo alrededor de su centro">
+              <small>Girar</small>
+              <button data-rot="x" title="Alrededor de X">X</button>
+              <button data-rot="y" title="Alrededor de Y (vertical)">Y</button>
+              <button data-rot="z" title="Alrededor de Z">Z</button>
+              <input type="number" id="rotAngle" value="15" step="5" />°
+              <button data-rot-sign="-1" title="Sentido contrario">±</button>
+            </div>
+            <div class="row" id="repeatRow" title="Copia la selección en serie: cada copia suma otro desplazamiento, giro y escala">
+              <small>Repetir</small>
+              <label>× <input type="number" data-rep="n" min="1" max="60" step="1" value="3" /></label>
+              <label>Mover <input type="number" data-rep="mx" step="0.25" value="1" /><input type="number" data-rep="my" step="0.25" value="0" /><input type="number" data-rep="mz" step="0.25" value="0" /></label>
+              <label>Girar° <input type="number" data-rep="rx" step="5" value="0" /><input type="number" data-rep="ry" step="5" value="0" /><input type="number" data-rep="rz" step="5" value="0" /></label>
+              <label>Escala <input type="number" data-rep="s" min="0.1" step="0.05" value="1" /></label>
+              <button>Repetir</button>
+            </div>
+
+          </div>
+        </section>
         <section>
           <h4><span class="title">Colores</span><input type="color" id="color" value="#d9534f" title="Color de la pieza" /></h4>
           <div id="recentColors" title="Últimos 10 colores usados: clic para volver a elegir uno"></div>
@@ -493,7 +562,6 @@
           <div id="layerList"></div>
           <div class="row">
             <button id="layerAdd" title="Crear una capa nueva; lo que coloques o crees a partir de ahora va a la capa activa">+ Capa</button>
-            <button id="layerMove" title="Pasar la selección a la capa activa" hidden>Selección → activa</button>
           </div>
           <small>Ojo: oculta. Candado: bloqueada, se ve y choca pero no se puede elegir ni modificar. Doble clic en el nombre: renombrar.</small>
         </section>
@@ -544,37 +612,6 @@
             <button id="animRemoveKey" title="Quita la clave de este fotograma">Quitar clave</button>
           </div>
           <small id="animKeys"></small>
-        </section>
-        <section id="inspector" hidden>
-          <h4><span class="title">Selección</span></h4>
-          <div class="row" id="inspectorPos" title="Centro de la selección, en celdas">
-            <small>Centro</small>
-            <label>X <input type="number" data-ins="px" step="0.25" /></label>
-            <label>Y <input type="number" data-ins="py" step="0.25" /></label>
-            <label>Z <input type="number" data-ins="pz" step="0.25" /></label>
-          </div>
-          <div class="row" id="inspectorSize" title="Tamaño de la caja de la selección, en celdas; al cambiarlo se escala">
-            <small>Tamaño</small>
-            <label>X <input type="number" data-ins="sx" min="0.01" step="0.25" /></label>
-            <label>Y <input type="number" data-ins="sy" min="0.01" step="0.25" /></label>
-            <label>Z <input type="number" data-ins="sz" min="0.01" step="0.25" /></label>
-          </div>
-          <div class="row" id="inspectorRot" title="Gira la selección ese ángulo alrededor de su centro">
-            <small>Girar</small>
-            <button data-rot="x" title="Alrededor de X">X</button>
-            <button data-rot="y" title="Alrededor de Y (vertical)">Y</button>
-            <button data-rot="z" title="Alrededor de Z">Z</button>
-            <input type="number" id="rotAngle" value="15" step="5" />°
-            <button data-rot-sign="-1" title="Sentido contrario">±</button>
-          </div>
-          <div class="row" id="repeatRow" title="Copia la selección en serie: cada copia suma otro desplazamiento, giro y escala">
-            <small>Repetir</small>
-            <label>× <input type="number" data-rep="n" min="1" max="60" step="1" value="3" /></label>
-            <label>Mover <input type="number" data-rep="mx" step="0.25" value="1" /><input type="number" data-rep="my" step="0.25" value="0" /><input type="number" data-rep="mz" step="0.25" value="0" /></label>
-            <label>Girar° <input type="number" data-rep="rx" step="5" value="0" /><input type="number" data-rep="ry" step="5" value="0" /><input type="number" data-rep="rz" step="5" value="0" /></label>
-            <label>Escala <input type="number" data-rep="s" min="0.1" step="0.05" value="1" /></label>
-            <button>Repetir</button>
-          </div>
         </section>
         <section>
           <h4><span class="title">Simetría</span></h4>
@@ -684,8 +721,8 @@
         <dl>
           <dt><kbd>F</kbd> Cara</dt><dd>Apunta a una cara y haz clic. <b>Extruir</b>: con distancia positiva sale un cuerpo nuevo pegado a la cara; con distancia negativa se cava hacia dentro. “Punta” estrecha el extremo (0,5 = mitad, 0 = en punta) y “Borde” deja un reborde alrededor, así salen cráteres de paredes inclinadas, pirámides y muñones. <b>Dividir</b>: parte la pieza en dos con un plano paralelo a la cara (“Corte” 0,5 es por la mitad).</dd>
           <dt>Excavar</dt><dd>Con una pieza elegida (por ejemplo una forma colocada dentro de otra), el botón <i>Excavar</i> la resta de las demás piezas que toca y la borra. Sirve para agujeros, ventanas, bocas y cráteres. Las piezas cavadas se reparten en varias convexas.</dd>
-          <dt>Unir piezas</dt><dd>Botón de “Herramientas” (con piezas elegidas): une las piezas en una sola. Si su unión es convexa queda un solo cuerpo limpio (baja la cuenta de piezas y triángulos); si no lo es, las junta tal cual en un solo bloque, con todas sus caras. “Unir” es para piezas; para juntar vértices está “Fusionar vértices” en Malla.</dd>
-          <dt>Repetir</dt><dd>En “Selección”: copia lo elegido N veces; cada copia suma otro desplazamiento, giro (grados) y escala. Escaleras, dientes, escamas, ramas, espirales.</dd>
+          <dt>Unir piezas</dt><dd>Botón de la sección “Selección” (con piezas elegidas): une las piezas en una sola. Si su unión es convexa queda un solo cuerpo limpio (baja la cuenta de piezas y triángulos); si no lo es, las junta tal cual en un solo bloque, con todas sus caras. “Unir” es para piezas; para juntar vértices está “Fusionar vértices” en Malla.</dd>
+          <dt>Repetir</dt><dd>En “Selección” (al final): copia lo elegido N veces; cada copia suma otro desplazamiento, giro (grados) y escala. Escaleras, dientes, escamas, ramas, espirales.</dd>
           <dt>Triángulos</dt><dd>En “Herramientas”, grupo “Crear”, se cuentan los triángulos de todas las piezas y se compara con el máximo que pongas (se pone en rojo al pasarlo). Es un conteo de las piezas; el modo fusionado del GLB suele quitar caras interiores.</dd>
         </dl>
         <h3>Formas redondeadas</h3>
@@ -702,23 +739,23 @@
         </dl>
         <h3>Mover, escalar y girar con precisión</h3>
         <dl>
-          <dt>Sección “Selección”</dt><dd>Aparece al elegir piezas. <b>Centro</b> mueve la selección hasta ese punto; <b>Tamaño</b> la escala (estira o encoge) respecto a su centro; <b>Girar</b> la gira el ángulo indicado alrededor del eje X, Y o Z (el botón ± invierte el sentido). Funcionan con cualquier ángulo y se pueden deshacer.</dd>
+          <dt>Sección “Selección”</dt><dd>Aparece al elegir piezas y reúne en un solo sitio lo que se puede hacer con ellas: ocultar, aislar, agrupar, copiar, pegar, borrar, reflejar (y reflejar y copiar), unir, excavar, limpiar astillas, alinear, repartir, apoyar en el suelo, redimensionar y pasar a la capa activa; son los mismos comandos de <kbd>Ctrl</kbd>+<kbd>K</kbd>. Debajo están los campos exactos. <b>Centro</b> mueve la selección hasta ese punto; <b>Tamaño</b> la escala (estira o encoge) respecto a su centro; <b>Girar</b> la gira el ángulo indicado alrededor del eje X, Y o Z (el botón ± invierte el sentido). Funcionan con cualquier ángulo y se pueden deshacer.</dd>
           <dt>Giro libre</dt><dd>Los giros de 90° con <kbd>R</kbd> siguen igual; con un ángulo distinto las piezas dejan de alinearse a la rejilla.</dd>
         </dl>
         <h3>Ocultar, aislar y grupos con nombre</h3>
         <dl>
           <dt><kbd>O</kbd> Ocultar</dt><dd>Esconde las piezas elegidas para trabajar en lo que queda detrás. Ocultas no se ven ni se pueden apuntar con el ratón, pero siguen en el modelo y se exportan. <kbd>Alt</kbd>+<kbd>O</kbd> o el botón “Mostrar ocultas” las devuelve. No se guarda en el proyecto.</dd>
           <dt><kbd>I</kbd> Aislar</dt><dd>Oculta todo menos la selección; otra pulsación de <kbd>I</kbd> (sin selección) muestra todo.</dd>
-          <dt>Sección “Capas”</dt><dd>Cada pieza está en una capa. <b>+ Capa</b> crea una (queda activa: lo que coloques va a ella); doble clic en el nombre la renombra. <b>Ojo</b> oculta la capa y <b>Candado</b> la bloquea: se ve y choca con lo que colocas, pero no se puede elegir ni modificar (ni cortar, crecer, hundir…). “Selección → activa” pasa lo elegido a la capa activa. Se guardan en el proyecto.</dd>
+          <dt>Sección “Capas”</dt><dd>Cada pieza está en una capa. <b>+ Capa</b> crea una (queda activa: lo que coloques va a ella); doble clic en el nombre la renombra. <b>Ojo</b> oculta la capa y <b>Candado</b> la bloquea: se ve y choca con lo que colocas, pero no se puede elegir ni modificar (ni cortar, crecer, hundir…). “A la capa activa” (en la sección “Selección”) pasa lo elegido a la capa activa. Se guardan en el proyecto.</dd>
           <dt>Giro y volteo</dt><dd><kbd>R</kbd> gira la selección 90° sobre el eje vertical (<kbd>Alt</kbd>+<kbd>R</kbd> al revés); <kbd>Alt</kbd>+flechas la tumba 90° hacia la flecha (dos veces: de cabeza). En “Selección” → Girar, cualquier ángulo sobre X, Y o Z.</dd>
           <dt>Comandos</dt><dd><kbd>Ctrl</kbd>+<kbd>K</kbd> abre un buscador de acciones: escribe “reflejar”, “rotar” o “guardar”, elige con las flechas y <kbd>Intro</kbd>. Incluye “Reflejar y copiar” en X o Z, que añade el reflejo de la selección respecto al plano de simetría (el origen por defecto).</dd>
-          <dt>Alinear, repartir, suelo y medida</dt><dd>En Comandos (<kbd>Ctrl</kbd>+<kbd>K</kbd>): “Alinear en X/Y/Z” deja las partes a ras por un borde o por el centro; “Distribuir” reparte tres o más con huecos iguales (las de los extremos no se mueven); “Mover al suelo” apoya la selección en y = 0; “Redimensionar…” fija la dimensión mayor conservando proporciones. Un grupo cuenta como una sola parte.</dd>
+          <dt>Alinear, repartir, suelo y medida</dt><dd>En la sección “Selección” y en Comandos (<kbd>Ctrl</kbd>+<kbd>K</kbd>): “Alinear en X/Y/Z” deja las partes a ras por un borde o por el centro; “Distribuir” reparte tres o más con huecos iguales (las de los extremos no se mueven); “Mover al suelo” apoya la selección en y = 0; “Redimensionar…” fija la dimensión mayor conservando proporciones. Un grupo cuenta como una sola parte.</dd>
           <dt>Copia automática</dt><dd>La escena se copia sola en el navegador. Al abrir la página siempre empiezas con una hoja en blanco; si no guardaste el trabajo anterior, búscalo con el comando «Recuperar el trabajo anterior». Guarda en un archivo para conservarlo de verdad.</dd>
           <dt>Exportar con texturas</dt><dd>Los píxeles pintados salen en los sprites PNG, en el GLB (mallas aparte pegadas a su cara, con textura de vecino más cercano y recorte por transparencia) y en “Exportar OBJ”, que baja tres archivos: .obj, .mtl y un PNG con todas las texturas. Guárdalos juntos y, en Blender, pon la interpolación de la textura en “Closest”.</dd>
           <dt>Exportar sprites</dt><dd>En Archivo: elige cámara (isométrica, lateral o cenital), 1, 4, 8 o 16 vistas alrededor del modelo, tamaño de 16 a 256 px, sombreado plano o con luz, y contorno. Se dibuja sin suavizado y con fondo transparente. Con “Hoja” sale un solo PNG con las vistas por filas; sin ella, un PNG por vista. Todas las vistas comparten escala.</dd>
           <dt>Pintar píxeles</dt><dd>En Pintar, la casilla “Píxeles” cambia el pincel: en vez de teñir la cara entera se pinta casilla a casilla (16 por celda), arrastrando, con lápiz (1, 2, 3, 4 u 8 px), borrador (deja ver el color de la cara) o relleno. <kbd>Alt</kbd>+clic toma el color del píxel. Un trazo se deshace de una vez, y el trazo se queda en la cara donde empezó. Las texturas se guardan con el proyecto y se conservan al mover, girar, espejar, repetir, cortar y hundir; al crecer una cara, la de arriba del cuerpo nuevo hereda sus píxeles y las caras nuevas de un corte nacen sin pintar. Salen en los sprites, en el GLB y en el OBJ.</dd>
           <dt>Paletas de colores</dt><dd>Debajo de los colores recientes: “Guardar” convierte los últimos colores en una paleta con nombre; “Importar” abre un archivo .hex (un color por línea, como los de Lospec); “Exportar” la guarda como .hex. El selector alterna entre los recientes y tus paletas.</dd>
-          <dt>Limpiar astillas</dt><dd>En Comandos (<kbd>Ctrl</kbd>+<kbd>K</kbd>): quita las piezas diminutas que dejan los cortes muy seguidos (menos de un cuarto de cuarto de cuarto de celda cúbica). Actúa sobre la selección o, sin ella, sobre todo; se deshace con <kbd>Ctrl</kbd>+<kbd>Z</kbd>.</dd>
+          <dt>Limpiar astillas</dt><dd>En la sección “Selección” y en Comandos (<kbd>Ctrl</kbd>+<kbd>K</kbd>): quita las piezas diminutas que dejan los cortes muy seguidos (menos de un cuarto de cuarto de cuarto de celda cúbica). Actúa sobre la selección o, sin ella, sobre todo; se deshace con <kbd>Ctrl</kbd>+<kbd>Z</kbd>.</dd>
           <dt>GLB por capas</dt><dd>En Archivo, “Una unión por capa” exporta cada capa como sus propias mallas, con el nombre de la capa. Mover piezas a otra capa ahora se puede deshacer.</dd>
           <dt>Cortar solo la capa activa</dt><dd>En Cortar, la casilla “Solo la capa activa” limita el corte a las piezas de esa capa, aunque otras estén cruzadas por el plano.</dd>
           <dt>“Solo visibles”</dt><dd>En Cortar, Rellenar, Figura y Punto guía: con la casilla marcada los puntos tapados por otra cara no se dibujan ni se pueden elegir.</dd>
