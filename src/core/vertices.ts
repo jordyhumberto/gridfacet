@@ -656,6 +656,7 @@ function withFaces(source: Piece, faces: Vec3[][], colors: number[], textures: (
 
 /**
  * Crea una cara con los vértices elegidos (tres o más), puestos en orden alrededor de su centro y con la normal hacia fuera de la pieza.
+ * La cara nueva se ve por los dos lados: a mano el sentido no siempre se puede adivinar (sobre todo entre caras vecinas mezcladas) y una cara de un solo lado se vería transparente desde el otro.
  * Devuelve null si hay menos de tres, si no forman una superficie o si ya existe una cara con esos vértices.
  */
 export function addFace(piece: Piece, keys: ReadonlySet<string>): Piece | null {
@@ -692,7 +693,7 @@ export function addFace(piece: Piece, keys: ReadonlySet<string>): Piece | null {
     [...piece.faces, ring],
     [...piece.faces.map((_, i) => piece.faceColors?.[i] ?? piece.color), piece.color],
     [...(piece.faceTextures ?? piece.faces.map(() => null)), null],
-    [...piece.faces.map((_, i) => piece.faceFlags?.[i] ?? 0), 0],
+    [...piece.faces.map((_, i) => piece.faceFlags?.[i] ?? 0), FACE_DOUBLE],
   );
 }
 
