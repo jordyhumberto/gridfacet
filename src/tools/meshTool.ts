@@ -513,11 +513,16 @@ export class MeshTool {
         if (kept) next.set(piece.id, kept);
         continue;
       }
-      const fixed = placeVertices(piece, new Set(moves.keys()), (p) => moves.get(vertexKey(p)) ?? p);
-      if (!fixed) continue;
+      const made = placeVertices(piece, new Set(moves.keys()), (p) => moves.get(vertexKey(p)) ?? p);
+      if (!made) {
+        if (kept) next.set(piece.id, kept);
+        continue;
+      }
+      // La pieza conserva su id: así sigue elegida, con sus pistas de animación y su estado de oculta.
+      const fixed = sameId(made, piece);
       removed.push(piece);
       added.push(fixed);
-      if (kept) next.set(fixed.id, new Set([...kept].map((key) => (moves.has(key) ? vertexKey(moves.get(key)!) : key))));
+      if (kept) next.set(piece.id, new Set([...kept].map((key) => (moves.has(key) ? vertexKey(moves.get(key)!) : key))));
     }
     if (added.length > 0) {
       const depthBefore = this.host.model.undoDepth;

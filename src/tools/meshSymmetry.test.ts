@@ -285,3 +285,19 @@ describe('la elección tras una operación se queda en el lado elegido (no crece
     });
   }
 });
+
+describe('Simetrizar conserva la pieza', () => {
+  it('la pieza sigue con el mismo id (y la elección sigue siendo suya)', () => {
+    const { model, tool, choose } = setup();
+    const piece = model.all()[0];
+    const right = uniqueVertices(piece).filter((p) => p[0] > 0)[0];
+    model.apply({ added: [translateOne(piece, right, [0.01, 0.005, 0])], removed: [piece] });
+    const before = model.all()[0];
+    choose((p) => p[0] > 0);
+    tool.symmetrizeAll();
+    expect(model.all()).toHaveLength(1);
+    expect(model.all()[0].id).toBe(before.id);
+    const selection = (tool as unknown as { selection: Map<number, Set<string>> }).selection;
+    expect([...selection.keys()]).toEqual([before.id]);
+  });
+});

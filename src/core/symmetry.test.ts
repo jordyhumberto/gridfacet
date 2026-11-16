@@ -131,4 +131,20 @@ describe('symmetrize', () => {
     expect(result.unpaired.size).toBe(0);
     expect(result.moves.size).toBeGreaterThan(0);
   });
+
+  it('dos piezas con un vértice en el mismo sitio se mueven juntas (no se abre una grieta entre ellas)', () => {
+    const left = makePiece([[[-1.02, 1, 1], [-2, 0, 0], [-2, 1, 0]]], 0xffffff);
+    const a = makePiece([[[1, 1, 1], [2, 0, 0], [2, 1, 0]]], 0xffffff);
+    const b = makePiece([[[1, 1, 1], [2, 2, 1], [2, 2, 2]]], 0xffffff);
+    const result = symmetrize([left, a, b], onX);
+    const shared = vertexKey([1, 1, 1]);
+    expect(result.unpaired.has(`${a.id}:${shared}`)).toBe(false);
+    expect(result.unpaired.has(`${b.id}:${shared}`)).toBe(false);
+    const toA = result.moves.get(a.id)?.get(shared);
+    const toB = result.moves.get(b.id)?.get(shared);
+    expect(toA).toBeDefined();
+    expect(toB).toEqual(toA);
+    expect(toA![0]).toBeCloseTo(1.01, 6);
+    expect(result.moves.get(left.id)!.get(vertexKey([-1.02, 1, 1]))![0]).toBeCloseTo(-1.01, 6);
+  });
 });
