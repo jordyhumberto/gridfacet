@@ -5,7 +5,7 @@ describe('Selection', () => {
   it('alterna piezas y avisa de cada cambio', () => {
     const selection = new Selection();
     let calls = 0;
-    selection.onChange = () => calls++;
+    selection.subscribe(() => calls++);
     selection.toggle(1);
     selection.toggle(2);
     selection.toggle(1);
@@ -18,7 +18,7 @@ describe('Selection', () => {
     const selection = new Selection();
     selection.set([1, 2]);
     let calls = 0;
-    selection.onChange = () => calls++;
+    selection.subscribe(() => calls++);
     selection.remove([9]);
     expect(calls).toBe(0);
     selection.remove([1, 9]);
@@ -29,7 +29,7 @@ describe('Selection', () => {
   it('clear sobre una selección vacía no avisa', () => {
     const selection = new Selection();
     let calls = 0;
-    selection.onChange = () => calls++;
+    selection.subscribe(() => calls++);
     selection.clear();
     expect(calls).toBe(0);
   });

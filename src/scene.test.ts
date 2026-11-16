@@ -126,3 +126,19 @@ describe('un arrastre que no cambia nada', () => {
     expect(model.undoDepth).toBe(2);
   });
 });
+
+describe('suscriptores de cambios', () => {
+  it('avisan en orden, el primero va delante y se pueden dar de baja', () => {
+    const model = new ModelScene();
+    const order: string[] = [];
+    model.subscribe(() => order.push('a'));
+    const offB = model.subscribe(() => order.push('b'));
+    model.subscribe(() => order.push('primero'), true);
+    model.apply({ added: [], removed: [], marksAdded: [[1, 2, 3]] });
+    expect(order).toEqual(['primero', 'a', 'b']);
+    offB();
+    order.length = 0;
+    model.undo();
+    expect(order).toEqual(['primero', 'a']);
+  });
+});

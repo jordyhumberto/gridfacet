@@ -597,7 +597,7 @@ describe('Soldar cercanos con simetría', () => {
 describe('Malla vuelve a calcular lo caro solo cuando hace falta', () => {
   it('durante un arrastre solo se mueven los puntos; el panel y los avisos se ponen al día al soltar', () => {
     const s = setup();
-    s.model.onChange = () => s.tool.refresh();
+    s.model.subscribe(() => s.tool.refresh());
     s.choose((p) => p[0] > 0);
     const inner = s.tool as unknown as { buildTargets: () => unknown[]; drag: unknown; preview: (d: Vec3) => void; pendingBefore: unknown; finishDrag: (commit: boolean) => void };
     inner.pendingBefore = new Map();
@@ -612,7 +612,7 @@ describe('Malla vuelve a calcular lo caro solo cuando hace falta', () => {
 
   it('los vértices sin gemelo se ponen al día cuando cambia una pieza o la simetría, aunque se recuerden entre llamadas', () => {
     const s = setup();
-    s.model.onChange = () => s.tool.refresh();
+    s.model.subscribe(() => s.tool.refresh());
     s.tool.refresh();
     expect(s.tool.unpairedCount).toBe(0);
     // Un vértice de un solo lado se mueve sin su espejo: pierde el gemelo.

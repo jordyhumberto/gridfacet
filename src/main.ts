@@ -197,7 +197,7 @@ syncFileName();
 
 // El modelo manda; la escena 3D solo refleja sus cambios.
 // Las piezas sin elegir se dibujan fundidas por zonas; solo las elegidas son objetos propios (para resaltarlas y arrastrarlas).
-model.onChange = ({ added, removed, marksAdded, marksRemoved }) => {
+model.subscribe(({ added, removed, marksAdded, marksRemoved }) => {
   for (const piece of removed) {
     batches.remove(piece.id);
     textureLayer.remove(piece.id);
@@ -234,9 +234,9 @@ model.onChange = ({ added, removed, marksAdded, marksRemoved }) => {
   refreshLayers();
   syncTriangles();
   if (mode === 'fill' && added.length > 0) useColor(color);
-};
+});
 
-selection.onChange = () => {
+selection.subscribe(() => {
   for (const [id, object] of objects) {
     if (selection.has(id)) continue;
     scene3d.remove(object);
@@ -259,7 +259,7 @@ selection.onChange = () => {
   syncInspector();
   syncGroupName();
   layerMoveEl.hidden = selection.size === 0;
-};
+});
 
 if (import.meta.env.DEV) {
   const dev = window as unknown as Record<string, unknown>;
@@ -1949,11 +1949,7 @@ function syncPixelSelection(): void {
   pixelSelectionBox.geometry = new THREE.BufferGeometry().setFromPoints(corners.map((p) => new THREE.Vector3(p[0], p[1], p[2])));
   pixelSelectionBox.visible = true;
 }
-const modelChangedForSelection = model.onChange;
-model.onChange = (change) => {
-  modelChangedForSelection?.(change);
-  syncPixelSelection();
-};
+model.subscribe(() => syncPixelSelection());
 
 /** Voltear, girar, contorno y tono: sobre la selección (o toda la cara) del editor plano si está abierto y, si no, de la vista 3D. */
 function applyPixelEdit(edit: PixelEdit): void {
@@ -4255,7 +4251,7 @@ function setSmooth(on: boolean): void {
     disposeObject(object);
   }
   objects.clear();
-  selection.onChange();
+  selection.notify();
   refreshGhost();
   const box = document.getElementById('smoothToggle') as HTMLInputElement;
   box.checked = on;
@@ -4272,7 +4268,7 @@ function setWireframe(on: boolean): void {
     disposeObject(object);
   }
   objects.clear();
-  selection.onChange();
+  selection.notify();
   const box = document.getElementById('wireToggle') as HTMLInputElement;
   box.checked = on;
   box.blur();
@@ -4923,18 +4919,13 @@ for (const input of [animFramesInput, animFpsInput]) {
   });
 }
 // Cualquier cambio del modelo termina la vista previa; al elegir otro grupo se muestran sus claves.
-const modelChanged = model.onChange;
-model.onChange = (change) => {
+// Va el primero: la vista previa se para antes de que el resto reaccione al cambio.
+model.subscribe(() => {
   if (animPlayer.active) stopAnimationView();
-  modelChanged(change);
-  // Las pistas de grupos que ya no existen se dejan: si se deshace el borrado vuelven con sus claves. Se podan al guardar y exportar.
-  refreshAnimationPanel();
-};
-const selectionChanged = selection.onChange;
-selection.onChange = () => {
-  selectionChanged();
-  refreshAnimationPanel();
-};
+}, true);
+// Las pistas de grupos que ya no existen se dejan: si se deshace el borrado vuelven con sus claves. Se podan al guardar y exportar.
+model.subscribe(() => refreshAnimationPanel());
+selection.subscribe(() => refreshAnimationPanel());
 refreshAnimationPanel();
 
 // Imágenes de referencia: se ven al fondo de la escena, se guardan con el proyecto y no cuentan como piezas.

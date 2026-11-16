@@ -38,8 +38,19 @@ export class ModelScene {
   /** Se llama cuando termina un deshacer o un rehacer (con el historial ya en su sitio). */
   onHistory: (kind: 'undo' | 'redo') => void = () => {};
 
-  /** Se llama con el cambio efectivo cada vez que el contenido se modifica. */
-  onChange: (change: Change) => void = () => {};
+  private listeners: Array<(change: Change) => void> = [];
+
+  /**
+   * Se llama con el cambio efectivo cada vez que el contenido se modifica, en el orden en que se suscribieron
+   * (`first` pone al suscriptor delante de los demás). Devuelve la función que lo da de baja.
+   */
+  subscribe(listener: (change: Change) => void, first = false): () => void {
+    if (first) this.listeners.unshift(listener);
+    else this.listeners.push(listener);
+    return () => {
+      this.listeners = this.listeners.filter((fn) => fn !== listener);
+    };
+  }
 
   get(id: number): Piece | undefined {
     return this.pieces.get(id);
@@ -124,6 +135,6 @@ export class ModelScene {
     for (const piece of change.added) this.pieces.set(piece.id, piece);
     for (const p of change.marksRemoved ?? []) this.marks.delete(markKey(p));
     for (const p of change.marksAdded ?? []) this.marks.set(markKey(p), p);
-    this.onChange(change);
+    for (const listener of [...this.listeners]) listener(change);
   }
 }
