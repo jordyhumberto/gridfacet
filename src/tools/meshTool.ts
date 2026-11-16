@@ -4,7 +4,7 @@ import { faceNormal, type Piece, type Vec3 } from '../core/piece';
 import { MIRROR_TOLERANCE, pieceKey, reflectPiece, reflections, symmetrize, type Reflection, type Symmetry } from '../core/symmetry';
 import { triangulateFace } from '../core/convex';
 import { collapses } from '../core/selfIntersect';
-import { ringCut, bevelEdge, triangulateFaces, edgeLoop, pieceEdges, fillHoles, connectVertices, dissolveEdge, slideSegment, straightenVertices, flattenVertices, flattenWarped, warpedFaces, finFaces, flagFins, splitFacesAtCenter, addFace, deleteFaces, deleteVertices, extrudeEdge, extrudeFaces, tipVertices, facesWithin, flipFaces, mergeVertices, weldVertices, placeVertices, rotateAbout, scaleAbout, setFaceFlags, splitEdge, addMirrorPairOnFace, addVertexOnFace, taperPoint, twistPoint, bendPoint, uniqueVertices, vertexKey } from '../core/vertices';
+import { ringCut, bevelEdge, triangulateFaces, edgeLoop, pieceEdges, fillHoles, connectVertices, dissolveEdge, slideSegment, straightenVertices, flattenVertices, flattenWarped, warpedFaces, finFaces, flagFins, splitFacesAtCenter, addFace, deleteFaces, deleteVertices, extrudeEdge, extrudeFaces, tipVertices, vertexNormal, facesWithin, flipFaces, mergeVertices, weldVertices, placeVertices, rotateAbout, scaleAbout, setFaceFlags, splitEdge, addMirrorPairOnFace, addVertexOnFace, taperPoint, twistPoint, bendPoint, uniqueVertices, vertexKey } from '../core/vertices';
 import type { ModelScene } from '../scene';
 
 /** Paso de la rejilla de imán, en celdas. */
@@ -1855,18 +1855,43 @@ export class MeshTool {
     let tips = 0;
     let faces = 0;
     this.change((piece, _keys, _dirAt, parts) => {
-      let current = piece;
-      const select = new Set<string>();
+      // Todas las puntas de la pieza se sacan de una vez (las elegidas y las del espejo): así un vértice que está sobre el plano, que es su propia
+      // imagen, saca una sola, y un segmento entre un vértice elegido y uno del espejo recibe una sola cara.
+      const own = ownKeys(parts);
+      const positions = uniqueVertices(piece);
+      const natural = this.keepPlanes((p: Vec3): Vec3 => {
+        const n = vertexNormal(piece, p);
+        return [p[0] + n[0] * distance, p[1] + n[1] * distance, p[2] + n[2] * distance];
+      });
+      const tipAt = new Map<string, Vec3>();
+      for (const p of positions) if (own.has(vertexKey(p))) tipAt.set(vertexKey(p), natural(p));
+      // La punta de un vértice del espejo es el reflejo exacto de la de su pareja elegida, no la que saldría de sus propias caras.
       for (const part of parts) {
-        const result = tipVertices(current, part.full, distance, piece.faces.length);
-        if (!result) continue;
-        current = result.piece;
-        faces += result.faces;
-        if (!part.mirror) for (const key of result.keys) select.add(key);
+        const mirror = part.mirror;
+        if (!mirror) continue;
+        for (const p of positions) {
+          const key = vertexKey(p);
+          if (!part.full.has(key) || tipAt.has(key)) continue;
+          const image = mirror(p);
+          let source: Vec3 | null = null;
+          let nearest = MIRROR_TOLERANCE;
+          for (const q of positions) {
+            if (!own.has(vertexKey(q))) continue;
+            const d = distance3(q, image);
+            if (d <= nearest) {
+              source = q;
+              nearest = d;
+            }
+          }
+          tipAt.set(key, source ? mirror(tipAt.get(vertexKey(source))!) : natural(p));
+        }
       }
-      if (current === piece) return null;
+      const result = tipVertices(piece, new Set(tipAt.keys()), (p) => tipAt.get(vertexKey(p))!);
+      if (!result) return null;
+      faces += result.faces;
+      const select = new Set([...own].filter((key) => tipAt.has(key)).map((key) => vertexKey(tipAt.get(key)!)).filter((key) => result.keys.has(key)));
       tips += select.size;
-      return { piece: sameId(current, piece), select: select.size > 0 ? select : ownKeys(parts) };
+      return { piece: sameId(result.piece, piece), select: select.size > 0 ? select : own };
     });
     this.host.status(
       tips > 0

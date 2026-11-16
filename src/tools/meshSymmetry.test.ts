@@ -733,3 +733,85 @@ describe('Punta (tecla I)', () => {
     expect(s.model.all()[0].faces.length).toBe(faces);
   });
 });
+
+describe('Punta con vértices sobre el plano de simetría', () => {
+  const noRepeatedFaces = (piece: Piece): boolean => {
+    const ids = piece.faces.map((face) => face.map(vertexKey).sort().join('|'));
+    return new Set(ids).size === ids.length;
+  };
+  /** El cubo con un vértice nuevo en mitad de la arista de arriba que cruza el plano (queda en x = 0). */
+  const withPlaneVertex = () => {
+    const s = setup();
+    const piece = s.model.all()[0];
+    const vs = uniqueVertices(piece);
+    const top = Math.max(...vs.map((p) => p[1]));
+    const front = Math.max(...vs.map((p) => p[2]));
+    const [a, b] = vs.filter((p) => p[1] === top && p[2] === front);
+    const split = splitEdge(piece, a, b, 0.5)!;
+    s.model.apply({ added: [split.piece], removed: [piece] });
+    s.tool.refresh();
+    return { ...s, top, front };
+  };
+
+  it('un vértice del plano saca una sola punta, sin caras repetidas, y la punta queda en el plano', () => {
+    const s = withPlaneVertex();
+    s.choose((p) => Math.abs(p[0]) < 1e-9 && p[1] === s.top && p[2] === s.front);
+    const before = s.model.all()[0];
+    s.tool.tipSelected(0.5);
+    const after = s.model.all()[0];
+    expect(noRepeatedFaces(after)).toBe(true);
+    expect(after.faces.length).toBe(before.faces.length + 2);
+    expect(uniqueVertices(after).length).toBe(uniqueVertices(before).length + 1);
+    expect(isSymmetric(s.model.all())).toBe(true);
+    const tip = uniqueVertices(after).find((p) => !uniqueVertices(before).some((q) => vertexKey(q) === vertexKey(p)))!;
+    expect(Math.abs(tip[0])).toBeLessThan(1e-9);
+  });
+
+  it('un vértice del plano junto con uno de un lado: simétrico y sin caras repetidas', () => {
+    const s = withPlaneVertex();
+    const right = Math.max(...uniqueVertices(s.model.all()[0]).map((p) => p[0]));
+    s.choose((p) => p[1] === s.top && p[2] === s.front && (Math.abs(p[0]) < 1e-9 || p[0] === right));
+    const before = s.model.all()[0];
+    s.tool.tipSelected(0.5);
+    const after = s.model.all()[0];
+    expect(noRepeatedFaces(after)).toBe(true);
+    expect(isSymmetric(s.model.all())).toBe(true);
+    // Tres puntas (plano, derecha e izquierda) y una cara por segmento: dos cuadriláteros hacia el del plano y dos triángulos por cada lado.
+    expect(uniqueVertices(after).length).toBe(uniqueVertices(before).length + 3);
+    expect(after.faces.length).toBe(before.faces.length + 6);
+  });
+});
+
+describe('Punta: jalar la copia', () => {
+  it('la copia se mueve con su gemela en espejo y el vértice original no se mueve', () => {
+    const s = setup();
+    const vs = uniqueVertices(s.model.all()[0]);
+    const corner = vs.reduce((a, b) => (b[0] + b[1] + b[2] > a[0] + a[1] + a[2] ? b : a));
+    s.choose((p) => vertexKey(p) === vertexKey(corner));
+    s.tool.tipSelected(0.5);
+    const [tip] = chosenPositions(s.model, s.tool);
+    expect(vertexKey(tip)).not.toBe(vertexKey(corner));
+    dragChosen(s.tool, [0.25, 0.5, 0]);
+    const after = uniqueVertices(s.model.all()[0]).map(vertexKey);
+    const [moved] = chosenPositions(s.model, s.tool);
+    expect(moved[0]).toBeCloseTo(tip[0] + 0.25, 5);
+    expect(moved[1]).toBeCloseTo(tip[1] + 0.5, 5);
+    // El original y su gemelo siguen donde estaban; la punta gemela se movió en espejo.
+    expect(after).toContain(vertexKey(corner));
+    expect(after).toContain(vertexKey([-corner[0], corner[1], corner[2]]));
+    expect(after).toContain(vertexKey([-moved[0], moved[1], moved[2]]));
+    expect(isSymmetric(s.model.all())).toBe(true);
+  });
+
+  it('se puede sacar una punta de una punta', () => {
+    const s = setup();
+    const vs = uniqueVertices(s.model.all()[0]);
+    const corner = vs.reduce((a, b) => (b[0] + b[1] + b[2] > a[0] + a[1] + a[2] ? b : a));
+    s.choose((p) => vertexKey(p) === vertexKey(corner));
+    s.tool.tipSelected(0.5);
+    const count = uniqueVertices(s.model.all()[0]).length;
+    s.tool.tipSelected(0.5);
+    expect(uniqueVertices(s.model.all()[0]).length).toBe(count + 2);
+    expect(isSymmetric(s.model.all())).toBe(true);
+  });
+});

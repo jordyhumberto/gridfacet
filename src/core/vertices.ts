@@ -1295,35 +1295,43 @@ export function ringCut(piece: Piece, from: Vec3, to: Vec3): { piece: Piece; cre
   return { piece: withFaces(piece, faces, colors, textures, flags), created: new Set([...midpoints.values()].map(vertexKey)), cut: cutFaces.size };
 }
 
+/** La dirección «hacia fuera» en un vértice: la media de las normales de las caras que lo usan; sin caras con normal clara, la vertical. */
+export function vertexNormal(piece: Piece, p: Vec3): Vec3 {
+  const key = vertexKey(p);
+  const sum: Vec3 = [0, 0, 0];
+  for (const face of piece.faces) {
+    if (!face.some((q) => vertexKey(q) === key)) continue;
+    const n = faceNormal(face);
+    const length = Math.hypot(...n) || 1;
+    for (let i = 0; i < 3; i++) sum[i] += n[i] / length;
+  }
+  const length = Math.hypot(...sum);
+  return length < 1e-6 ? [0, 1, 0] : [sum[0] / length, sum[1] / length, sum[2] / length];
+}
+
 /**
- * «Punta»: saca una copia de cada vértice elegido `distance` celdas hacia fuera (la media de las normales de las caras que lo usan) y la une
- * al vértice original con caras nuevas; el original se queda donde está y la pieza no se deforma. Cada segmento que sale de un vértice elegido
- * recibe una cara: un triángulo si solo un extremo está elegido, un cuadrilátero si lo están los dos. Las caras nuevas se ven por los dos lados.
+ * «Punta»: saca una copia de cada vértice elegido y la une al vértice original con caras nuevas; el original se queda donde está y la pieza
+ * no se deforma. `tip` es la distancia hacia fuera (a lo largo de `vertexNormal`) o una función que dice dónde cae la copia de cada vértice
+ * (así quien llama puede poner las del espejo como reflejo exacto de las elegidas). Cada segmento que sale de un vértice elegido recibe una
+ * cara: un triángulo si solo un extremo está elegido, un cuadrilátero si lo están los dos. Las caras nuevas se ven por los dos lados.
  * Devuelve la pieza, las claves de las copias (para moverlas) y cuántas caras se añadieron; null si no hay nada que sacar.
- * Las normales y los segmentos se miran solo en las primeras `baseFaces` caras (por defecto todas): así, sacar varias puntas seguidas en una
- * misma pieza (la elegida y su espejo) no deja que las caras de una cambien la dirección de la otra.
  */
-export function tipVertices(piece: Piece, keys: ReadonlySet<string>, distance: number, baseFaces = piece.faces.length): { piece: Piece; keys: Set<string>; faces: number } | null {
-  if (Math.abs(distance) < 1e-9) return null;
+export function tipVertices(piece: Piece, keys: ReadonlySet<string>, tip: number | ((p: Vec3) => Vec3)): { piece: Piece; keys: Set<string>; faces: number } | null {
+  if (typeof tip === 'number' && Math.abs(tip) < 1e-9) return null;
   const chosen = uniqueVertices(piece).filter((p) => keys.has(vertexKey(p)));
   if (chosen.length === 0) return null;
-  const base: Piece = baseFaces >= piece.faces.length ? piece : { ...piece, faces: piece.faces.slice(0, baseFaces) };
   const tips = new Map<string, Vec3>();
   for (const p of chosen) {
-    const sum: Vec3 = [0, 0, 0];
-    for (const face of base.faces) {
-      if (!face.some((q) => vertexKey(q) === vertexKey(p))) continue;
-      const n = faceNormal(face);
-      const length = Math.hypot(...n) || 1;
-      for (let i = 0; i < 3; i++) sum[i] += n[i] / length;
-    }
-    // Sin caras con normal clara (suma nula), la punta sube en vertical.
-    const length = Math.hypot(...sum);
-    const dir: Vec3 = length < 1e-6 ? [0, 1, 0] : [sum[0] / length, sum[1] / length, sum[2] / length];
-    tips.set(vertexKey(p), [p[0] + dir[0] * distance, p[1] + dir[1] * distance, p[2] + dir[2] * distance]);
+    let to: Vec3;
+    if (typeof tip === 'number') {
+      const dir = vertexNormal(piece, p);
+      to = [p[0] + dir[0] * tip, p[1] + dir[1] * tip, p[2] + dir[2] * tip];
+    } else to = tip(p);
+    // Una copia que cae sobre su propio vértice no es una punta.
+    if (vertexKey(to) !== vertexKey(p)) tips.set(vertexKey(p), to);
   }
   const added: Vec3[][] = [];
-  for (const edge of pieceEdges(base)) {
+  for (const edge of pieceEdges(piece)) {
     const ta = tips.get(vertexKey(edge.a));
     const tb = tips.get(vertexKey(edge.b));
     if (ta && tb) added.push([edge.a, edge.b, tb, ta]);
