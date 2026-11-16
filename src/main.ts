@@ -2161,6 +2161,10 @@ const meshTool = new MeshTool({
   isHidden: (piece) => hidden.has(piece.id) || layers.isHidden(piece),
   symmetry: () => symmetry,
   status: (message) => (statusEl.textContent = message),
+  // Un clic que Malla se queda no llega al resto: el «pulsar» pendiente del lienzo quedaría viejo y el siguiente soltar lo tomaría por un clic.
+  consumed: () => {
+    down = null;
+  },
   onSelectionChange: () => syncMeshActions(),
 });
 model.onHistory = (kind) => meshTool.historyMoved(kind);

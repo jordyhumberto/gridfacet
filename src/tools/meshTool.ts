@@ -77,6 +77,8 @@ export interface MeshToolHost {
   isHidden: (piece: Piece) => boolean;
   symmetry: () => Symmetry;
   status: (message: string) => void;
+  /** Se llama cuando la herramienta se queda con un evento del puntero (no llega al resto de la aplicación): el anfitrión olvida su «pulsar» pendiente. */
+  consumed?: () => void;
   /** Se llama cuando cambia la selección de vértices (para refrescar el panel). */
   onSelectionChange: () => void;
 }
@@ -407,10 +409,13 @@ export class MeshTool {
     this.removing = false;
     this.sliding = false;
     this.pendingAdd = null;
+    this.pendingEdge = null;
+    this.lastEdgeClick = null;
     this.active = false;
     this.overlay.visible = false;
     this.selection.clear();
     this.hover = null;
+    if (this.host.domElement.style) this.host.domElement.style.cursor = 'default';
     this.host.onSelectionChange();
   }
 
@@ -448,6 +453,9 @@ export class MeshTool {
     const chosen = this.host.selectedPieces();
     let pieces = (chosen.length > 0 ? chosen : this.host.model.editable()).filter((piece) => !this.host.isHidden(piece));
     pieces = pieces.filter((piece) => !this.host.model.isLocked(piece));
+    // Una pieza que deja de mostrarse (oculta, bloqueada o ya no elegida) suelta su elección: si no, Supr borraría vértices que no se ven.
+    const visible = new Set(pieces.map((piece) => piece.id));
+    for (const id of [...this.selection.keys()]) if (!visible.has(id)) this.selection.delete(id);
     const shown: typeof this.shown = [];
     for (const piece of pieces) {
       for (const position of uniqueVertices(piece)) shown.push({ piece, position, key: vertexKey(position) });
@@ -487,8 +495,14 @@ export class MeshTool {
 
   /** Busca los vértices sin gemelo en las piezas que se ven; con simetría apagada no hay ninguno. */
   private updateUnpaired(): void {
-    const pieces = [...new Map(this.shown.map(({ piece }) => [piece.id, piece])).values()];
-    this.unpaired = pieces.length > 0 ? symmetrize(pieces, this.host.symmetry()).unpaired : new Set();
+    const shown = new Set(this.shown.map(({ piece }) => piece.id));
+    if (shown.size === 0) {
+      this.unpaired = new Set();
+      return;
+    }
+    // El gemelo puede estar en otra pieza que no se ve (se eligió una mitad): se empareja contra todas las editables y solo se pintan las que se ven.
+    const all = symmetrize(this.host.model.editable(), this.host.symmetry()).unpaired;
+    this.unpaired = new Set([...all].filter((entry) => shown.has(Number(entry.slice(0, entry.indexOf(':'))))));
   }
 
   /**
@@ -679,10 +693,16 @@ export class MeshTool {
 
   // ——— Ratón ———
 
+  /** Se queda con el evento: no sigue hacia la cámara ni hacia el resto de la aplicación. */
+  private consume(e: Event): void {
+    e.stopImmediatePropagation();
+    this.host.consumed?.();
+  }
+
   private down(e: PointerEvent): void {
     if (this.active && this.modal) {
       // Mientras se gira o escala, el clic izquierdo confirma y el derecho cancela.
-      e.stopImmediatePropagation();
+      this.consume(e);
       e.preventDefault();
       if (e.button === 0) this.finishModal(true);
       else if (e.button === 2) this.finishModal(false);
@@ -691,13 +711,13 @@ export class MeshTool {
     if (!this.active || e.button !== 0) return;
     if (e.altKey && !this.vertexAt(e.clientX, e.clientY)) {
       // Alt+clic sobre una arista le pone un vértice nuevo (en cuartos de su largo; Ctrl lo coloca donde se hizo clic).
-      if (this.splitEdgeAt(e)) e.stopImmediatePropagation();
+      if (this.splitEdgeAt(e)) this.consume(e);
       return;
     }
     const hit = this.vertexAt(e.clientX, e.clientY);
     if (this.removing && hit && !e.shiftKey && !e.ctrlKey && !e.metaKey) {
       // Quitar vértice: el vértice del clic es el único elegido y se quita (con simetría, su espejo también); un solo paso de deshacer.
-      e.stopImmediatePropagation();
+      this.consume(e);
       this.selection = new Map([[hit.piece.id, new Set([hit.key])]]);
       this.deleteSelected();
       return;
@@ -711,7 +731,7 @@ export class MeshTool {
       // Shift+clic sobre una cara elige todos sus vértices (se suman a los que ya había).
       const face = this.faceAt(e.clientX, e.clientY);
       if (face) {
-        e.stopImmediatePropagation();
+        this.consume(e);
         const keys = this.selection.get(face.piece.id) ?? new Set<string>();
         for (const p of face.piece.faces[face.index]) keys.add(vertexKey(p));
         this.selection.set(face.piece.id, keys);
@@ -721,7 +741,7 @@ export class MeshTool {
       }
     }
     if (hit) {
-      e.stopImmediatePropagation();
+      this.consume(e);
       if (!this.isSelected(hit.piece, hit.key)) this.select(hit.piece, hit.key, e.shiftKey);
       else if (e.shiftKey && this.count > 1) this.selection.get(hit.piece.id)?.delete(hit.key);
       this.paint();
@@ -731,7 +751,7 @@ export class MeshTool {
     }
     if ((e.ctrlKey || e.metaKey) && !this.adding) {
       // Ctrl y arrastrar en vacío dibuja un recuadro que elige todos los vértices que caen dentro, también los de detrás.
-      e.stopImmediatePropagation();
+      this.consume(e);
       this.marquee = { x: e.clientX, y: e.clientY, add: e.shiftKey };
       this.host.setOrbit(false);
       this.host.domElement.setPointerCapture(e.pointerId);
@@ -1008,7 +1028,7 @@ export class MeshTool {
       this.pendingEdge = null;
       // Un clic sin arrastrar sobre un segmento elige sus dos vértices; un doble clic sigue el segmento en línea recta.
       if (Math.hypot(e.clientX - x, e.clientY - y) < DRAG_THRESHOLD && this.clickEdge(x, y)) {
-        e.stopImmediatePropagation();
+        this.consume(e);
         // Como al añadir un vértice: la cámara recibió el pulsar pero no recibirá el soltar, y el clic no debe cambiar la pieza elegida.
         this.host.domElement.dispatchEvent(new PointerEvent('pointercancel', { pointerId: e.pointerId, bubbles: true }));
       }
@@ -1018,19 +1038,19 @@ export class MeshTool {
       const { x, y, ctrl } = this.pendingAdd;
       this.pendingAdd = null;
       if (Math.hypot(e.clientX - x, e.clientY - y) < DRAG_THRESHOLD && this.addVertexAt(x, y, ctrl)) {
-        e.stopImmediatePropagation();
+        this.consume(e);
         // La cámara recibió el pulsar pero ya no recibirá el soltar: sin esto se queda agarrada y sigue al ratón sin tener el botón pulsado.
         this.host.domElement.dispatchEvent(new PointerEvent('pointercancel', { pointerId: e.pointerId, bubbles: true }));
       }
       return;
     }
     if (this.marquee) {
-      e.stopImmediatePropagation();
+      this.consume(e);
       this.finishMarquee(e);
       return;
     }
     if (!this.drag) return;
-    e.stopImmediatePropagation();
+    this.consume(e);
     this.finishDrag(true);
   }
 
@@ -1326,6 +1346,8 @@ export class MeshTool {
     }
     let mapAt: (value: number) => (p: Vec3) => Vec3;
     let value: number;
+    // El texto se arma con el valor que de verdad se aplica (un salto grande del ratón se recorta a MODAL_REACH y el cuerpo puede frenar antes).
+    let describe: (value: number) => string;
     if (modal.kind === 'taper' || modal.kind === 'twist' || modal.kind === 'bend') {
       // Se maneja con el movimiento horizontal del cursor; el eje por defecto es el vertical.
       const axis = modal.axis ?? 1;
@@ -1341,7 +1363,8 @@ export class MeshTool {
       value = amount;
       const point = { taper: taperPoint, twist: twistPoint, bend: bendPoint }[modal.kind];
       mapAt = (v) => (p) => point(p, modal.pivot, axis, half, v);
-      this.host.status(`${{ taper: 'Afinar', twist: 'Torcer', bend: 'Curvar' }[modal.kind]} ${amount >= 0 ? '+' : ''}${amount.toFixed(2)} en ${'XYZ'[axis]}`);
+      const label = { taper: 'Afinar', twist: 'Torcer', bend: 'Curvar' }[modal.kind];
+      describe = (v) => `${label} ${v >= 0 ? '+' : ''}${v.toFixed(2)} en ${'XYZ'[axis]}`;
     } else if (modal.kind === 'push') {
       const normal = modal.normal!;
       // Cuántos píxeles mide una celda a lo largo de la normal: el ratón se mueve en esa dirección de pantalla. Si la normal apunta a la cámara, vale el movimiento vertical.
@@ -1359,7 +1382,7 @@ export class MeshTool {
       if (!free) amount = Math.round(amount / SNAP_STEP) * SNAP_STEP;
       value = amount;
       mapAt = (v) => (p) => [p[0] + normal[0] * v, p[1] + normal[1] * v, p[2] + normal[2] * v];
-      this.host.status(`Empujar cara ${amount >= 0 ? '+' : ''}${amount.toFixed(2)} (${amount >= 0 ? 'hacia fuera' : 'hacia dentro'})`);
+      describe = (v) => `Empujar cara ${v >= 0 ? '+' : ''}${v.toFixed(2)} (${v >= 0 ? 'hacia fuera' : 'hacia dentro'})`;
     } else if (modal.kind === 'rotate') {
       const axis = this.rotationAxis();
       const toward = this.host.camera.getWorldDirection(new THREE.Vector3());
@@ -1369,7 +1392,7 @@ export class MeshTool {
       if (!free) theta = Math.round(theta / ROTATE_STEP) * ROTATE_STEP;
       value = theta;
       mapAt = (v) => (p) => rotateAbout(p, modal.pivot, axis, v);
-      this.host.status(`Girar ${Math.round((theta * 180) / Math.PI)}°${modal.axis === null ? '' : ' en ' + 'XYZ'[modal.axis]}`);
+      describe = (v) => `Girar ${Math.round((v * 180) / Math.PI)}°${modal.axis === null ? '' : ' en ' + 'XYZ'[modal.axis]}`;
     } else {
       let factor = distance / modal.start.distance;
       if (!free) factor = Math.round(factor / SCALE_STEP) * SCALE_STEP;
@@ -1379,7 +1402,7 @@ export class MeshTool {
         const factors = [0, 1, 2].map((k) => (modal.axis === null || modal.axis === k ? v : 1)) as Vec3;
         return (p) => scaleAbout(p, modal.pivot, factors);
       };
-      this.host.status(`Escalar ×${factor.toFixed(2)}${modal.axis === null ? '' : ' en ' + 'XYZ'[modal.axis]}`);
+      describe = (v) => `Escalar ×${v.toFixed(2)}${modal.axis === null ? '' : ' en ' + 'XYZ'[modal.axis]}`;
     }
     // El cuerpo no se aplasta ni se atraviesa: si el valor pedido lo hiciera, se queda en el último valor donde no pasaba.
     const from = modal.valid;
@@ -1400,6 +1423,7 @@ export class MeshTool {
       result = lo;
       this.host.status('El cuerpo no puede aplastarse más contra sí mismo');
     }
+    if (first === 0) this.host.status(describe(result));
     modal.valid = result;
     modal.value = result;
     modal.moved = true;
@@ -1490,9 +1514,15 @@ export class MeshTool {
   snapToGrid(): void {
     const onGrid = (p: Vec3): Vec3 => p.map((v) => Math.round(v / SNAP_STEP) * SNAP_STEP) as Vec3;
     let moved = 0;
-    this.change((piece, keys) => {
-      moved += uniqueVertices(piece).filter((p) => keys.has(vertexKey(p)) && vertexKey(onGrid(p)) !== vertexKey(p)).length;
-      return placeVertices(piece, keys, onGrid, true) ?? REMOVE;
+    this.change((piece, keys, _dirAt, parts) => {
+      // Se redondea el lado elegido y el espejo es su reflejo: redondear cada lado por separado dejaría el modelo asimétrico si el centro no cae en la rejilla.
+      const own = ownKeys(parts);
+      moved += uniqueVertices(piece).filter((p) => own.has(vertexKey(p)) && vertexKey(onGrid(p)) !== vertexKey(p)).length;
+      const to = this.keepPlanes((p) => {
+        const part = partOf({ original: piece, keys, parts }, p);
+        return part.mirror ? part.mirror(onGrid(part.mirror(p))) : onGrid(p);
+      });
+      return placeVertices(piece, keys, to, true) ?? REMOVE;
     }, onGrid);
     this.host.status(moved > 0 ? `A la rejilla: ${moved} vértice(s) movidos al punto de rejilla más cercano` : 'A la rejilla: los vértices elegidos ya estaban en ella');
   }

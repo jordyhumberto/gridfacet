@@ -1,14 +1,14 @@
 import * as THREE from 'three';
 import { describe, expect, it } from 'vitest';
 import { CATALOG, buildPiece } from '../core/catalog';
-import type { Piece, Vec3 } from '../core/piece';
+import { makePiece, type Piece, type Vec3 } from '../core/piece';
 import { translatePiece } from '../core/transform';
 import { moveVertices, scaleAbout, splitEdge, uniqueVertices, vertexKey } from '../core/vertices';
 import { ModelScene } from '../scene';
 import { MeshTool } from './meshTool';
 
 /** Una herramienta de Malla sobre un modelo real, con simetría en X y una pieza que cruza el plano. */
-function setup() {
+function setup(options: { selected?: () => Piece[] } = {}) {
   const model = new ModelScene();
   const cube = buildPiece(CATALOG[0], 0, 0, 0, 0, 0x336699);
   const xs = uniqueVertices(cube).map((p) => p[0]);
@@ -16,19 +16,24 @@ function setup() {
   const piece = translatePiece(cube, -centerX, 0, 0);
   model.apply({ added: [piece], removed: [] });
   const messages: string[] = [];
-  const el = { addEventListener() {}, removeEventListener() {}, getBoundingClientRect: () => ({ left: 0, top: 0, width: 800, height: 600 }) } as unknown as HTMLElement;
+  const handlers = new Map<string, ((e: unknown) => void)[]>();
+  const hidden = new Set<number>();
+  let consumed = 0;
+  const camera = new THREE.PerspectiveCamera();
+  const el = { addEventListener(type: string, fn: (e: unknown) => void) { handlers.set(type, [...(handlers.get(type) ?? []), fn]); }, removeEventListener() {}, dispatchEvent() { return true; }, getBoundingClientRect: () => ({ left: 0, top: 0, width: 800, height: 600 }) } as unknown as HTMLElement;
   const symmetry = { x: true, y: false, z: false, center: [0, 0, 0] as Vec3 };
   const tool = new MeshTool({
     scene: new THREE.Scene(),
-    camera: new THREE.PerspectiveCamera(),
+    camera,
     domElement: el,
     setOrbit: () => {},
     model,
-    selectedPieces: () => [],
-    isHidden: () => false,
+    selectedPieces: options.selected ?? (() => []),
+    isHidden: (p: Piece) => hidden.has(p.id),
     symmetry: () => symmetry,
     status: (message: string) => messages.push(message),
     onSelectionChange: () => {},
+    consumed: () => consumed++,
   });
   tool.activate();
   const choose = (predicate: (p: Vec3) => boolean) => {
@@ -37,7 +42,7 @@ function setup() {
     (tool as unknown as { selection: Map<number, Set<string>> }).selection = new Map([[current.id, keys]]);
     tool.refresh();
   };
-  return { model, tool, choose, messages };
+  return { model, tool, choose, messages, camera, hidden, handlers, consumedCount: () => consumed };
 }
 
 /** Cada vértice tiene su imagen en espejo en X, y cada cara la suya. */
@@ -440,3 +445,103 @@ describe('un vértice sobre el plano de simetría no se sale de él', () => {
     expect(isSymmetric(model.all())).toBe(true);
   });
 });
+
+describe('pequeños de Malla', () => {
+  const selectionOf = (tool: MeshTool) => (tool as unknown as { selection: Map<number, Set<string>> }).selection;
+
+  it('una pieza que deja de mostrarse suelta su elección y Supr no borra vértices invisibles', () => {
+    const { model, tool, choose, hidden } = setup();
+    choose((p) => p[0] > 0);
+    expect(selectionOf(tool).size).toBe(1);
+    hidden.add(model.all()[0].id);
+    tool.refresh();
+    expect(selectionOf(tool).size).toBe(0);
+    const before = model.all()[0];
+    tool.deleteSelected();
+    expect(model.all()).toEqual([before]);
+  });
+
+  it('una pieza bloqueada también suelta su elección', () => {
+    const { model, tool, choose } = setup();
+    choose((p) => p[0] > 0);
+    model.isLocked = () => true;
+    tool.refresh();
+    expect(selectionOf(tool).size).toBe(0);
+  });
+
+  it('desactivar limpia el clic de segmento pendiente y el doble clic', () => {
+    const { tool } = setup();
+    const inner = tool as unknown as { pendingEdge: unknown; lastEdgeClick: unknown };
+    inner.pendingEdge = { x: 1, y: 1 };
+    inner.lastEdgeClick = { time: 0, a: 'a', b: 'b', id: 1 };
+    tool.deactivate();
+    expect(inner.pendingEdge).toBeNull();
+    expect(inner.lastEdgeClick).toBeNull();
+  });
+
+  it('A la rejilla redondea el lado elegido y refleja: con el centro fuera de la rejilla el modelo sigue simétrico', () => {
+    const model = new ModelScene();
+    const piece = translatePiece(buildPiece(CATALOG[0], 0, 0, 0, 0, 0x336699), 0.37, 0, 0);
+    const xs = uniqueVertices(piece).map((p) => p[0]);
+    const centre = (Math.min(...xs) + Math.max(...xs)) / 2;
+    model.apply({ added: [piece], removed: [] });
+    const symmetry = { x: true, y: false, z: false, center: [centre, 0, 0] as Vec3 };
+    const el = { addEventListener() {}, removeEventListener() {}, getBoundingClientRect: () => ({ left: 0, top: 0, width: 800, height: 600 }) } as unknown as HTMLElement;
+    const tool = new MeshTool({ scene: new THREE.Scene(), camera: new THREE.PerspectiveCamera(), domElement: el, setOrbit: () => {}, model, selectedPieces: () => [], isHidden: () => false, symmetry: () => symmetry, status: () => {}, onSelectionChange: () => {} });
+    tool.activate();
+    const mirrored = (p: Vec3) => vertexKey([2 * centre - p[0], p[1], p[2]]);
+    const symmetricAround = () => {
+      const keys = new Set(uniqueVertices(model.all()[0]).map(vertexKey));
+      return uniqueVertices(model.all()[0]).every((p) => keys.has(mirrored(p)));
+    };
+    expect(symmetricAround()).toBe(true);
+    const current = model.all()[0];
+    (tool as unknown as { selection: Map<number, Set<string>> }).selection = new Map([[current.id, new Set(uniqueVertices(current).filter((p) => p[0] > centre).map(vertexKey))]]);
+    tool.refresh();
+    tool.snapToGrid();
+    expect(symmetricAround()).toBe(true);
+  });
+
+  it('con una mitad elegida y el gemelo en otra pieza, no sale todo en rosa', () => {
+    const model = new ModelScene();
+    const left = makeTriangle(-1);
+    const right = makeTriangle(1);
+    model.apply({ added: [left, right], removed: [] });
+    const symmetry = { x: true, y: false, z: false, center: [0, 0, 0] as Vec3 };
+    const el = { addEventListener() {}, removeEventListener() {}, getBoundingClientRect: () => ({ left: 0, top: 0, width: 800, height: 600 }) } as unknown as HTMLElement;
+    const tool = new MeshTool({ scene: new THREE.Scene(), camera: new THREE.PerspectiveCamera(), domElement: el, setOrbit: () => {}, model, selectedPieces: () => [right], isHidden: () => false, symmetry: () => symmetry, status: () => {}, onSelectionChange: () => {} });
+    tool.activate();
+    expect(tool.unpairedCount).toBe(0);
+  });
+
+  it('Escalar con un salto grande del ratón dice el valor que se aplicó, no el pedido', () => {
+    const { tool, choose, messages, camera } = setup();
+    camera.position.set(0, 0, 5);
+    camera.updateMatrixWorld(true);
+    choose((p) => p[0] > 0);
+    tool.beginTransform('scale');
+    const inner = tool as unknown as { modal: { last: { x: number; y: number; free: boolean } | null; value: number }; updateModal: () => void };
+    inner.modal.last = { x: 600, y: 300, free: true };
+    inner.updateModal();
+    inner.modal.last = { x: 790, y: 300, free: true };
+    inner.updateModal();
+    const applied = inner.modal.value;
+    expect(applied).toBeGreaterThan(1);
+    expect(applied).toBeLessThanOrEqual(1.5 + 1e-9);
+    expect(messages.at(-1)).toContain(`×${applied.toFixed(2)}`);
+  });
+
+  it('un clic que la herramienta consume avisa al anfitrión (para que no le quede un pulsar viejo)', () => {
+    const { tool, handlers, consumedCount, camera } = setup();
+    camera.position.set(0, 0, 5);
+    camera.updateMatrixWorld(true);
+    void tool;
+    const event = { button: 0, shiftKey: true, altKey: false, ctrlKey: false, metaKey: false, clientX: 400, clientY: 300, pointerId: 1, stopImmediatePropagation() {}, preventDefault() {} };
+    for (const fn of handlers.get('pointerdown') ?? []) fn(event);
+    expect(consumedCount()).toBe(1);
+  });
+});
+
+function makeTriangle(side: number) {
+  return makePiece([[[side, 0, 0], [side * 2, 0, 0], [side, 1, 0]]], 0x336699);
+}
