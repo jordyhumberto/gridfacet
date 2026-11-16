@@ -214,6 +214,15 @@ export class MeshTool {
   /** Al soltar un arrastre, las caras que hayan quedado torcidas se aplanan solas (opcional). */
   flattenOnRelease = false;
   private shown: { piece: Piece; position: Vec3; key: string }[] = [];
+  /** Las piezas de `shown`, una sola vez cada una (varias búsquedas recorren caras y no deben repetirlas por vértice). */
+  private shownPieces: Piece[] = [];
+  /** Vértices únicos con su clave por pieza: una pieza no cambia (se sustituye por otra), así que se calculan una sola vez. */
+  private vertexCache = new WeakMap<Piece, { position: Vec3; key: string }[]>();
+  /** Triángulos de cada pieza (nueve números por triángulo), para saber si una cara tapa un vértice sin volver a triangular en cada movimiento. */
+  private triangleCache = new WeakMap<Piece, Float64Array>();
+  /** Lo último con que se buscaron los vértices sin gemelo: si no cambió ninguna pieza ni la simetría, no se vuelve a buscar. */
+  private unpairedFor: { pieces: Piece[]; symmetry: string } | null = null;
+  private unpairedAll = new Set<string>();
   private hover: { piece: Piece; key: string } | null = null;
   private active = false;
   private marqueeEl: HTMLDivElement | null = null;
@@ -450,7 +459,7 @@ export class MeshTool {
         this.selection.delete(id);
         continue;
       }
-      const present = new Set(uniqueVertices(piece).map(vertexKey));
+      const present = new Set(this.verticesOf(piece).map((v) => v.key));
       for (const key of [...keys]) if (!present.has(key)) keys.delete(key);
       if (keys.size === 0) this.selection.delete(id);
     }
@@ -462,19 +471,48 @@ export class MeshTool {
     for (const id of [...this.selection.keys()]) if (!visible.has(id)) this.selection.delete(id);
     const shown: typeof this.shown = [];
     for (const piece of pieces) {
-      for (const position of uniqueVertices(piece)) shown.push({ piece, position, key: vertexKey(position) });
+      for (const { position, key } of this.verticesOf(piece)) shown.push({ piece, position, key });
       if (shown.length > MAX_VISIBLE) break;
     }
     if (shown.length > MAX_VISIBLE) {
       this.host.status('Hay demasiados vértices para mostrarlos todos: elige una pieza con la herramienta Elegir');
       shown.length = 0;
-      for (const piece of chosen) for (const position of uniqueVertices(piece)) shown.push({ piece, position, key: vertexKey(position) });
+      for (const piece of chosen) for (const { position, key } of this.verticesOf(piece)) shown.push({ piece, position, key });
     }
     this.shown = shown;
+    this.shownPieces = [...new Set(shown.map(({ piece }) => piece))];
+    // Mientras se arrastra o se gira/escala (cada movimiento del ratón avisa al modelo) solo se mueven los puntos: los avisos de caras torcidas,
+    // los vértices sin gemelo y el panel se ponen al día al soltar, cuando la operación termina y vuelve a llamar aquí.
+    if (this.drag !== null || this.modal !== null) {
+      this.paint();
+      return;
+    }
     this.updateWarnings();
     this.updateUnpaired();
     this.paint();
     this.host.onSelectionChange();
+  }
+
+  /** Los vértices únicos de una pieza con su clave (se recuerdan por pieza). */
+  private verticesOf(piece: Piece): { position: Vec3; key: string }[] {
+    let found = this.vertexCache.get(piece);
+    if (!found) {
+      found = uniqueVertices(piece).map((position) => ({ position, key: vertexKey(position) }));
+      this.vertexCache.set(piece, found);
+    }
+    return found;
+  }
+
+  /** Los triángulos de una pieza como números sueltos (se recuerdan por pieza). */
+  private trianglesOf(piece: Piece): Float64Array {
+    let found = this.triangleCache.get(piece);
+    if (!found) {
+      const out: number[] = [];
+      for (const face of piece.faces) for (const [i, j, k] of triangulateFace(face)) out.push(...face[i], ...face[j], ...face[k]);
+      found = Float64Array.from(out);
+      this.triangleCache.set(piece, found);
+    }
+    return found;
   }
 
   /** Cuántas caras torcidas (de cuatro o más vértices fuera de su plano) hay en las piezas que se ven. */
@@ -505,8 +543,16 @@ export class MeshTool {
       return;
     }
     // El gemelo puede estar en otra pieza que no se ve (se eligió una mitad): se empareja contra todas las editables y solo se pintan las que se ven.
-    const all = symmetrize(this.host.model.editable(), this.host.symmetry()).unpaired;
-    this.unpaired = new Set([...all].filter((entry) => shown.has(Number(entry.slice(0, entry.indexOf(':'))))));
+    const editable = this.host.model.editable();
+    const sym = this.host.symmetry();
+    const signature = JSON.stringify([sym.x, sym.y, sym.z, sym.center]);
+    const last = this.unpairedFor;
+    // Buscar los gemelos repite hasta 12 pasadas sobre todas las piezas: solo se hace si cambió alguna pieza o la simetría.
+    if (!last || last.symmetry !== signature || last.pieces.length !== editable.length || last.pieces.some((piece, i) => piece !== editable[i])) {
+      this.unpairedAll = symmetrize(editable, sym).unpaired;
+      this.unpairedFor = { pieces: editable, symmetry: signature };
+    }
+    this.unpaired = new Set([...this.unpairedAll].filter((entry) => shown.has(Number(entry.slice(0, entry.indexOf(':'))))));
   }
 
   /**
@@ -649,17 +695,13 @@ export class MeshTool {
     const a = new THREE.Vector3();
     const b = new THREE.Vector3();
     const c = new THREE.Vector3();
-    const seen = new Set<number>();
-    for (const { piece } of this.shown) {
-      if (seen.has(piece.id)) continue;
-      seen.add(piece.id);
-      for (const face of piece.faces) {
-        for (const [i, j, k] of triangulateFace(face)) {
-          a.set(...face[i]);
-          b.set(...face[j]);
-          c.set(...face[k]);
-          if (ray.intersectTriangle(a, b, c, false, point) && point.distanceTo(origin) < distance - margin) return true;
-        }
+    for (const piece of this.shownPieces) {
+      const t = this.trianglesOf(piece);
+      for (let n = 0; n < t.length; n += 9) {
+        a.set(t[n], t[n + 1], t[n + 2]);
+        b.set(t[n + 3], t[n + 4], t[n + 5]);
+        c.set(t[n + 6], t[n + 7], t[n + 8]);
+        if (ray.intersectTriangle(a, b, c, false, point) && point.distanceTo(origin) < distance - margin) return true;
       }
     }
     return false;
@@ -2194,7 +2236,7 @@ export class MeshTool {
     const front = this.faceAt(e.clientX, e.clientY)?.distance ?? Infinity;
     const eye = this.host.camera.position;
     const seen = new Set<string>();
-    for (const { piece } of this.shown) {
+    for (const piece of this.shownPieces) {
       for (const face of piece.faces) {
         face.forEach((a, i) => {
           const b = face[(i + 1) % face.length];

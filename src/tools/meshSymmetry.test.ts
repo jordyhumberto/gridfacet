@@ -19,6 +19,7 @@ function setup(options: { selected?: () => Piece[] } = {}) {
   const handlers = new Map<string, ((e: unknown) => void)[]>();
   const hidden = new Set<number>();
   let consumed = 0;
+  let selectionChanges = 0;
   const camera = new THREE.PerspectiveCamera();
   const el = { addEventListener(type: string, fn: (e: unknown) => void) { handlers.set(type, [...(handlers.get(type) ?? []), fn]); }, removeEventListener() {}, dispatchEvent() { return true; }, getBoundingClientRect: () => ({ left: 0, top: 0, width: 800, height: 600 }) } as unknown as HTMLElement;
   const symmetry = { x: true, y: false, z: false, center: [0, 0, 0] as Vec3 };
@@ -32,7 +33,7 @@ function setup(options: { selected?: () => Piece[] } = {}) {
     isHidden: (p: Piece) => hidden.has(p.id),
     symmetry: () => symmetry,
     status: (message: string) => messages.push(message),
-    onSelectionChange: () => {},
+    onSelectionChange: () => selectionChanges++,
     consumed: () => consumed++,
   });
   tool.activate();
@@ -42,7 +43,7 @@ function setup(options: { selected?: () => Piece[] } = {}) {
     (tool as unknown as { selection: Map<number, Set<string>> }).selection = new Map([[current.id, keys]]);
     tool.refresh();
   };
-  return { model, tool, choose, messages, camera, hidden, handlers, consumedCount: () => consumed };
+  return { model, tool, choose, messages, camera, hidden, handlers, consumedCount: () => consumed, selectionChanges: () => selectionChanges };
 }
 
 /** Cada vértice tiene su imagen en espejo en X, y cada cara la suya. */
@@ -590,5 +591,41 @@ describe('Soldar cercanos con simetría', () => {
     tool.weldNearby(0.002);
     expect(model.undoDepth).toBe(depth);
     expect(messages[messages.length - 1]).toMatch(/ningún vértice/i);
+  });
+});
+
+describe('Malla vuelve a calcular lo caro solo cuando hace falta', () => {
+  it('durante un arrastre solo se mueven los puntos; el panel y los avisos se ponen al día al soltar', () => {
+    const s = setup();
+    s.model.onChange = () => s.tool.refresh();
+    s.choose((p) => p[0] > 0);
+    const inner = s.tool as unknown as { buildTargets: () => unknown[]; drag: unknown; preview: (d: Vec3) => void; pendingBefore: unknown; finishDrag: (commit: boolean) => void };
+    inner.pendingBefore = new Map();
+    inner.drag = { targets: inner.buildTargets(), anchor: [0, 0, 0], plane: null, grab: null, startX: 0, startY: 0, moved: true, delta: [0.1, 0, 0] };
+    const before = s.selectionChanges();
+    inner.preview([0.1, 0, 0]);
+    inner.preview([0.2, 0, 0]);
+    expect(s.selectionChanges()).toBe(before);
+    inner.finishDrag(true);
+    expect(s.selectionChanges()).toBeGreaterThan(before);
+  });
+
+  it('los vértices sin gemelo se ponen al día cuando cambia una pieza o la simetría, aunque se recuerden entre llamadas', () => {
+    const s = setup();
+    s.model.onChange = () => s.tool.refresh();
+    s.tool.refresh();
+    expect(s.tool.unpairedCount).toBe(0);
+    // Un vértice de un solo lado se mueve sin su espejo: pierde el gemelo.
+    const piece = s.model.all()[0];
+    const corner = uniqueVertices(piece).find((p) => p[0] > 0)!;
+    const moved = moveVertices(piece, new Set([vertexKey(corner)]), [0.1, 0, 0], true)!;
+    s.model.apply({ added: [moved], removed: [piece] });
+    expect(s.tool.unpairedCount).toBeGreaterThan(0);
+    // Sin ningún cambio, repetir no altera el resultado.
+    const count = s.tool.unpairedCount;
+    s.tool.refresh();
+    expect(s.tool.unpairedCount).toBe(count);
+    s.model.undo();
+    expect(s.tool.unpairedCount).toBe(0);
   });
 });
