@@ -19,6 +19,7 @@ import type { Command } from './core/commands';
 import { parseHexColors, parsePalettes, toHexText, upsertPalette, type Palette } from './core/palettes';
 import { serializeProject } from './core/project';
 import { createFiles } from './ui/files';
+import { createLayersPanel } from './ui/layersPanel';
 import { createMeshPanel } from './ui/meshPanel';
 import { createCommandPalette } from './ui/commandPalette';
 import { createReferencesPanel } from './ui/referencesPanel';
@@ -32,7 +33,6 @@ import { pointOf, type FaceTexture } from './core/texture';
 import { PieceBatches } from './render/batches';
 import { createPieceObject, disposeObject, isWireframeView, setHighlight, setSmoothShading, setWireframeView } from './render/meshes';
 import { ModelScene } from './scene';
-import { Layers, layerOf } from './core/layers';
 import { Selection } from './selection';
 import type { Guides } from './core/guides';
 import { CutTool, snapPoint, type SnapOptions } from './tools/cutTool';
@@ -43,7 +43,7 @@ import { connectedPieces, sizeOf } from './core/connected';
 import { bevelChange, edgeBetween, nearestEdge, type PieceEdge } from './core/bevel';
 import { buildShape, MAX_RINGS, MAX_SIDES, MIN_RINGS, MIN_SIDES, SECTIONS, SHAPES, type ShapeKind, type ShapeSpec, type SphereSection } from './core/shapes';
 import { facesAt, paintChange, type FaceRef } from './core/paint';
-import { faceColorOf, faceNormal, newGroupId, reserveGroupIds, withGroup, withLayer } from './core/piece';
+import { faceColorOf, faceNormal, newGroupId, reserveGroupIds, withGroup } from './core/piece';
 import { VertexTool } from './tools/vertexTool';
 import { FaceEditor } from './tools/faceEditor';
 import { AXIS_COLORS } from './tools/meshTool';
@@ -249,8 +249,7 @@ selection.subscribe(() => {
   if (mode !== 'cut') statusEl.textContent = selection.size > 0 ? selectionLabel() : '';
   syncSelectionActions();
   syncInspector();
-  syncGroupName();
-  layerMoveEl.hidden = selection.size === 0;
+  layersPanel.syncSelection();
 });
 
 if (import.meta.env.DEV) {
@@ -885,230 +884,21 @@ function removeAt(event: PointerEvent): void {
   if (piece) model.apply({ added: [], removed: counterparts(piece) });
 }
 
-// Piezas ocultas: no se dibujan ni se pueden apuntar; siguen en el modelo (y en la exportación).
-const hidden = new Set<number>();
-function showPiece(piece: Piece): void {
-  if (!hidden.has(piece.id)) batches.add(piece);
-}
-function hidePieces(ids: number[]): void {
-  for (const id of ids) hidden.add(id);
-  selection.remove(ids);
-  for (const id of ids) {
-    batches.remove(id);
-    textureLayer.remove(id);
-  }
-  refreshHidden();
-}
-function showHidden(ids: number[] = [...hidden]): void {
-  for (const id of ids) {
-    hidden.delete(id);
-    const piece = model.get(id);
-    if (piece && !selection.has(id)) batches.add(piece);
-    if (piece) textureLayer.add(piece);
-  }
-  refreshHidden();
-}
-const showHiddenButton = document.getElementById('showHidden')!;
-function refreshHidden(): void {
-  showHiddenButton.hidden = hidden.size === 0;
-  showHiddenButton.textContent = `Mostrar ocultas (${hidden.size})`;
-  refreshGroups();
-}
-showHiddenButton.addEventListener('click', () => {
-  // "Mostrar ocultas" también muestra las capas ocultas.
-  for (const layer of layers.all()) layers.setHidden(layer.id, false);
-  showHidden();
+// Piezas ocultas, capas y lista de grupos (ui/layersPanel.ts).
+const layersPanel = createLayersPanel({
+  model,
+  selection,
+  batches,
+  textureLayer: { add: (piece) => textureLayer.add(piece), remove: (id) => textureLayer.remove(id) },
+  selectedPieces: () => selectedPieces(),
+  selectTool: () => setMode('select'),
+  markEdited: () => {
+    files.markDirty();
+    files.syncFileName();
+  },
+  scheduleAutosave: () => files.scheduleAutosave(),
 });
-
-// Capas: cada pieza está en una; una capa se oculta (no se ve ni se apunta) o se bloquea (se ve y choca, pero no se modifica).
-const layers = new Layers();
-model.isLocked = (piece) => layers.isLocked(piece);
-selection.canSelect = (id) => {
-  const piece = model.get(id);
-  return !piece || !layers.isLocked(piece);
-};
-const layerListEl = document.getElementById('layerList')!;
-const layerMoveEl = document.getElementById('layerMove')!;
-const idsOfLayer = (id: number): number[] => model.all().filter((piece) => layerOf(piece) === id).map((piece) => piece.id);
-
-/** Aplica a las piezas el estado de las capas: las de capas ocultas se esconden y las de bloqueadas dejan de estar elegidas. */
-function applyLayerState(): void {
-  for (const layer of layers.all()) {
-    const ids = idsOfLayer(layer.id);
-    if (layer.hidden) hidePieces(ids.filter((id) => !hidden.has(id)));
-    if (layer.locked) selection.remove(ids);
-  }
-}
-/** Un cambio de capas (crear, renombrar, ocultar, bloquear, quitar) cuenta como cambio sin guardar; elegir la capa activa no. */
-function markLayersEdited(): void {
-  files.markDirty();
-  files.syncFileName();
-}
-function toggleLayerHidden(id: number): void {
-  const layer = layers.get(id);
-  if (!layer) return;
-  markLayersEdited();
-  layers.setHidden(id, !layer.hidden);
-  if (layer.hidden) applyLayerState();
-  else showHidden(idsOfLayer(id).filter((pid) => hidden.has(pid)));
-}
-function toggleLayerLocked(id: number): void {
-  const layer = layers.get(id);
-  if (!layer) return;
-  markLayersEdited();
-  layers.setLocked(id, !layer.locked);
-  applyLayerState();
-}
-function removeLayer(id: number): void {
-  const layer = layers.get(id);
-  if (!layer || id === 1) return;
-  // Sus piezas pasan a la primera capa, como un cambio más del modelo (se puede deshacer y marca «sin guardar»).
-  const moved = model.all().filter((piece) => layerOf(piece) === id);
-  const wasHidden = layer.hidden;
-  layers.remove(id);
-  model.activeLayer = layers.active;
-  if (moved.length > 0) {
-    const added = moved.map((piece) => withLayer(piece, 1));
-    model.apply({ added, removed: moved });
-    if (wasHidden) showHidden(added.map((piece) => piece.id).filter((pid) => hidden.has(pid)));
-  }
-  markLayersEdited();
-  applyLayerState();
-}
-/** Pasa las piezas elegidas a la capa activa. */
-function moveSelectionToActiveLayer(): void {
-  const target = layers.active;
-  // Como un cambio más (piezas nuevas), para poder deshacerlo.
-  const removed = selection.list().map((id) => model.get(id)).filter((piece): piece is Piece => !!piece && layerOf(piece) !== target);
-  if (removed.length === 0) return;
-  const added = removed.map((piece) => withLayer(piece, target));
-  model.apply({ added, removed });
-  selection.set(added.map((piece) => piece.id));
-  applyLayerState();
-  refreshLayers();
-}
-function refreshLayers(): void {
-  const counts = new Map<number, number>();
-  for (const piece of model.all()) counts.set(layerOf(piece), (counts.get(layerOf(piece)) ?? 0) + 1);
-  layerListEl.replaceChildren();
-  for (const layer of layers.all()) {
-    const row = document.createElement('div');
-    row.className = `lrow${layer.id === layers.active ? ' active' : ''}${layer.hidden ? ' off' : ''}`;
-    const name = document.createElement('button');
-    name.className = 'lname';
-    name.textContent = `${layer.name} (${counts.get(layer.id) ?? 0})`;
-    name.title = 'Capa activa: lo que coloques o crees va aquí. Doble clic: renombrar';
-    name.addEventListener('click', () => layers.setActive(layer.id));
-    name.addEventListener('dblclick', () => {
-      const next = window.prompt('Nombre de la capa', layer.name);
-      if (next !== null) {
-        layers.rename(layer.id, next);
-        markLayersEdited();
-      }
-    });
-    const eye = document.createElement('button');
-    eye.className = `tool${layer.hidden ? ' on' : ''}`;
-    eye.textContent = layer.hidden ? 'Oculta' : 'Ojo';
-    eye.title = layer.hidden ? 'Mostrar la capa' : 'Ocultar la capa';
-    eye.addEventListener('click', () => toggleLayerHidden(layer.id));
-    const lock = document.createElement('button');
-    lock.className = `tool${layer.locked ? ' on' : ''}`;
-    lock.textContent = layer.locked ? 'Bloq.' : 'Candado';
-    lock.title = layer.locked ? 'Desbloquear la capa' : 'Bloquear la capa: se ve y choca, pero no se puede modificar';
-    lock.addEventListener('click', () => toggleLayerLocked(layer.id));
-    row.append(name, eye, lock);
-    if (layer.id !== 1) {
-      const del = document.createElement('button');
-      del.className = 'tool';
-      del.textContent = '✕';
-      del.title = 'Quitar la capa (sus piezas pasan a la primera)';
-      del.addEventListener('click', () => removeLayer(layer.id));
-      row.append(del);
-    }
-    layerListEl.appendChild(row);
-  }
-  layerMoveEl.hidden = selection.size === 0;
-}
-layers.onChange = () => {
-  model.activeLayer = layers.active;
-  refreshLayers();
-  files.scheduleAutosave();
-};
-document.getElementById('layerAdd')!.addEventListener('click', () => {
-  layers.add();
-  markLayersEdited();
-});
-layerMoveEl.addEventListener('click', moveSelectionToActiveLayer);
-refreshLayers();
-function hideSelected(): void {
-  if (selection.size > 0) hidePieces(selection.list());
-}
-function isolateSelected(): void {
-  if (selection.size === 0) {
-    if (hidden.size > 0) showHidden();
-    return;
-  }
-  hidePieces(model.all().filter((piece) => !selection.has(piece.id)).map((piece) => piece.id));
-}
-
-// Lista de grupos: elegir, ocultar o mostrar cada uno y darle nombre.
-const groupsEl = document.getElementById('groups')!;
-const groupListEl = document.getElementById('groupList')!;
-const groupNameRow = document.getElementById('groupName')!;
-const groupNameInput = document.getElementById('groupNameInput') as HTMLInputElement;
-function refreshGroups(): void {
-  const groups = new Map<number, { name: string; ids: number[] }>();
-  for (const piece of model.all()) {
-    if (piece.group === undefined) continue;
-    const entry = groups.get(piece.group) ?? { name: piece.groupName ?? `Grupo ${piece.group}`, ids: [] };
-    entry.ids.push(piece.id);
-    groups.set(piece.group, entry);
-  }
-  groupsEl.hidden = groups.size === 0;
-  groupListEl.replaceChildren();
-  for (const [group, entry] of groups) {
-    const isHidden = entry.ids.every((id) => hidden.has(id));
-    const row = document.createElement('div');
-    row.className = `grow${isHidden ? ' hiddenGroup' : ''}`;
-    const pick = document.createElement('button');
-    pick.textContent = `${entry.name} (${entry.ids.length})`;
-    pick.title = 'Elegir el grupo';
-    pick.addEventListener('click', () => {
-      if (isHidden) showHidden(entry.ids);
-      setMode('select');
-      selection.set(entry.ids);
-    });
-    const eye = document.createElement('button');
-    eye.textContent = isHidden ? 'Mostrar' : 'Ocultar';
-    eye.title = isHidden ? 'Mostrar el grupo' : 'Ocultar el grupo';
-    eye.addEventListener('click', () => (isHidden ? showHidden(entry.ids) : hidePieces(entry.ids)));
-    row.append(pick, eye);
-    row.dataset.group = String(group);
-    groupListEl.appendChild(row);
-  }
-}
-
-/** Campo de nombre: aparece cuando la selección es justo un grupo. */
-function selectedGroup(): { group: number; pieces: Piece[] } | null {
-  const pieces = selectedPieces();
-  const group = pieces[0]?.group;
-  if (group === undefined || pieces.some((piece) => piece.group !== group)) return null;
-  return { group, pieces: model.all().filter((piece) => piece.group === group) };
-}
-function syncGroupName(): void {
-  const found = selectedGroup();
-  groupNameRow.hidden = !found;
-  if (found && document.activeElement !== groupNameInput) groupNameInput.value = found.pieces[0].groupName ?? '';
-}
-groupNameInput.addEventListener('change', () => {
-  const found = selectedGroup();
-  if (!found) return;
-  const name = groupNameInput.value.trim();
-  const added = found.pieces.map((piece) => withGroup(piece, found.group, name || undefined));
-  model.apply({ added, removed: found.pieces });
-  selection.set(added.map((piece) => piece.id));
-  groupNameInput.blur();
-});
+const { hidden, layers, showPiece, hidePieces, showHidden, hideSelected, isolateSelected, applyLayerState, refreshLayers, refreshGroups } = layersPanel;
 
 // Panel «Selección»: las acciones sobre las piezas elegidas (selActions) y sus campos de centro, tamaño y giro (inspectorFields).
 // Aparece al elegir algo; con el portapapeles lleno y nada elegido se queda solo con las acciones (para poder pegar).
