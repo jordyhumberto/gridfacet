@@ -1,5 +1,6 @@
 import { panStep, type PanState } from './core/pan';
 import { MODE_INFO, GUIDE, setupHelp } from './ui/help';
+import { meshNeedReason, titleWithReason } from './core/meshNeeds';
 import { ctrlBeatsField, escLeavesTool, isTextField, meshIgnoresKey, toolForKey, toolKey, undoRedoKey, verticalMoveKey, type KeyMode } from './core/shortcuts';
 import * as THREE from 'three';
 import { axisAllowed, lockLabel, planeNormal, type AxisLock } from './core/axisLock';
@@ -2118,22 +2119,28 @@ renderer.domElement.addEventListener('dblclick', (e) => {
 
 // Malla: elegir y mover los vértices de las piezas. Una pieza con un vértice hundido deja de ser convexa y pasa a ser malla libre.
 const meshActionsEl = document.getElementById('meshActions')!;
-const selectAxisEl = document.getElementById('selectAxis')!;
-function syncSelectAxis(): void {
-  selectAxisEl.querySelectorAll<HTMLButtonElement>('button[data-selaxis]').forEach((button) => {
-    const axis = button.dataset.selaxis === 'free' ? null : Number(button.dataset.selaxis);
-    button.classList.toggle('active', axis === pieceAxis);
+// «Mover en / Plano» es un solo componente: con Elegir limita el arrastre de las piezas (`pieceAxis`) y en Malla el de los vértices (`meshTool.axis`).
+const axisRowEl = document.getElementById('axisRow')!;
+function syncAxisRow(): void {
+  const current = mode === 'mesh' ? meshTool.axis : pieceAxis;
+  axisRowEl.querySelectorAll<HTMLButtonElement>('button[data-axis]').forEach((button) => {
+    const axis = button.dataset.axis === 'free' ? null : Number(button.dataset.axis);
+    button.classList.toggle('active', axis === current);
   });
 }
-selectAxisEl.querySelectorAll<HTMLButtonElement>('button[data-selaxis]').forEach((button) =>
+axisRowEl.querySelectorAll<HTMLButtonElement>('button[data-axis]').forEach((button) =>
   button.addEventListener('click', () => {
     button.blur();
-    pieceAxis = button.dataset.selaxis === 'free' ? null : Number(button.dataset.selaxis);
-    syncSelectAxis();
+    const axis = button.dataset.axis === 'free' ? null : Number(button.dataset.axis);
+    if (mode === 'mesh') {
+      meshTool.setAxis(axis);
+      return;
+    }
+    pieceAxis = axis;
+    syncAxisRow();
     statusEl.textContent = pieceAxis === null ? 'Arrastre libre' : `Las piezas solo se mueven en ${lockLabel(pieceAxis)}`;
   }),
 );
-syncSelectAxis();
 const meshInfoEl = document.getElementById('meshInfo')!;
 const meshDoubleEl = document.getElementById('meshDouble') as HTMLInputElement;
 /** Lo que se deja elegido en el panel de Malla se recuerda entre sesiones (sin fallar si el navegador no deja guardar). */
@@ -2181,6 +2188,7 @@ const meshTool = new MeshTool({
   onSelectionChange: () => syncMeshActions(),
 });
 model.onHistory = (kind) => meshTool.historyMoved(kind);
+syncAxisRow();
 meshTool.magnet = magnet;
 const magnetEl = document.getElementById('magnet') as HTMLInputElement;
 magnetEl.checked = magnet;
@@ -2196,8 +2204,11 @@ magnetEl.addEventListener('change', () => {
   statusEl.textContent = magnet ? 'Imán activado: piezas y vértices caen en la rejilla' : 'Imán desactivado: piezas y vértices siguen al ratón';
 });
 if (import.meta.env.DEV) (window as unknown as Record<string, unknown>).__mesh = meshTool;
-/** Cuántos vértices (de una misma pieza) pide cada acción de Malla para poder usarse; «face» pide al menos una cara con todos sus vértices elegidos. */
-const NEEDS: Record<string, number | 'face'> = { weld: 0, merge: 2, ring: 2, bevel: 2, face: 3, fillhole: 1, delface: 'face', triangulate: 'face', push: 'face', flip: 'face', extrude: 'face', connect: 2, dissolve: 2, growedge: 2, tip: 1, straighten: 3, flatten: 3, taper: 2, twist: 2, bend: 2 };
+/** Un botón o casilla de Malla apagado dice en su título qué hay que elegir (el título de siempre se guarda en `data-title`). */
+function setReasonTitle(element: HTMLElement, reason: string | null): void {
+  element.dataset.title ??= element.title;
+  element.title = titleWithReason(element.dataset.title, reason);
+}
 function syncMeshActions(): void {
   meshActionsEl.hidden = mode !== 'mesh';
   const count = meshTool.count;
@@ -2208,20 +2219,17 @@ function syncMeshActions(): void {
   document.getElementById('meshAdd')!.classList.toggle('active', meshTool.addMode);
   document.getElementById('meshSlide')!.classList.toggle('active', meshTool.slideMode);
   document.getElementById('meshRemove')!.classList.toggle('active', meshTool.removeMode);
-  meshActionsEl.querySelectorAll<HTMLButtonElement>('button[data-meshaxis]').forEach((button) => {
-    const axis = button.dataset.meshaxis === 'free' ? null : Number(button.dataset.meshaxis);
-    button.classList.toggle('active', axis === meshTool.axis);
-  });
+  syncAxisRow();
   meshActionsEl.querySelectorAll<HTMLButtonElement>('button[data-mesh]').forEach((button) => {
-    const action = button.dataset.mesh!;
-    const need = NEEDS[action];
-    const symmetric = symmetry.x || symmetry.y || symmetry.z;
-    button.disabled = action === 'symmetrize' ? !symmetric : action === 'all' ? false : need === 'face' ? fullFaces === 0 : count < (need ?? 1) || (need !== undefined && meshTool.mostInOnePiece < need);
+    const reason = meshNeedReason(button.dataset.mesh!, { count, mostInOnePiece: meshTool.mostInOnePiece, fullFaces, symmetric: symmetry.x || symmetry.y || symmetry.z });
+    button.disabled = reason !== null;
+    setReasonTitle(button, reason);
   });
   // Las casillas reflejan las caras elegidas (todos sus vértices): marcadas si todas la tienen, a medias si solo algunas.
   for (const [input, flag] of [[meshDoubleEl, FACE_DOUBLE], [meshUnlitEl, FACE_UNLIT], [meshBehindEl, FACE_BEHIND]] as const) {
     const { total, on } = meshTool.faceFlagCount(flag);
     input.disabled = total === 0;
+    setReasonTitle(input.parentElement!, total === 0 ? 'necesita elegir caras con todos sus vértices elegidos (no hay ninguna)' : null);
     input.checked = total > 0 && on === total;
     input.indeterminate = on > 0 && on < total;
   }
@@ -2298,12 +2306,6 @@ document.getElementById('meshAdd')!.addEventListener('click', (event) => {
   (event.currentTarget as HTMLButtonElement).blur();
   meshTool.setAddMode(!meshTool.addMode);
 });
-meshActionsEl.querySelectorAll<HTMLButtonElement>('button[data-meshaxis]').forEach((button) =>
-  button.addEventListener('click', () => {
-    button.blur();
-    meshTool.setAxis(button.dataset.meshaxis === 'free' ? null : Number(button.dataset.meshaxis));
-  }),
-);
 meshActionsEl.querySelectorAll<HTMLButtonElement>('button[data-mesh]').forEach((button) =>
   button.addEventListener('click', () => {
     button.blur();
@@ -3115,7 +3117,8 @@ function syncButtons(): void {
   pieceButtons.forEach((b, i) => b.classList.toggle('active', mode === 'place' && i === selected));
   cutButton.classList.toggle('active', mode === 'cut');
   selectButton.classList.toggle('active', mode === 'select');
-  selectAxisEl.hidden = mode !== 'select';
+  axisRowEl.hidden = mode !== 'select' && mode !== 'mesh';
+  syncAxisRow();
   eraseButton.classList.toggle('active', mode === 'erase');
   growButton.classList.toggle('active', mode === 'grow');
   sinkButton.classList.toggle('active', mode === 'sink');
@@ -3638,6 +3641,7 @@ function syncSymmetry(): void {
   }
   refreshGhost();
   meshTool.refresh();
+  syncMeshActions();
 }
 function toggleSymmetry(axis: 'x' | 'y' | 'z'): void {
   symmetry[axis] = !symmetry[axis];

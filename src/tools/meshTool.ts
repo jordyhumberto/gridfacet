@@ -57,6 +57,7 @@ const NEEDS_SELECTION: Record<string, string> = {
   n: 'Empujar cara (N): elige todos los vértices de una o más caras',
   k: 'Tapar hueco (K): elige un vértice del borde abierto que quieres cerrar',
   i: 'Punta (I): elige los vértices de los que quieres sacar una copia para jalarla',
+  m: 'Extruir cara (M): elige todos los vértices de una o más caras',
   r: 'Girar (R): elige los vértices que quieres girar',
   t: 'Escalar (T): elige los vértices que quieres escalar',
   delete: 'Borrar vértices (Supr): elige los vértices que quieres quitar',
@@ -1296,6 +1297,11 @@ export class MeshTool {
     // K (de «cerrar») tapa el hueco que toquen los vértices elegidos, igual que el botón «Tapar hueco».
     if (key === 'k' && !this.drag && !e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey) {
       this.fillHolesSelected();
+      return true;
+    }
+    // M (de «meter la cara hacia fuera»: extruir) saca las caras elegidas, igual que el botón «Extruir cara».
+    if (key === 'm' && !this.drag && !e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey) {
+      this.extrudeSelected();
       return true;
     }
     // I (de «sacar una punta») duplica los vértices elegidos y deja elegidas las copias para jalarlas, igual que el botón «Punta».

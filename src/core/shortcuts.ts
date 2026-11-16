@@ -173,6 +173,7 @@ export const SHORTCUTS: readonly Shortcut[] = [
   row('n', ['mesh'], 'empujar la cara', { by: 'mesh' }),
   row('k', ['mesh'], 'tapar un hueco', { by: 'mesh' }),
   row('i', ['mesh'], 'sacar una punta: duplicar los vértices elegidos y jalar la copia', { by: 'mesh' }),
+  row('m', ['mesh'], 'extruir las caras cuyos vértices están elegidos', { by: 'mesh' }),
   row('delete', ['mesh'], 'borrar los vértices elegidos', { by: 'mesh' }),
   row('backspace', ['mesh'], 'borrar los vértices elegidos', { by: 'mesh' }),
 ];

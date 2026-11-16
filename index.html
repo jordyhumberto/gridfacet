@@ -9,7 +9,7 @@
       html, body { margin: 0; height: 100%; overflow: hidden; background: #1c1f26; font-family: system-ui, sans-serif; color: #e6e8ee; }
       #app { position: fixed; inset: 0; }
       #hud { position: fixed; top: 8px; left: 8px; display: flex; flex-direction: column; gap: 6px; padding: 6px; width: min(300px, calc(100vw - 16px)); box-sizing: border-box; background: rgba(20, 22, 28, 0.85); border: 1px solid #343944; border-radius: 8px; font-size: 12px; }
-      #hud .row[hidden] { display: none; }
+      #hud .row[hidden], #hud label[hidden] { display: none; }
       #hud .row { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
       /* Un límite de movimiento por línea: etiqueta a la izquierda y botones repartidos a lo ancho. */
       #hud .axisGroup { display: flex; gap: 4px; align-items: center; flex: 1 1 100%; }
@@ -84,7 +84,7 @@
       #faceActions select { background: #2a2f3a; color: inherit; border: 1px solid #3d4452; border-radius: 6px; padding: 2px 4px; font-size: 12px; }
       #repeatRow input[type=number] { width: 40px; }
       #growActions input[type=number] { width: 56px; background: #2a2f3a; color: inherit; border: 1px solid #3d4452; border-radius: 6px; padding: 2px 4px; font-size: 12px; }
-      #growActions button.active, #outlineActions button.active, #meshActions button.active, #selectAxis button.active, #placeSize button.active, #slabThick button.active { background: #3b6fd4; border-color: #3b6fd4; color: #fff; }
+      #growActions button.active, #outlineActions button.active, #meshActions button.active, #axisRow button.active, #placeSize button.active, #slabThick button.active { background: #3b6fd4; border-color: #3b6fd4; color: #fff; }
       #placeSize input[type=number], #slabThick input[type=number] { width: 56px; background: #2a2f3a; color: inherit; border: 1px solid #3d4452; border-radius: 6px; padding: 2px 4px; font-size: 12px; }
       #placeSize, #slabThick, #slopeRow { margin-top: 6px; }
       #slopeRow select { background: #2a2f3a; color: inherit; border: 1px solid #3d4452; border-radius: 6px; padding: 2px 4px; font-size: 12px; }
@@ -324,35 +324,22 @@
             <button id="pixelFlat" title="Abre la última cara que tocaste en plano, ampliada (también con doble clic sobre una cara)">Plano</button>
             <small>Arrastra para pintar · Alt: tomar el color · Ctrl+Z deshace el trazo</small>
           </div>
-          <div class="row" id="selectAxis" hidden>
+          <div class="row" id="axisRow" hidden title="Un solo control para Elegir y para Malla: con Elegir limita el arrastre de las piezas elegidas; en Malla, el de los vértices">
             <div class="axisGroup">
-              <span title="Limita el arrastre de las piezas elegidas a un eje o a un plano. Se mantiene hasta que lo cambies. Libre: por el suelo (Alt: en vertical)">Mover en</span>
-              <button data-selaxis="free" title="Sin límite: por el suelo, o en vertical con Alt">Libre</button>
-              <button data-selaxis="0" title="Solo en el eje X">X</button>
-              <button data-selaxis="1" title="Solo en el eje Y (vertical)">Y</button>
-              <button data-selaxis="2" title="Solo en el eje Z">Z</button>
+              <span title="Limita el movimiento a un eje o a un plano. Se mantiene hasta que lo cambies. En Malla, mientras arrastras también sirven las teclas X, Y, Z">Mover en</span>
+              <button data-axis="free" title="Sin límite (con Elegir: por el suelo, o en vertical con Alt)">Libre</button>
+              <button data-axis="0" title="Solo en el eje X (en Malla, tecla X)">X</button>
+              <button data-axis="1" title="Solo en el eje Y, el vertical (en Malla, tecla Y)">Y</button>
+              <button data-axis="2" title="Solo en el eje Z (en Malla, tecla Z)">Z</button>
             </div>
             <div class="axisGroup">
               <span title="Mezcla dos ejes y deja el tercero fijo">Plano</span>
-              <button data-selaxis="3" title="Mezcla X con Y: por una pared de frente, sin avanzar ni retroceder en Z">XY</button>
-              <button data-selaxis="4" title="Mezcla X con Z: por el suelo, sin subir ni bajar (como Libre, pero fijo)">XZ</button>
-              <button data-selaxis="5" title="Mezcla Y con Z: por una pared de lado, sin moverse en X">YZ</button>
+              <button data-axis="3" title="Mezcla X con Y y deja Z fijo: por una pared de frente (en Malla, Mayús+Z)">XY</button>
+              <button data-axis="4" title="Mezcla X con Z y deja Y fijo: por el suelo, sin subir ni bajar (en Malla, Mayús+Y)">XZ</button>
+              <button data-axis="5" title="Mezcla Y con Z y deja X fijo: por una pared de lado (en Malla, Mayús+X)">YZ</button>
             </div>
           </div>
           <div class="row" id="meshActions" hidden>
-            <div class="axisGroup">
-              <span title="Limita el movimiento de los vértices a un eje o a un plano. Se mantiene hasta que lo cambies (mientras arrastras también sirven las teclas X, Y, Z)">Mover en</span>
-              <button data-meshaxis="free" title="Sin límite">Libre</button>
-              <button data-meshaxis="0" title="Solo en el eje X (tecla X)">X</button>
-              <button data-meshaxis="1" title="Solo en el eje Y (tecla Y)">Y</button>
-              <button data-meshaxis="2" title="Solo en el eje Z (tecla Z)">Z</button>
-            </div>
-            <div class="axisGroup">
-              <span title="Mezcla dos ejes y deja el tercero fijo">Plano</span>
-              <button data-meshaxis="3" title="Mezcla X con Y: Z queda fijo (Mayús+Z)">XY</button>
-              <button data-meshaxis="4" title="Mezcla X con Z: Y queda fijo (Mayús+Y)">XZ</button>
-              <button data-meshaxis="5" title="Mezcla Y con Z: X queda fijo (Mayús+X)">YZ</button>
-            </div>
             <div class="meshGroup">
               <span class="groupTitle">Modos</span>
             <button id="meshAdd" title="Añadir vértice: con el modo activo, un clic sobre una arista (según los «Puntos por arista» elegidos; Ctrl donde pulses) o dentro de una cara le pone un vértice nuevo, que queda elegido para moverlo. Alt+clic en una arista sigue funcionando. Atajo: tecla A">+ Vértice (A)</button>
@@ -363,8 +350,11 @@
             <div class="meshGroup">
               <span class="groupTitle">Elegir y borrar</span>
             <button data-mesh="all" title="Elige todos los vértices que se ven">Elegir todos</button>
-            <button data-mesh="merge" title="Junta los vértices elegidos de cada pieza en uno solo, en su centro">Fusionar vértices</button>
             <button data-mesh="delete" title="Quita los vértices elegidos (Supr)">Borrar vértices (Supr)</button>
+            </div>
+            <div class="meshGroup">
+              <span class="groupTitle">Limpiar</span>
+            <button data-mesh="merge" title="Junta los vértices elegidos de cada pieza en uno solo, en su centro">Fusionar vértices</button>
             <button data-mesh="snap" title="Lleva los vértices elegidos a la rejilla de ¼ de celda">Vértices a la rejilla</button>
             <button data-mesh="weld" title="Junta los vértices que están casi uno encima de otro (a menos de la distancia que pongas): cada grupo pasa a su punto medio y las caras que se quedan sin superficie desaparecen. Con vértices elegidos actúa solo sobre ellos; sin elegir ninguno, sobre todas las piezas que se ven. Con simetría el resultado sigue siendo simétrico">Soldar cercanos</button>
             <label title="Distancia máxima, en celdas, para que dos vértices cuenten como «casi encima»"><input type="number" id="meshWeldDistance" min="0.0001" step="0.001" value="0.002" style="width:64px" /> Distancia</label>
@@ -383,12 +373,11 @@
             <button data-mesh="fillhole" title="Cierra con una cara el hueco (borde abierto) al que pertenezca algún vértice elegido: basta con elegir uno del contorno. Atajo: tecla K">Tapar hueco (K)</button>
             <button data-mesh="push" title="Empuja o jala las caras cuyos vértices están todos elegidos a lo largo de su normal, sin torcerlas: mueve el ratón en la dirección de la cara, clic confirma, Esc cancela. Atajo: tecla N">Empujar cara (N)</button>
             <button data-mesh="delface" title="Quita las caras cuyos vértices están todos elegidos: la pieza queda abierta. Atajo: tecla B">Borrar cara (B)</button>
-            <button data-mesh="triangulate" title="Parte en triángulos las caras de cuatro o más lados cuyos vértices están todos elegidos: la forma no cambia, pero cada triángulo es plano y puedes mover sus vértices sin torcer nada. Para juntarlos otra vez usa Quitar segmento (Q)">Triangular</button>
             <button data-mesh="flip" title="Da la vuelta a las caras cuyos vértices están todos elegidos">Invertir cara</button>
             <label title="Cuánto crece la cara al usar «Cara desde segmento» o «Extruir cara» (en celdas; 1 = el ancho de un cubo). Después puedes mover los vértices nuevos para ajustarla"><input type="number" id="meshGrowAmount" min="0.05" step="0.05" value="0.5" style="width:56px" /> Cuánto crece</label>
             <button data-mesh="growedge" title="Con dos vértices elegidos, hace crecer una cara desde su segmento, perpendicular a él (hacia fuera si el segmento es una arista de la pieza); los dos vértices nuevos quedan elegidos para moverlos">Cara desde segmento</button>
             <button data-mesh="tip" title="Punta (I): saca una copia de cada vértice elegido y la une al original con caras nuevas; el original se queda donde está y las copias quedan elegidas para jalarlas (con simetría, el espejo hace lo mismo)">Punta (I)</button>
-            <button data-mesh="extrude" title="Extruye las caras cuyos vértices están todos elegidos y deja elegidos los vértices de arriba para moverlos">Extruir cara</button>
+            <button data-mesh="extrude" title="Extruye las caras cuyos vértices están todos elegidos y deja elegidos los vértices de arriba para moverlos. Atajo: tecla M">Extruir cara (M)</button>
             </div>
             <div class="meshGroup">
               <span class="groupTitle">Segmentos</span>
@@ -397,6 +386,7 @@
             <button data-mesh="ring" title="Con los dos vértices de una arista elegidos, parte por la mitad todas las caras de cuatro lados que atraviesa en fila (la vuelta entera si cierra): pone un vértice nuevo en medio de cada arista y los deja elegidos. La forma no cambia">Corte en anillo</button>
             <button data-mesh="connect" title="Con dos vértices elegidos de una misma cara (no vecinos, con el camino libre entre ellos), traza el segmento que los une: la cara se parte en dos. Con el espejo activo también parte la cara espejo. Atajo: tecla U">Trazar segmento (U)</button>
             <button data-mesh="dissolve" title="Quita el segmento entre dos vértices elegidos: las dos caras que separa, si están en el mismo plano, pasan a ser una (lo contrario de Trazar segmento). No borra vértices. Atajo: tecla Q">Quitar segmento (Q)</button>
+            <button data-mesh="triangulate" title="Parte en triángulos las caras de cuatro o más lados cuyos vértices están todos elegidos: la forma no cambia, pero cada triángulo es plano y puedes mover sus vértices sin torcer nada. Es lo contrario de Quitar segmento (Q), que junta las caras otra vez">Triangular</button>
             </div>
             <div class="meshGroup">
               <span class="groupTitle">Ordenar</span>
@@ -412,7 +402,7 @@
             <label title="Las caras cuyos vértices están todos elegidos se dibujan siempre por debajo de todo lo demás (huellas, sombras pintadas, fondos). Solo se ve así en el editor: el GLB no guarda el orden de dibujo"><input type="checkbox" id="meshBehind" /> Al fondo</label>
             </div>
             <small id="meshInfo"></small>
-            <small>R: girar · T: escalar (mueve el ratón, clic confirma) · Clic en un segmento: elige sus dos vértices (doble clic: lo sigue recto) · Shift+clic en una cara: elige sus vértices · Alt+clic en una arista: vértice nuevo · Arrastra un vértice · X/Y/Z fija el eje · Ctrl+arrastrar en vacío: recuadro · Ctrl al arrastrar: sin imán</small>
+            <small>R: girar · T: escalar (mueve el ratón, clic confirma) · M: extruir cara · Clic en un segmento: elige sus dos vértices (doble clic: lo sigue recto) · Shift+clic en una cara: elige sus vértices · Alt+clic en una arista: vértice nuevo · Arrastra un vértice · X/Y/Z fija el eje · Ctrl+arrastrar en vacío: recuadro · Ctrl al arrastrar: sin imán</small>
           </div>
           <div class="row" id="bevelActions" hidden>
             <label title="Distancia de la arista a cada lado del chaflán, en celdas. Es el mismo tamaño que el de «Chaflán» en Malla">Tamaño <input type="number" id="bevelSize" min="0.02" step="0.05" value="0.25" /></label>
@@ -741,10 +731,10 @@
         <h3>Malla: editar vértices</h3>
         <dl>
           <dt><kbd>E</kbd> Malla</dt><dd>Entra y sale del modo Malla. Clic en una pieza muestra sus vértices; clic en un vértice lo elige (<kbd>Shift</kbd> suma) y arrastrarlo lo mueve con imán a un cuarto de celda (<kbd>Ctrl</kbd> lo suelta). <kbd>Ctrl</kbd>+arrastrar en vacío dibuja un recuadro que elige los vértices de dentro. Un clic en un segmento elige sus dos vértices; <kbd>Shift</kbd>+clic en una cara, todos los suyos.</dd>
-          <dt>Mover en</dt><dd>Libre, X, Y o Z (botones del panel o teclas <kbd>X</kbd> / <kbd>Y</kbd> / <kbd>Z</kbd>): limitan el movimiento a un eje. En Malla las flechas mueven la cámara, no los vértices.</dd>
+          <dt>Mover en</dt><dd>Es un solo control, el mismo con Elegir (piezas) que en Malla (vértices): Libre, X, Y o Z (botones del panel o teclas <kbd>X</kbd> / <kbd>Y</kbd> / <kbd>Z</kbd>): limitan el movimiento a un eje. En Malla las flechas mueven la cámara, no los vértices.</dd>
           <dt><kbd>R</kbd> / <kbd>T</kbd></dt><dd>Giran o escalan los vértices elegidos alrededor de su centro: mueve el ratón, clic confirma, <kbd>Esc</kbd> cancela. Afinar, Torcer y Curvar (panel) deforman a lo largo de un eje.</dd>
           <dt><kbd>Supr</kbd></dt><dd>Quita los vértices elegidos. Sin vértices elegidos no borra nada: en Malla ninguna tecla borra piezas enteras.</dd>
-          <dt>Otras acciones</dt><dd>Fusionar vértices, Vértices a la rejilla y Soldar cercanos limpian vértices repetidos o casi encima de otro; Crear cara, Trazar segmento, Quitar segmento, Triangular, Chaflán, Corte en anillo, Extruir y Empujar cara modelan la superficie. Cada botón explica en su título qué necesita. La lista completa de teclas está en la guía de la barra inferior.</dd>
+          <dt>Otras acciones</dt><dd>En «Limpiar», Fusionar vértices, Vértices a la rejilla y Soldar cercanos limpian vértices repetidos o casi encima de otro; Crear cara, Trazar segmento, Quitar segmento, Triangular, Chaflán, Corte en anillo, Extruir y Empujar cara modelan la superficie. Los botones de «Limpiar» (Fusionar vértices, Vértices a la rejilla, Soldar cercanos) quedan aparte de «Elegir y borrar». Un botón apagado dice en su título qué necesita para encenderse. La lista completa de teclas está en la guía de la barra inferior.</dd>
           <dt>Simetría</dt><dd>Con la simetría activa, lo que haces en un lado se repite en el otro; <b>Simetrizar</b> iguala los dos lados y los vértices sin gemelo se ven en rosa.</dd>
         </dl>
         <h3>Puntos guía</h3>
