@@ -358,7 +358,7 @@ Marcar cada tarea al fusionar su PR. Si un defecto `[leído]` no se reproduce, p
 | 1.3 Aviso al cerrar y recuperación | pendiente | | |
 | 1.4 Supr en Malla | pendiente | | |
 | 1.5 Capa al editar | hecha | rama fix/plan-revision | `apply` solo asigna la capa activa si el cambio no quita piezas (las derivadas conservan la suya) |
-| 1.6 Grupos al abrir | pendiente | | |
+| 1.6 Grupos al abrir | hecha | rama fix/plan-revision | `reserveGroupIds` en `core/piece.ts`; se llama desde `replaceProject` (abrir, nuevo y recuperar). Pegar no lo necesita: usa `newGroupId` y el contador ya va por delante |
 | 2.1 Elección crece al espejo | pendiente | | |
 | 2.2 Simetrizar conserva el id | pendiente | | |
 | 2.3 Simetrizar y piezas que comparten vértice | pendiente | | |

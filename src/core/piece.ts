@@ -36,6 +36,10 @@ export const hasExportFlags = (piece: { faceFlags?: number[] }): boolean => !!pi
 
 let nextGroup = 1;
 export const newGroupId = (): number => nextGroup++;
+/** Deja el contador de grupos por encima del mayor presente en `pieces`, para que un grupo nuevo no se funda con uno cargado. */
+export function reserveGroupIds(pieces: readonly { group?: number }[]): void {
+  for (const piece of pieces) if (piece.group !== undefined && piece.group >= nextGroup) nextGroup = Math.floor(piece.group) + 1;
+}
 
 /** Copia de `piece` con otro grupo (o sin grupo si `group` es undefined) y un id nuevo. */
 export function withGroup(piece: Piece, group: number | undefined, groupName?: string): Piece {

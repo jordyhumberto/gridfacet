@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { CATALOG, buildPiece } from './catalog';
-import { clipPiece, planeFromPoints, volume, type Vec3 } from './piece';
+import { clipPiece, newGroupId, planeFromPoints, reserveGroupIds, volume, type Vec3 } from './piece';
 
 const cube = () => buildPiece(CATALOG[0], 0, 0, 0, 0, 0xffffff);
 
@@ -48,5 +48,16 @@ describe('clipPiece', () => {
     const half = clipPiece(cube(), plane);
     expect(volume(half!)).toBeCloseTo(0.5);
     expect(half!.faces).toHaveLength(6);
+  });
+});
+
+describe('identificadores de grupo', () => {
+  it('reserveGroupIds deja el contador por encima del mayor grupo presente', () => {
+    const a = { ...cube(), group: 5 };
+    const b = { ...cube(), group: 2 };
+    reserveGroupIds([a, b, cube()]);
+    expect(newGroupId()).toBeGreaterThanOrEqual(6);
+    const next = newGroupId();
+    expect(next).toBeGreaterThan(5);
   });
 });

@@ -43,7 +43,7 @@ import { connectedPieces, sizeOf } from './core/connected';
 import { bevelChange, edgeBetween, nearestEdge, type PieceEdge } from './core/bevel';
 import { buildShape, MAX_RINGS, MAX_SIDES, MIN_RINGS, MIN_SIDES, SECTIONS, SHAPES, type ShapeKind, type ShapeSpec, type SphereSection } from './core/shapes';
 import { facesAt, paintChange, type FaceRef } from './core/paint';
-import { FACE_BEHIND, FACE_DOUBLE, FACE_UNLIT, faceColorOf, faceNormal, newGroupId, withGroup, withLayer } from './core/piece';
+import { FACE_BEHIND, FACE_DOUBLE, FACE_UNLIT, faceColorOf, faceNormal, newGroupId, reserveGroupIds, withGroup, withLayer } from './core/piece';
 import { VertexTool } from './tools/vertexTool';
 import { FaceEditor } from './tools/faceEditor';
 import { AXIS_COLORS, MeshTool } from './tools/meshTool';
@@ -3368,6 +3368,8 @@ function replaceProject(project: ReturnType<typeof parseProjectFull>, name: stri
   model.activeLayer = 1;
   selection.clear();
   stopAnimationView();
+  // Los grupos del proyecto abierto quedan reservados: uno nuevo no debe fundirse con ellos.
+  reserveGroupIds(loaded);
   const previousAnimation = animation;
   model.apply({ added: loaded, removed: model.all(), marksAdded: marks, marksRemoved: model.points() });
   setAnimation(savedAnimation ?? emptyAnimation());
