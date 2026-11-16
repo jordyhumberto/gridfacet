@@ -301,3 +301,32 @@ describe('Simetrizar conserva la pieza', () => {
     expect([...selection.keys()]).toEqual([before.id]);
   });
 });
+
+describe('Biselar con simetría es todo o nada', () => {
+  const edgeOnTop = (choose: ReturnType<typeof setup>['choose'], model: ModelScene) => {
+    const verts = uniqueVertices(model.all()[0]);
+    const right = Math.max(...verts.map((p) => p[0]));
+    const top = Math.max(...verts.map((p) => p[1]));
+    choose((p) => p[0] === right && p[1] === top);
+  };
+
+  it('con un tamaño que no cabe en los dos lados no cambia nada y dice el máximo', () => {
+    const { model, tool, choose, messages } = setup();
+    const before = model.all()[0];
+    edgeOnTop(choose, model);
+    tool.bevelSize = 0.6;
+    tool.bevelSelected();
+    expect(model.all()).toEqual([before]);
+    expect(model.undoDepth).toBe(1);
+    expect(messages.at(-1)).toContain('0.49');
+  });
+
+  it('con un tamaño que cabe bisela los dos lados y el modelo queda simétrico', () => {
+    const { model, tool, choose } = setup();
+    edgeOnTop(choose, model);
+    tool.bevelSize = 0.25;
+    tool.bevelSelected();
+    expect(model.all()[0].faces).toHaveLength(8);
+    expect(isSymmetric(model.all())).toBe(true);
+  });
+});

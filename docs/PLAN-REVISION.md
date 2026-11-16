@@ -362,7 +362,7 @@ Marcar cada tarea al fusionar su PR. Si un defecto `[leído]` no se reproduce, p
 | 2.1 Elección crece al espejo | hecha | rama fix/plan-revision | Reproducido. `ownKeys(parts)` y `oneSide` en `meshTool.ts`: conectar, quitar segmento, alinear, aplanar, extruir, cara desde segmento, biselar y anillo dejan elegido solo el lado de quien eligió (en el anillo y el bisel que cruzan el plano, de cada pareja espejo se queda la más cercana a lo elegido) |
 | 2.2 Simetrizar conserva el id | hecha | rama fix/plan-revision | Reproducido. `symmetrizeAll` conserva el id con `sameId` y reindexa la elección por `piece.id` |
 | 2.3 Simetrizar y piezas que comparten vértice | hecha | rama fix/plan-revision | Reproducido. `symmetrize` junta las entradas con la misma `vertexKey` en un punto lógico, empareja puntos y aplica el resultado a todas las entradas |
-| 2.4 Bisel todo o nada | pendiente | | |
+| 2.4 Bisel todo o nada | hecha | rama fix/plan-revision | Reproducido (cubo de 1, tamaño 0,6: 7 caras). `bevelSelected` prueba antes en una copia (`bevelParts`) y, si algún lado no cabe, no aplica nada y da el máximo (búsqueda binaria, redondeado hacia abajo a centésimas); si el espejo comparte un extremo lo dice |
 | 2.5 Teclas durante un arrastre | pendiente | | |
 | 2.6 Paso de deshacer vacío | pendiente | | |
 | 2.7 Vértices del plano | pendiente | | |

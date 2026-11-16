@@ -1598,22 +1598,61 @@ export class MeshTool {
     this.host.status(cuts > 0 ? `Corte en anillo: ${faces} cara(s) partidas${cuts > 1 ? ` en ${cuts} anillos (el espejo también)` : ''}; los vértices nuevos quedan elegidos` : 'Corte en anillo: elige los dos vértices de una arista (que dé paso a caras de cuatro lados)');
   }
 
+  /**
+   * Bisela la arista de cada grupo (los elegidos y cada espejo) sobre una copia de la pieza. `ok` es falso si algún grupo que tenía su arista no
+   * pudo biselarse (por ejemplo porque el primer bisel dejó el segmento vecino más corto que el tamaño): entonces el resultado no vale.
+   */
+  private bevelParts(piece: Piece, parts: Part[], size: number): { piece: Piece; created: Set<string>; count: number; ok: boolean } {
+    let current = piece;
+    const created = new Set<string>();
+    let count = 0;
+    let ok = true;
+    for (const part of parts) {
+      if (uniqueVertices(piece).filter((p) => part.full.has(vertexKey(p))).length !== 2) continue;
+      const pair = uniqueVertices(current).filter((p) => part.full.has(vertexKey(p)));
+      const result = pair.length === 2 ? bevelEdge(current, pair[0], pair[1], size) : null;
+      if (!result) {
+        ok = false;
+        continue;
+      }
+      current = result.piece;
+      count++;
+      if (!part.mirror) for (const key of result.created) created.add(key);
+    }
+    return { piece: current, created, count, ok };
+  }
+
   /** Bisela la arista entre dos vértices elegidos (con el espejo, también la suya); los cuatro vértices nuevos quedan elegidos para ajustarlos. */
   bevelSelected(): void {
+    // Todo o nada: primero se prueba en una copia; si algún lado no cabe, no se toca nada (un solo lado biselado rompería la simetría).
+    const targets = this.buildTargets();
+    const attempt = (size: number) => targets.map((target) => this.bevelParts(target.original, target.parts, size));
+    const first = attempt(this.bevelSize);
+    if (first.some((r) => !r.ok)) {
+      const symmetric = reflections(this.host.symmetry()).length > 0;
+      let max = 0;
+      if (attempt(0.001).every((r) => r.ok)) {
+        let lo = 0.001;
+        let hi = this.bevelSize;
+        for (let i = 0; i < 24; i++) {
+          const mid = (lo + hi) / 2;
+          if (attempt(mid).every((r) => r.ok)) lo = mid;
+          else hi = mid;
+        }
+        max = Math.floor(lo * 100) / 100;
+        while (max > 0 && !attempt(max).every((r) => r.ok)) max = Math.round((max - 0.01) * 100) / 100;
+      }
+      if (max > 0) this.host.status(`Biselar: ese tamaño no cabe${symmetric ? ' con la simetría activa (cada lado recorta el segmento que comparten)' : ''}: prueba con ${max} o menos`);
+      else if (first.some((r) => r.count > 0)) this.host.status('Biselar: con la simetría activa esta arista y su espejo se estorban (comparten un extremo): bisélala sin simetría');
+      else this.host.status('Biselar: elige los dos vértices de una arista que acaben en esquinas de tres caras, y un tamaño menor que los segmentos vecinos');
+      return;
+    }
     let done = 0;
     this.change((piece, _keys, _dirAt, parts) => {
-      let current = piece;
-      const select = new Set<string>();
-      for (const part of parts) {
-        const pair = uniqueVertices(current).filter((p) => part.full.has(vertexKey(p)));
-        if (pair.length !== 2) continue;
-        const result = bevelEdge(current, pair[0], pair[1], this.bevelSize);
-        if (!result) continue;
-        current = result.piece;
-        done++;
-        if (!part.mirror) for (const key of result.created) select.add(key);
-      }
-      return current === piece ? null : { piece: sameId(current, piece), select: select.size > 0 ? this.oneSide(select, current, piece, parts) : ownKeys(parts) };
+      const result = this.bevelParts(piece, parts, this.bevelSize);
+      if (result.count === 0) return null;
+      done += result.count;
+      return { piece: sameId(result.piece, piece), select: result.created.size > 0 ? this.oneSide(result.created, result.piece, piece, parts) : ownKeys(parts) };
     });
     this.host.status(done > 0 ? `Biselar: ${done} arista(s) biseladas (los vértices nuevos quedan elegidos)` : 'Biselar: elige los dos vértices de una arista que acaben en esquinas de tres caras, y un tamaño menor que los segmentos vecinos');
   }
