@@ -356,7 +356,7 @@ Marcar cada tarea al fusionar su PR. Si un defecto `[leído]` no se reproduce, p
 | 1.1 Abrir, deshacer, guardar | hecha | rama fix/plan-revision | `ModelScene.clearHistory()`; `replaceProject` vacía el historial y las pilas de animación (también Nuevo y Recuperar) y los mensajes ya no invitan a Ctrl+Z |
 | 1.2 Abrir pregunta | hecha | rama fix/plan-revision | `confirmDiscard` compartido por Abrir, Nuevo y Recuperar; no existe arrastrar archivos a la ventana |
 | 1.3 Aviso al cerrar y recuperación | hecha | rama fix/plan-revision | `beforeunload` si hay cambios; 3 generaciones en `core/recovery.ts` (clave `gridfacet.recovery`, migra `gridfacet.previous`); botón «Recuperar…» en Archivo |
-| 1.4 Supr en Malla | pendiente | | |
+| 1.4 Supr en Malla | hecha | rama fix/plan-revision | Reproducido (`handleKey` devolvía false). En Malla Supr/Retroceso nunca borran piezas; Retroceso tampoco en Cortar, Rellenar y Figura (Supr sí sigue borrando la selección ahí, porque el plan solo cita Retroceso) |
 | 1.5 Capa al editar | hecha | rama fix/plan-revision | `apply` solo asigna la capa activa si el cambio no quita piezas (las derivadas conservan la suya) |
 | 1.6 Grupos al abrir | hecha | rama fix/plan-revision | `reserveGroupIds` en `core/piece.ts`; se llama desde `replaceProject` (abrir, nuevo y recuperar). Pegar no lo necesita: usa `newGroupId` y el contador ya va por delante |
 | 2.1 Elección crece al espejo | pendiente | | |

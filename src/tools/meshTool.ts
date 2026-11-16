@@ -56,6 +56,8 @@ const NEEDS_SELECTION: Record<string, string> = {
   k: 'Tapar hueco (K): elige un vértice del borde abierto que quieres cerrar',
   r: 'Girar (R): elige los vértices que quieres girar',
   t: 'Escalar (T): elige los vértices que quieres escalar',
+  delete: 'Borrar vértices (Supr): elige los vértices que quieres quitar',
+  backspace: 'Borrar vértices (Supr): elige los vértices que quieres quitar',
 };
 /** Cuánto se acercan los vértices a la cámara al ocultar los de atrás (fracción de su distancia): al dibujarlos y al decidir si uno está tapado. */
 const VERTEX_BIAS = 0.006;

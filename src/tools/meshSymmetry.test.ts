@@ -15,6 +15,7 @@ function setup() {
   const centerX = (Math.min(...xs) + Math.max(...xs)) / 2;
   const piece = translatePiece(cube, -centerX, 0, 0);
   model.apply({ added: [piece], removed: [] });
+  const messages: string[] = [];
   const el = { addEventListener() {}, removeEventListener() {}, getBoundingClientRect: () => ({ left: 0, top: 0, width: 800, height: 600 }) } as unknown as HTMLElement;
   const symmetry = { x: true, y: false, z: false, center: [0, 0, 0] as Vec3 };
   const tool = new MeshTool({
@@ -26,7 +27,7 @@ function setup() {
     selectedPieces: () => [],
     isHidden: () => false,
     symmetry: () => symmetry,
-    status: () => {},
+    status: (message: string) => messages.push(message),
     onSelectionChange: () => {},
   });
   tool.activate();
@@ -36,7 +37,7 @@ function setup() {
     (tool as unknown as { selection: Map<number, Set<string>> }).selection = new Map([[current.id, keys]]);
     tool.refresh();
   };
-  return { model, tool, choose };
+  return { model, tool, choose, messages };
 }
 
 /** Cada vértice tiene su imagen en espejo en X, y cada cara la suya. */
@@ -158,3 +159,18 @@ describe('Malla con simetría y una pieza que cruza el espejo', () => {
 function translateOne(piece: Piece, at: Vec3, delta: Vec3): Piece {
   return moveVertices(piece, new Set([vertexKey(at)]), delta)!;
 }
+
+describe('teclas de Malla sin vértices elegidos', () => {
+  const key = (name: string) => ({ key: name, ctrlKey: false, metaKey: false, altKey: false, shiftKey: false }) as KeyboardEvent;
+
+  it('Supr y Retroceso sin vértices elegidos no hacen nada y explican qué hacer', () => {
+    for (const name of ['Delete', 'Backspace']) {
+      const { model, tool, messages } = setup();
+      const before = model.all()[0];
+      expect(tool.handleKey(key(name))).toBe(true);
+      expect(model.all()).toEqual([before]);
+      expect(model.undoDepth).toBe(1);
+      expect(messages.at(-1)).toContain('Borrar vértices (Supr)');
+    }
+  });
+});

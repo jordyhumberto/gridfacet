@@ -4460,7 +4460,9 @@ window.addEventListener('keydown', (e) => {
     if (key === 'u') mirrorSelected('y');
     if (key === 'k') selectConnected();
   }
-  if (key === 'delete' || key === 'backspace') deleteSelected();
+  // En Malla Supr y Retroceso son de los vértices (MeshTool los toma), nunca borran piezas; Retroceso tampoco en Cortar, Rellenar y Figura.
+  if (key === 'delete' && mode !== 'mesh') deleteSelected();
+  if (key === 'backspace' && mode !== 'mesh' && mode !== 'cut' && mode !== 'fill' && mode !== 'outline') deleteSelected();
   if (mode === 'cut') {
     if (key === 'enter') {
       e.preventDefault();
