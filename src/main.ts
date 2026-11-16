@@ -17,20 +17,17 @@ import { STEP_XZ, STEP_Y, mirrorChange, mirrorCopyChange, moveChange, rotateChan
 import { alignChange, distributeChange, groundChange, partsOf, resizeLongestChange } from './core/arrange';
 import { searchCommands, type Command } from './core/commands';
 import { parseHexColors, parsePalettes, toHexText, upsertPalette, type Palette } from './core/palettes';
-import { describeDiscarded, parseProjectFull, serializeProject } from './core/project';
+import { serializeProject } from './core/project';
+import { createFiles } from './ui/files';
 import { defaultReference, nextReferenceId, withPlane, type RefImage, type RefPlane } from './core/references';
 import { ReferenceLayer, loadReferenceFile } from './render/references';
 import { emptyAnimation, pruneTracks } from './core/animation';
 import { createAnimationPanel } from './ui/animationPanel';
-import { canPickOpen, canPickSave, PICKER_HELP, PickerUnresponsive, pickOpen, pickSave, writeHandle, type FileHandle } from './fileAccess';
 import { downloadBlob, exportGlb } from './render/glb';
-import { framesToPngs, framesToSheet, renderSprites } from './render/sprites';
-import { TextureLayer, atlasToPng } from './render/textures';
-import { buildObj } from './core/obj';
+import { TextureLayer } from './render/textures';
 import type { BrushOptions, PixelEdit, Rect } from './core/pixels';
 import { copyRegion, editRegion, paintCell, pasteRegion, pixelClipboard, rectBetween, texelAt, textureOfFace, visibleColor, withFaceTexture } from './core/pixels';
 import { pointOf, type FaceTexture } from './core/texture';
-import { spriteFileName, type SpriteCamera } from './core/sprites';
 import { PieceBatches } from './render/batches';
 import { createPieceObject, disposeObject, isWireframeView, setHighlight, setSmoothShading, setWireframeView } from './render/meshes';
 import { ModelScene } from './scene';
@@ -45,12 +42,10 @@ import { connectedPieces, sizeOf } from './core/connected';
 import { bevelChange, edgeBetween, nearestEdge, type PieceEdge } from './core/bevel';
 import { buildShape, MAX_RINGS, MAX_SIDES, MIN_RINGS, MIN_SIDES, SECTIONS, SHAPES, type ShapeKind, type ShapeSpec, type SphereSection } from './core/shapes';
 import { facesAt, paintChange, type FaceRef } from './core/paint';
-import { MAX_GENERATIONS, addGeneration, describeGeneration, parseGenerations, serializeGenerations, type RecoveryEntry } from './core/recovery';
 import { FACE_BEHIND, FACE_DOUBLE, FACE_UNLIT, faceColorOf, faceNormal, newGroupId, reserveGroupIds, withGroup, withLayer } from './core/piece';
 import { VertexTool } from './tools/vertexTool';
 import { FaceEditor } from './tools/faceEditor';
-import { AXIS_COLORS, MeshTool, WELD_DISTANCE } from './tools/meshTool';
-import { nearVertexCount } from './core/vertices';
+import { AXIS_COLORS, MeshTool } from './tools/meshTool';
 import { isConvex } from './core/convex';
 import { excavateChange, extrudeFaceChange, findSlivers, joinChange, mergeChange, repeatChange, sinkCutters, sinkFacesChange, splitFaceChange, triangleCount } from './core/modeling';
 
@@ -163,38 +158,33 @@ const outlineTool = new OutlineTool(scene3d, model, () => outlineSink, (normal) 
 const fillTool = new FillTool(scene3d, model, () => color, (message) => (statusEl.textContent = message), expand);
 const cutTool = new CutTool(scene3d, model, selection, (message) => (statusEl.textContent = message), () => symmetry);
 
-// Nombre del archivo abierto o guardado; el punto avisa de cambios sin guardar.
-const fileNameEl = document.getElementById('fileName')!;
-let fileName = 'Sin título';
-let dirty = false;
-
-/** Copia automática de la escena en el navegador: si se cierra o recarga la página sin guardar, se recupera al volver. */
-const AUTOSAVE_KEY = 'gridfacet.autosave';
-/** Cuándo se hizo la última copia automática (para la lista de «Recuperar…»). */
-const AUTOSAVE_TIME_KEY = 'gridfacet.autosave.time';
-let autosaveTimer: number | undefined;
-function scheduleAutosave(): void {
-  window.clearTimeout(autosaveTimer);
-  autosaveTimer = window.setTimeout(() => {
-    try {
-      try {
-        localStorage.setItem(AUTOSAVE_KEY, serializeProject(model.all(), model.points(), gridSize, layers.toJSON(), pruneTracks(animationPanel.animation, model.all()), references));
-      } catch {
-        // Con imágenes la copia puede no caber: se guarda sin ellas antes que perder el modelo.
-        localStorage.setItem(AUTOSAVE_KEY, serializeProject(model.all(), model.points(), gridSize, layers.toJSON(), pruneTracks(animationPanel.animation, model.all())));
-      }
-      localStorage.setItem(AUTOSAVE_TIME_KEY, String(Date.now()));
-    } catch {
-      // Sin espacio o sin acceso al almacenamiento: no se copia, pero el trabajo sigue.
-    }
-  }, 800);
-}
-function syncFileName(): void {
-  const label = `${dirty ? '● ' : ''}${fileName}`;
-  fileNameEl.textContent = label;
-  document.title = `${label} · Gridfacet`;
-}
-syncFileName();
+const files = createFiles({
+  model,
+  statusEl,
+  renderer,
+  serialize: (withReferences) => serializeProject(model.all(), model.points(), gridSize, layers.toJSON(), pruneTracks(animationPanel.animation, model.all()), withReferences ? references : undefined),
+  layerName: (id) => layers.get(id)?.name ?? `Capa_${id}`,
+  animation: () => animationPanel.animation,
+  visiblePieces: () => model.all().filter((piece) => !hidden.has(piece.id)),
+  loadProject: (project) => {
+    const { pieces: loaded, marks, gridSize: savedSize, layers: savedLayers, animation: savedAnimation, references: savedReferences } = project;
+    if (savedSize !== undefined) setGridSize(savedSize);
+    if (mode === 'cut') cutTool.cancel();
+    // Las piezas abiertas traen su capa: las nuevas no deben tomar la activa de antes.
+    model.activeLayer = 1;
+    selection.clear();
+    animationPanel.stop();
+    // Los grupos del proyecto abierto quedan reservados: uno nuevo no debe fundirse con ellos.
+    reserveGroupIds(loaded);
+    model.apply({ added: loaded, removed: model.all(), marksAdded: marks, marksRemoved: model.points() });
+    model.clearHistory();
+    animationPanel.load(savedAnimation ?? emptyAnimation());
+    layers.load(savedLayers, loaded);
+    applyLayerState();
+    setReferences(savedReferences);
+  },
+});
+files.syncFileName();
 
 // El modelo manda; la escena 3D solo refleja sus cambios.
 // Las piezas sin elegir se dibujan fundidas por zonas; solo las elegidas son objetos propios (para resaltarlas y arrastrarlas).
@@ -215,9 +205,9 @@ model.subscribe(({ added, removed, marksAdded, marksRemoved }) => {
   if (toHide.length > 0) hidePieces(toHide);
   setEraseHover(undefined);
   if (marksAdded?.length || marksRemoved?.length) refreshMarks();
-  dirty = true;
-  scheduleAutosave();
-  syncFileName();
+  files.markDirty();
+  files.scheduleAutosave();
+  files.syncFileName();
   // Una pieza que vuelve con el mismo id (vértices movidos) sigue elegida y se resalta de nuevo.
   const returned = new Set(added.map((piece) => piece.id));
   selection.remove(removed.map((piece) => piece.id).filter((id) => !returned.has(id)));
@@ -948,8 +938,8 @@ function applyLayerState(): void {
 }
 /** Un cambio de capas (crear, renombrar, ocultar, bloquear, quitar) cuenta como cambio sin guardar; elegir la capa activa no. */
 function markLayersEdited(): void {
-  dirty = true;
-  syncFileName();
+  files.markDirty();
+  files.syncFileName();
 }
 function toggleLayerHidden(id: number): void {
   const layer = layers.get(id);
@@ -1039,7 +1029,7 @@ function refreshLayers(): void {
 layers.onChange = () => {
   model.activeLayer = layers.active;
   refreshLayers();
-  scheduleAutosave();
+  files.scheduleAutosave();
 };
 document.getElementById('layerAdd')!.addEventListener('click', () => {
   layers.add();
@@ -3269,244 +3259,6 @@ document.getElementById('cutActiveLayer')!.addEventListener('change', (e) => {
   cutTool.activeLayerOnly = (e.target as HTMLInputElement).checked;
 });
 
-const openFileEl = document.getElementById('openFile') as HTMLInputElement;
-
-/** Archivo del sistema vinculado al proyecto: Guardar escribe ahí sin volver a preguntar. */
-let fileHandle: FileHandle | null = null;
-
-const errorText = (error: unknown): string => (error instanceof Error ? error.message : 'error desconocido');
-
-/** Un fallo al guardar o abrir se muestra en un aviso: la línea de estado es pequeña y pasa desapercibida. */
-function fileProblem(message: string): void {
-  statusEl.textContent = message;
-  window.alert(message);
-}
-
-/** Guardar escribe sobre el archivo actual; "Guardar como" (o un proyecto nuevo) abre el diálogo para elegir carpeta y nombre. */
-async function saveProject(asNew = false): Promise<void> {
-  const pieces = model.all();
-  // Si esto falla (texturas o referencias dañadas, por ejemplo) no debe quedar mudo: antes la promesa fallaba sin avisar y parecía que Guardar no hacía nada.
-  let data: string;
-  try {
-    data = serializeProject(pieces, model.points(), gridSize, layers.toJSON(), pruneTracks(animationPanel.animation, pieces), references);
-  } catch (error) {
-    fileProblem(`No se pudo preparar el proyecto para guardarlo: ${errorText(error)}`);
-    return;
-  }
-  const suggested = fileName === 'Sin título' ? 'gridfacet-proyecto.json' : fileName.replace(/(\.json)?$/i, '.json');
-  let name = suggested;
-  try {
-    if (canPickSave()) {
-      let handle = asNew ? null : fileHandle;
-      if (!handle) {
-        statusEl.textContent = 'Abriendo el selector de archivos…';
-        try {
-          handle = await pickSave(suggested, 'Proyecto de Gridfacet', 'application/json', '.json');
-        } catch (error) {
-          // No se guarda nada a escondidas: se explica por qué no salió el diálogo y cómo arreglarlo.
-          fileProblem(error instanceof PickerUnresponsive ? `No se guardó. ${PICKER_HELP}` : `No se pudo guardar: ${errorText(error)}`);
-          return;
-        }
-        if (!handle) {
-          statusEl.textContent = 'Guardado cancelado';
-          return;
-        }
-      }
-      try {
-        await writeHandle(handle, data);
-        // Algunos navegadores dan por bueno el guardado y dejan el archivo vacío: se comprueba leyéndolo de vuelta.
-        if ((await handle.getFile()).size === 0 && data.length > 0) throw new Error('el archivo quedó vacío');
-        fileHandle = handle;
-        name = handle.name;
-      } catch (error) {
-        // Algunos navegadores (o paneles integrados) crean el archivo pero no dejan escribir en él: queda vacío. Se guarda como descarga normal.
-        fileHandle = null;
-        downloadBlob(data, suggested, 'application/json');
-        fileProblem(`No se pudo escribir en ${handle.name} (${errorText(error)}); se descargó ${suggested} en su lugar`);
-        fileName = suggested;
-        dirty = false;
-        syncFileName();
-        return;
-      }
-    } else {
-      // Sin selector del sistema el archivo se descarga: «Guardar como» pide el nombre y va a la carpeta de descargas del navegador.
-      let target = suggested;
-      if (asNew) {
-        const typed = window.prompt('Nombre del archivo', suggested);
-        if (!typed) return;
-        target = typed.replace(/(\.json)?$/i, '.json');
-      }
-      downloadBlob(data, target, 'application/json');
-      name = target;
-    }
-  } catch (error) {
-    fileProblem(`No se pudo guardar: ${errorText(error)}`);
-    return;
-  }
-  fileName = name;
-  dirty = false;
-  syncFileName();
-  statusEl.textContent = `Guardado ${name} (${pieces.length} piezas)`;
-}
-
-/** Abrir reemplaza todo el proyecto y vacía el historial: no se puede deshacer (Ctrl+Z no vuelve al archivo anterior). */
-async function openProject(file: File, handle: FileHandle | null = null): Promise<void> {
-  try {
-    const project = parseProjectFull(await file.text());
-    replaceProject(project, file.name, handle);
-    statusEl.textContent = `Abierto ${file.name} (${project.pieces.length} piezas)`;
-    const lost = describeDiscarded(project.discarded);
-    if (lost) statusEl.textContent += ` · ${lost}`;
-    // Vértices que parecen soldados y no lo están: se avisa, sin tocar nada.
-    const near = project.pieces.reduce((sum, piece) => sum + nearVertexCount(piece, WELD_DISTANCE), 0);
-    if (near > 0) statusEl.textContent += ` · ${near} ${near === 1 ? 'vértice casi encima de otro' : 'vértices casi encima de otro'}: Soldar cercanos (en Malla) los junta`;
-  } catch (error) {
-    fileProblem(error instanceof Error ? `No se pudo abrir: ${error.message}` : 'No se pudo abrir el archivo');
-  }
-}
-
-/** Con cambios sin guardar pide confirmación antes de tirarlos; devuelve si se puede seguir. */
-function confirmDiscard(question: string): boolean {
-  return !dirty || window.confirm(`Hay cambios sin guardar. ${question}`);
-}
-
-/** Empieza de cero: lienzo en blanco sin piezas, capas, animación ni referencias, y sin archivo vinculado. No se puede deshacer. */
-function newProject(): void {
-  if (!confirmDiscard('¿Empezar un proyecto nuevo de todas formas?')) return;
-  replaceProject({ pieces: [], marks: [], references: [], discarded: { pieces: 0, faces: 0 } }, 'Sin título', null);
-  statusEl.textContent = 'Proyecto nuevo en blanco';
-}
-
-/** Cambia toda la escena por la de un proyecto y lo deja vinculado al archivo `name`. Vacía el historial: lo anterior no se puede deshacer, porque el archivo vinculado ya no sería el mismo. */
-function replaceProject(project: ReturnType<typeof parseProjectFull>, name: string, handle: FileHandle | null): void {
-  const { pieces: loaded, marks, gridSize: savedSize, layers: savedLayers, animation: savedAnimation, references: savedReferences } = project;
-  if (savedSize !== undefined) setGridSize(savedSize);
-  if (mode === 'cut') cutTool.cancel();
-  // Las piezas abiertas traen su capa: las nuevas no deben tomar la activa de antes.
-  model.activeLayer = 1;
-  selection.clear();
-  animationPanel.stop();
-  // Los grupos del proyecto abierto quedan reservados: uno nuevo no debe fundirse con ellos.
-  reserveGroupIds(loaded);
-  model.apply({ added: loaded, removed: model.all(), marksAdded: marks, marksRemoved: model.points() });
-  model.clearHistory();
-  animationPanel.load(savedAnimation ?? emptyAnimation());
-  layers.load(savedLayers, loaded);
-  applyLayerState();
-  setReferences(savedReferences);
-  fileHandle = handle;
-  fileName = name;
-  dirty = false;
-  syncFileName();
-}
-
-/** Con el selector del sistema se conserva el archivo para poder guardar encima; si no, se usa el campo de archivo clásico. */
-async function requestOpen(): Promise<void> {
-  if (!confirmDiscard('¿Abrir otro archivo de todas formas?')) return;
-  if (!canPickOpen()) {
-    openFileEl.click();
-    return;
-  }
-  try {
-    const handle = await pickOpen('Proyecto de Gridfacet', 'application/json', '.json');
-    if (handle) await openProject(await handle.getFile(), handle);
-  } catch (error) {
-    if (error instanceof PickerUnresponsive) {
-      fileProblem(`No se abrió nada. ${PICKER_HELP}`);
-      return;
-    }
-    fileProblem(`No se pudo abrir: ${errorText(error)}`);
-  }
-}
-
-document.getElementById('new')!.addEventListener('click', () => newProject());
-document.getElementById('save')!.addEventListener('click', () => void saveProject(false));
-document.getElementById('saveAs')!.addEventListener('click', () => void saveProject(true));
-document.getElementById('open')!.addEventListener('click', () => void requestOpen());
-openFileEl.addEventListener('change', () => {
-  const file = openFileEl.files?.[0];
-  openFileEl.value = '';
-  if (file) void openProject(file);
-});
-
-document.getElementById('export')!.addEventListener('click', async () => {
-  const pieces = model.all();
-  if (pieces.length === 0) {
-    statusEl.textContent = 'No hay piezas que exportar';
-    return;
-  }
-  const exportMode = (document.getElementById('exportMode') as HTMLSelectElement).value as ExportMode;
-  const suggested = fileName === 'Sin título' ? 'gridfacet.glb' : fileName.replace(/\.json$/i, '') + '.glb';
-  try {
-    // El selector de archivos se pide primero: necesita el gesto del usuario, que se pierde si antes se tarda en generar el modelo.
-    const handle = canPickSave() ? await pickSave(suggested, 'Modelo GLB', 'model/gltf-binary', '.glb') : null;
-    if (canPickSave() && !handle) return;
-    const data = await exportGlb(pieces, exportMode, (id) => layers.get(id)?.name ?? `Capa_${id}`, pruneTracks(animationPanel.animation, pieces));
-    let saved = suggested;
-    if (handle) {
-      await writeHandle(handle, data);
-      saved = handle.name;
-    } else {
-      downloadBlob(data, suggested, 'model/gltf-binary');
-    }
-    statusEl.textContent = `Exportado ${saved} (${pieces.length} piezas)`;
-  } catch (error) {
-    statusEl.textContent = `No se pudo exportar: ${errorText(error)}`;
-  }
-});
-
-/** OBJ con texturas: baja el .obj, el .mtl y, si hay píxeles pintados, el PNG del atlas (tres descargas que deben quedar juntas). */
-document.getElementById('exportObj')!.addEventListener('click', async () => {
-  const pieces = model.all();
-  if (pieces.length === 0) {
-    statusEl.textContent = 'No hay piezas que exportar';
-    return;
-  }
-  const base = (fileName === 'Sin título' ? 'gridfacet' : fileName.replace(/\.json$/i, '')).replace(/[\/:*?"<>|\s]+/g, '_');
-  try {
-    const { obj, mtl, atlas } = buildObj(pieces, base);
-    downloadBlob(obj, `${base}.obj`, 'text/plain');
-    downloadBlob(mtl, `${base}.mtl`, 'text/plain');
-    if (atlas) downloadBlob(await atlasToPng(atlas), `${base}-texture.png`, 'image/png');
-    statusEl.textContent = `Exportado ${base}.obj, .mtl${atlas ? ' y el PNG de texturas' : ''}: guárdalos en la misma carpeta`;
-  } catch (error) {
-    statusEl.textContent = `No se pudo exportar el OBJ: ${errorText(error)}`;
-  }
-});
-
-/** Sprites de píxel art: cada vista se dibuja con cámara ortográfica directo al tamaño pedido. */
-document.getElementById('exportSprites')!.addEventListener('click', async () => {
-  const pieces = model.all().filter((piece) => !hidden.has(piece.id));
-  if (pieces.length === 0) {
-    statusEl.textContent = 'No hay piezas visibles que exportar';
-    return;
-  }
-  const read = (id: string): string => (document.getElementById(id) as HTMLSelectElement).value;
-  const size = Number(read('spriteSize'));
-  const views = Number(read('spriteViews'));
-  const sheet = (document.getElementById('spriteSheet') as HTMLInputElement).checked;
-  const project = fileName === 'Sin título' ? 'gridfacet' : fileName;
-  try {
-    const frames = renderSprites(renderer, pieces, {
-      size,
-      views,
-      camera: read('spriteCamera') as SpriteCamera,
-      shading: read('spriteShading') as 'flat' | 'shaded',
-      outline: (document.getElementById('spriteOutline') as HTMLInputElement).checked,
-      outlineColor: 0x000000,
-    });
-    if (sheet && frames.length > 1) {
-      const { blob, cols, rows } = await framesToSheet(frames);
-      downloadBlob(blob, spriteFileName(project, size, 0).replace('-view0', `-sheet-${cols}x${rows}`), 'image/png');
-    } else {
-      (await framesToPngs(frames)).forEach((blob, i) => downloadBlob(blob, spriteFileName(project, size, i + 1), 'image/png'));
-    }
-    statusEl.textContent = `Exportado ${frames.length === 1 || !sheet ? `${frames.length} PNG` : 'hoja de sprites'} de ${size} px`;
-  } catch (error) {
-    statusEl.textContent = `No se pudo exportar los sprites: ${errorText(error)}`;
-  }
-});
-
 if (import.meta.env.DEV) {
   // Utilidad de verificación: exporta y vuelve a cargar el GLB para inspeccionarlo.
   (window as unknown as { __glbCheck: unknown }).__glbCheck = async (exportMode: ExportMode) => {
@@ -3613,11 +3365,11 @@ const commands: Command[] = [
     },
   },
   { name: 'Nueva capa', keywords: 'capas', run: () => layers.add() },
-  { name: 'Recuperar el trabajo anterior', keywords: 'copia automatica restaurar sesion anterior', run: toggleRecoverList },
-  { name: 'Nuevo proyecto', keywords: 'nuevo en blanco lienzo vacio', run: newProject },
-  { name: 'Guardar', shortcut: 'Ctrl+S', run: () => void saveProject(false) },
-  { name: 'Guardar como…', shortcut: 'Ctrl+Alt+S', run: () => void saveProject(true) },
-  { name: 'Abrir…', shortcut: 'Ctrl+O', run: () => void requestOpen() },
+  { name: 'Recuperar el trabajo anterior', keywords: 'copia automatica restaurar sesion anterior', run: files.toggleRecoverList },
+  { name: 'Nuevo proyecto', keywords: 'nuevo en blanco lienzo vacio', run: files.newProject },
+  { name: 'Guardar', shortcut: 'Ctrl+S', run: () => void files.saveProject(false) },
+  { name: 'Guardar como…', shortcut: 'Ctrl+Alt+S', run: () => void files.saveProject(true) },
+  { name: 'Abrir…', shortcut: 'Ctrl+O', run: () => void files.requestOpen() },
   { name: 'Exportar GLB', keywords: 'modelo 3d gltf descargar', run: () => document.getElementById('export')!.click() },
   { name: 'Exportar OBJ', keywords: 'modelo 3d wavefront mtl atlas descargar', run: () => document.getElementById('exportObj')!.click() },
   { name: 'Exportar sprites', keywords: 'png vistas hoja spritesheet isometrico descargar', run: () => document.getElementById('exportSprites')!.click() },
@@ -3848,9 +3600,9 @@ function setGridSize(requested: number): void {
   const outside = model.all().filter((piece) => piece.faces.some((face) => face.some((p) => Math.abs(p[0]) > gridSize / 2 || Math.abs(p[2]) > gridSize / 2 || p[1] > gridSize))).length;
   // Cambiar el tamaño de la sala se guarda con el proyecto: cuenta como cambio sin guardar (al abrir un archivo se limpia después).
   if (gridSize !== before) {
-    dirty = true;
-    syncFileName();
-    scheduleAutosave();
+    files.markDirty();
+    files.syncFileName();
+    files.scheduleAutosave();
   }
   statusEl.textContent = outside > 0 ? `Malla de ${gridSize}: ${outside} pieza(s) quedan fuera; se conservan` : `Malla de ${gridSize} × ${gridSize} × ${gridSize}`;
 }
@@ -4062,12 +3814,12 @@ window.addEventListener('keydown', (e) => {
   }
   if ((e.ctrlKey || e.metaKey) && key === 's') {
     e.preventDefault();
-    void saveProject(e.altKey);
+    void files.saveProject(e.altKey);
     return;
   }
   if ((e.ctrlKey || e.metaKey) && key === 'o') {
     e.preventDefault();
-    void requestOpen();
+    void files.requestOpen();
     return;
   }
   if ((e.ctrlKey || e.metaKey) && key === 'y') {
@@ -4237,9 +3989,9 @@ const animationPanel = createAnimationPanel({
   statusEl,
   selectedPieces,
   touched: () => {
-    dirty = true;
-    scheduleAutosave();
-    syncFileName();
+    files.markDirty();
+    files.scheduleAutosave();
+    files.syncFileName();
   },
 });
 
@@ -4262,9 +4014,9 @@ function setReferences(next: RefImage[], changed = false): void {
   referenceLayer.set(references);
   renderReferenceList();
   if (changed) {
-    dirty = true;
-    syncFileName();
-    scheduleAutosave();
+    files.markDirty();
+    files.syncFileName();
+    files.scheduleAutosave();
   }
 }
 
@@ -4357,119 +4109,7 @@ refFileEl.addEventListener('change', async () => {
   }
 });
 
-/** Las últimas copias de trabajos de sesiones anteriores (la más nueva primero), guardadas aparte para poder recuperarlas sin que se cuelen en la hoja nueva. */
-const RECOVERY_KEY = 'gridfacet.recovery';
-/** Clave de la versión anterior, que guardaba una sola copia: se aprovecha al leer. */
-const PREVIOUS_KEY = 'gridfacet.previous';
-
-function readRecovery(): RecoveryEntry[] {
-  try {
-    const list = parseGenerations(localStorage.getItem(RECOVERY_KEY));
-    const legacy = localStorage.getItem(PREVIOUS_KEY);
-    if (legacy) {
-      const entry = describeEntry(legacy, 0);
-      if (entry && !list.some((e) => e.data === entry.data)) return [...list, entry].slice(0, MAX_GENERATIONS);
-    }
-    return list;
-  } catch {
-    return [];
-  }
-}
-
-/** Lee un proyecto guardado como texto y lo resume; sin piezas o ilegible da `null`. */
-function describeEntry(text: string, savedAt: number): RecoveryEntry | null {
-  try {
-    const { pieces } = parseProjectFull(text);
-    return pieces.length === 0 ? null : { data: text, pieces: pieces.length, savedAt };
-  } catch {
-    return null;
-  }
-}
-
-function writeRecovery(list: RecoveryEntry[]): void {
-  // Si no caben todas se van soltando las más viejas: más vale guardar menos que nada.
-  for (let keep = list.length; keep >= 0; keep--) {
-    try {
-      localStorage.setItem(RECOVERY_KEY, serializeGenerations(list.slice(0, keep)));
-      localStorage.removeItem(PREVIOUS_KEY);
-      return;
-    } catch {
-      // Sin espacio: se reintenta con una copia menos.
-    }
-  }
-}
-
-/**
- * Al abrir la página se empieza en una hoja en blanco: la última copia automática ya no se mete sola en la escena (se confundía con el
- * trabajo de ahora). Se aparta como una generación más (se conservan las 3 últimas) y se puede traer con «Recuperar…».
- * Una copia vacía o igual a la última generación no se guarda: dos recargas seguidas no pisan el trabajo bueno.
- */
-function stashPreviousSession(): void {
-  try {
-    const text = localStorage.getItem(AUTOSAVE_KEY);
-    if (!text) return;
-    const savedAt = Number(localStorage.getItem(AUTOSAVE_TIME_KEY)) || Date.now();
-    const entry = describeEntry(text, savedAt);
-    localStorage.removeItem(AUTOSAVE_KEY);
-    localStorage.removeItem(AUTOSAVE_TIME_KEY);
-    if (!entry) return;
-    const before = readRecovery();
-    writeRecovery(addGeneration(before, entry));
-    statusEl.textContent = `Hoja nueva. Tu trabajo anterior (${entry.pieces} piezas) sigue disponible: pulsa «Recuperar…» en Archivo`;
-  } catch {
-    // Una copia dañada o ilegible se ignora: se empieza con la escena vacía.
-  }
-}
-stashPreviousSession();
-
-/** Trae a la escena una copia de una sesión anterior. Reemplaza la hoja actual y no se puede deshacer. */
-function recoverGeneration(entry: RecoveryEntry): void {
-  try {
-    if (!confirmDiscard('¿Reemplazar la hoja actual por el trabajo anterior?')) return;
-    const project = parseProjectFull(entry.data);
-    replaceProject(project, 'Sin título', null);
-    dirty = true;
-    syncFileName();
-    statusEl.textContent = `Recuperado el trabajo anterior (${project.pieces.length} piezas). Guárdalo en un archivo para no perderlo${describeDiscarded(project.discarded) ? ` · ${describeDiscarded(project.discarded)}` : ''}`;
-  } catch (error) {
-    fileProblem(`No se pudo recuperar: ${errorText(error)}`);
-  }
-}
-
-const recoverListEl = document.getElementById('recoverList')!;
-
-/** Muestra u oculta la lista de copias recuperables, cada una con su fecha y número de piezas. */
-function toggleRecoverList(): void {
-  if (!recoverListEl.hidden) {
-    recoverListEl.hidden = true;
-    return;
-  }
-  const list = readRecovery();
-  recoverListEl.replaceChildren();
-  if (list.length === 0) {
-    statusEl.textContent = 'No hay un trabajo anterior que recuperar';
-    return;
-  }
-  for (const entry of list) {
-    const button = document.createElement('button');
-    button.textContent = describeGeneration(entry);
-    button.title = 'Traer este trabajo a la hoja actual';
-    button.addEventListener('click', () => {
-      recoverListEl.hidden = true;
-      recoverGeneration(entry);
-    });
-    recoverListEl.append(button);
-  }
-  recoverListEl.hidden = false;
-}
-document.getElementById('recover')!.addEventListener('click', toggleRecoverList);
-
-// Cerrar o recargar con cambios sin guardar: el navegador pregunta antes.
-window.addEventListener('beforeunload', (event) => {
-  if (!dirty) return;
-  event.preventDefault();
-  event.returnValue = '';
-});
+files.stashPreviousSession();
 
 function resize(): void {
   const { clientWidth: w, clientHeight: h } = container;
