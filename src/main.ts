@@ -2092,6 +2092,10 @@ const faceEditor = new FaceEditor(document.getElementById('faceEditor')!, docume
   pickColor: (c) => setColor(c),
   stillThere: (piece) => model.all().some((p) => p.id === piece.id),
   preview: (piece, faceIndex, texture) => textureLayer.preview(piece, faceIndex, texture),
+  revert: (piece) => {
+    const current = model.get(piece.id);
+    if (current && !hidden.has(current.id)) textureLayer.add(current);
+  },
   commit: (piece, faceIndex, texture) => {
     const next = withFaceTexture(piece, faceIndex, texture);
     model.apply({ added: [next], removed: [piece] });

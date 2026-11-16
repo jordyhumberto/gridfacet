@@ -290,3 +290,44 @@ describe('voltear, girar, contorno y tono', () => {
     expect(shadeColor(0x000000, false)).toBe(0);
   });
 });
+
+describe('casos degenerados', () => {
+  it('un punto con NaN no cae en ninguna casilla', () => {
+    const piece = cube();
+    const texture = textureOfFace(piece, 0);
+    expect(texelAt(piece.faces[0], texture, [NaN, 0, 0])).toBeNull();
+  });
+
+  it('stampLine con casillas fraccionarias o NaN termina (se redondean o se ignoran)', () => {
+    const texture = blankTexture(8, 8);
+    expect(stampLine(texture, 0.5, 0, 3.5, 0, 1, 0xff0000)).toBeGreaterThan(0);
+    expect(stampLine(texture, NaN, 0, 3, 0, 1, 0xff0000)).toBe(0);
+    expect(stampLine(texture, 0, 0, Infinity, 0, 1, 0xff0000)).toBe(0);
+  });
+
+  it('rellenar o reemplazar desde fuera de la textura no cambia nada (ni salta a otra fila)', () => {
+    const texture = blankTexture(4, 4);
+    texture.pixels[3] = 0x112233;
+    expect(floodFill(texture, -1, 1, 0xff0000)).toBe(0);
+    expect(floodFill(texture, 4, 0, 0xff0000)).toBe(0);
+    expect(replaceColor(texture, -1, 1, 0xff0000)).toBe(0);
+    expect(texture.pixels.filter((p) => p === 0xff0000)).toHaveLength(0);
+  });
+
+  it('withFaceTexture mantiene en paralelo colores, texturas y banderas de las demás caras', () => {
+    const piece = cube();
+    const base = withFaceTexture(piece, 1, { w: 1, h: 1, pixels: [0xabcdef] });
+    const next = withFaceTexture(base, 3, { w: 1, h: 1, pixels: [0x123456] });
+    expect(next.faceTextures).toHaveLength(piece.faces.length);
+    expect(next.faceTextures![1]?.pixels[0]).toBe(0xabcdef);
+    expect(next.faceTextures![3]?.pixels[0]).toBe(0x123456);
+    expect(next.faceTextures!.filter((t) => t).length).toBe(2);
+  });
+
+  it('girar una región fuera de la textura o editar con una región vacía devuelve null', () => {
+    const texture = blankTexture(4, 4);
+    texture.pixels[0] = 0xff0000;
+    expect(editRegion(texture, { x0: 10, y0: 10, x1: 12, y1: 12 }, 'flipH', 0)).toBeNull();
+    expect(editRegion(texture, { x0: 0, y0: 0, x1: 2, y1: 1 }, 'rotate', 0)).toBeNull();
+  });
+});

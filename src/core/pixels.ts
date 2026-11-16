@@ -12,6 +12,8 @@ export function textureOfFace(piece: Piece, faceIndex: number): FaceTexture {
 /** Casilla de la textura bajo un punto de la cara, o null si cae fuera de ella. */
 export function texelAt(face: Vec3[], texture: FaceTexture, point: Vec3): { x: number; y: number } | null {
   const [s, t] = uvOf(face, point);
+  // Un punto con NaN no está en ninguna casilla (y una casilla NaN dejaría a stampLine dando vueltas para siempre).
+  if (!Number.isFinite(s) || !Number.isFinite(t)) return null;
   if (s < -1e-6 || s > 1 + 1e-6 || t < -1e-6 || t > 1 + 1e-6) return null;
   return { x: Math.min(texture.w - 1, Math.max(0, Math.floor(s * texture.w))), y: Math.min(texture.h - 1, Math.max(0, Math.floor(t * texture.h))) };
 }
@@ -36,8 +38,11 @@ export function stamp(texture: FaceTexture, x: number, y: number, size: number, 
   return changed;
 }
 
+const inside = (texture: FaceTexture, x: number, y: number): boolean => Number.isInteger(x) && Number.isInteger(y) && x >= 0 && y >= 0 && x < texture.w && y < texture.h;
+
 /** Rellena la región de casillas del mismo valor que (x, y), sin cruzar en diagonal. Devuelve cuántas casillas cambiaron. */
 export function floodFill(texture: FaceTexture, x: number, y: number, value: number): number {
+  if (!inside(texture, x, y)) return 0;
   const target = texture.pixels[y * texture.w + x];
   if (target === value) return 0;
   const stack = [[x, y]];
@@ -68,6 +73,9 @@ export function withFaceTexture(piece: Piece, faceIndex: number, texture: FaceTe
 
 /** Pinta con `stamp` a lo largo de la recta de casilla a casilla (Bresenham), para que un arrastre rápido no deje huecos. */
 export function stampLine(texture: FaceTexture, x0: number, y0: number, x1: number, y1: number, size: number, value: number, mask?: BrushMask): number {
+  // Las casillas son enteros: con un extremo fraccionario o NaN el recorrido nunca llegaría a él.
+  if (![x0, y0, x1, y1].every(Number.isFinite)) return 0;
+  [x0, y0, x1, y1] = [x0, y0, x1, y1].map(Math.round);
   let changed = 0;
   let x = x0;
   let y = y0;
@@ -216,6 +224,7 @@ export function reshape(work: FaceTexture, base: FaceTexture, tool: ShapeTool, a
 
 /** Cambia por el nuevo color todas las casillas del mismo color visible que la de (x, y), esté pintada o sin pintar. Devuelve cuántas cambiaron. */
 export function replaceColor(texture: FaceTexture, x: number, y: number, value: number): number {
+  if (!inside(texture, x, y)) return 0;
   const target = texture.pixels[y * texture.w + x];
   if (target === value) return 0;
   let changed = 0;
