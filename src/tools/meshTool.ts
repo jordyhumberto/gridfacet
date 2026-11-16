@@ -111,6 +111,13 @@ interface Target {
 const partOf = (target: Target, p: Vec3): Part => target.parts.find((part) => part.keys.has(vertexKey(p))) ?? target.parts[0];
 /** Los vértices que eligió la persona, sin las imágenes en espejo. */
 const chosenKeys = (target: Target): Set<string> => target.parts.find((part) => !part.mirror)?.keys ?? new Set();
+/**
+ * Los vértices propios de las partes sin espejo (lo que eligió la persona). Lo que una operación deja elegido tiene que salir de aquí:
+ * si se dejaran también las imágenes en espejo, el siguiente arrastre no crearía parte espejo y los dos lados irían en la misma dirección.
+ */
+const ownKeys = (parts: Part[]): Set<string> => new Set(parts.filter((part) => !part.mirror).flatMap((part) => [...part.keys]));
+/** Las partes que no son imagen en espejo de otra. */
+const ownParts = (parts: Part[]): Part[] => parts.filter((part) => !part.mirror);
 
 const sameId = (made: Piece, old: Piece): Piece => ({ ...made, id: old.id });
 /**
@@ -1579,9 +1586,9 @@ export class MeshTool {
         current = result.piece;
         cuts++;
         faces += result.cut;
-        for (const key of result.created) select.add(key);
+        if (!part.mirror) for (const key of result.created) select.add(key);
       }
-      return current === piece ? null : { piece: sameId(current, piece), select };
+      return current === piece ? null : { piece: sameId(current, piece), select: select.size > 0 ? this.oneSide(select, current, piece, parts) : ownKeys(parts) };
     });
     this.host.status(cuts > 0 ? `Corte en anillo: ${faces} cara(s) partidas${cuts > 1 ? ` en ${cuts} anillos (el espejo también)` : ''}; los vértices nuevos quedan elegidos` : 'Corte en anillo: elige los dos vértices de una arista (que dé paso a caras de cuatro lados)');
   }
@@ -1599,9 +1606,9 @@ export class MeshTool {
         if (!result) continue;
         current = result.piece;
         done++;
-        for (const key of result.created) select.add(key);
+        if (!part.mirror) for (const key of result.created) select.add(key);
       }
-      return current === piece ? null : { piece: sameId(current, piece), select };
+      return current === piece ? null : { piece: sameId(current, piece), select: select.size > 0 ? this.oneSide(select, current, piece, parts) : ownKeys(parts) };
     });
     this.host.status(done > 0 ? `Biselar: ${done} arista(s) biseladas (los vértices nuevos quedan elegidos)` : 'Biselar: elige los dos vértices de una arista que acaben en esquinas de tres caras, y un tamaño menor que los segmentos vecinos');
   }
@@ -1631,7 +1638,10 @@ export class MeshTool {
       if (!result) return null;
       any = true;
       count += faces.length;
-      return { piece: sameId(result.piece, piece), select: result.keys };
+      // Quedan elegidos los vértices de arriba de las caras de quien eligió (la cara extruida conserva su posición en la lista), no los del espejo.
+      const own = new Set<string>();
+      for (const i of facesOfParts(piece, ownParts(parts))) for (const p of result.piece.faces[i]) own.add(vertexKey(p));
+      return { piece: sameId(result.piece, piece), select: own.size > 0 ? this.oneSide(own, result.piece, piece, parts) : ownKeys(parts) };
     });
     this.host.status(any ? `Extruir cara: ${count} cara(s) subidas ${+distance.toFixed(3)}; los vértices de arriba quedan elegidos para moverlos` : 'Extruir cara: elige todos los vértices de la cara');
   }
@@ -1649,11 +1659,11 @@ export class MeshTool {
         const result = extrudeEdge(current, part.full, distance);
         if (!result) continue;
         current = result.piece;
-        for (const key of result.keys) select.add(key);
+        if (!part.mirror) for (const key of result.keys) select.add(key);
       }
-      if (select.size === 0) return null;
+      if (current === piece) return null;
       any = true;
-      return { piece: sameId(current, piece), select };
+      return { piece: sameId(current, piece), select: select.size > 0 ? this.oneSide(select, current, piece, parts) : ownKeys(parts) };
     });
     this.host.status(any ? `Cara desde segmento: creció ${+distance.toFixed(3)}; mueve los dos vértices nuevos, que quedan elegidos` : 'Cara desde segmento: elige exactamente dos vértices de una pieza');
   }
@@ -1663,7 +1673,7 @@ export class MeshTool {
     let split = 0;
     // Con simetría, `keys` trae los elegidos y también sus imágenes en el espejo (cuatro vértices en una misma cara no se pueden unir de dos en dos
     // sin saber cuáles): cada grupo se une por separado, con sus propios vértices, y la cara se vuelve a mirar tras cada corte.
-    this.change((piece, keys, _dirAt, parts) => {
+    this.change((piece, _keys, _dirAt, parts) => {
       let current = piece;
       let here = 0;
       for (const part of parts) {
@@ -1674,7 +1684,7 @@ export class MeshTool {
       }
       if (here === 0) return null;
       split += here;
-      return { piece: sameId(current, piece), select: new Set(keys) };
+      return { piece: sameId(current, piece), select: ownKeys(parts) };
     });
     this.host.status(
       split > 0
@@ -1688,7 +1698,7 @@ export class MeshTool {
   /** Con dos vértices elegidos que forman un segmento entre dos caras del mismo plano, quita el segmento: las dos caras pasan a ser una. */
   dissolveSelected(): void {
     let joined = 0;
-    this.change((piece, keys, _dirAt, parts) => {
+    this.change((piece, _keys, _dirAt, parts) => {
       let current = piece;
       let here = 0;
       // Como en Trazar segmento: con simetría, cada grupo (los elegidos y cada espejo) quita su propio segmento.
@@ -1700,7 +1710,7 @@ export class MeshTool {
       }
       if (here === 0) return null;
       joined += here;
-      return { piece: sameId(current, piece), select: new Set(keys) };
+      return { piece: sameId(current, piece), select: ownKeys(parts) };
     });
     this.host.status(
       joined > 0
@@ -1738,7 +1748,7 @@ export class MeshTool {
     }
     let straightened = 0;
     let flattened = false;
-    this.change((piece, keys, _dirAt, parts) => {
+    this.change((piece, _keys, _dirAt, parts) => {
       let current = piece;
       const landing = new Map<string, Vec3>();
       for (const part of parts) {
@@ -1759,7 +1769,7 @@ export class MeshTool {
       straightened += landing.size;
       // La selección sigue a los vértices a su sitio nuevo.
       const select = new Set<string>();
-      for (const key of keys) {
+      for (const key of ownKeys(parts)) {
         const to = landing.get(key);
         select.add(to ? vertexKey(to) : key);
       }
@@ -1781,7 +1791,7 @@ export class MeshTool {
   flattenSelected(): void {
     let flattened = 0;
     let crushed = false;
-    this.change((piece, keys, _dirAt, parts) => {
+    this.change((piece, _keys, _dirAt, parts) => {
       let current = piece;
       const landing = new Map<string, Vec3>();
       for (const part of parts) {
@@ -1798,7 +1808,7 @@ export class MeshTool {
       if (landing.size === 0) return null;
       flattened += landing.size;
       const select = new Set<string>();
-      for (const key of keys) {
+      for (const key of ownKeys(parts)) {
         const to = landing.get(key);
         select.add(to ? vertexKey(to) : key);
       }
@@ -2095,6 +2105,41 @@ export class MeshTool {
     }
     this.commitVertex(edits, piece.id, result.vertex);
     return true;
+  }
+
+  /**
+   * De los vértices que creó una operación, deja los de un solo lado del espejo: cuando un mismo corte atraviesa el plano (un anillo, un bisel
+   * que cruza) crea también las imágenes en espejo de los suyos, y dejarlos todos elegidos haría que el siguiente arrastre moviera los dos lados
+   * en la misma dirección. De cada pareja se queda el vértice más cercano al centro de lo que se eligió.
+   */
+  private oneSide(created: Set<string>, made: Piece, original: Piece, parts: Part[]): Set<string> {
+    const mirrors = reflections(this.host.symmetry());
+    if (mirrors.length === 0 || created.size < 2) return created;
+    const chosen = ownKeys(parts);
+    const centre: Vec3 = [0, 0, 0];
+    let n = 0;
+    for (const p of uniqueVertices(original)) {
+      if (!chosen.has(vertexKey(p))) continue;
+      for (let k = 0; k < 3; k++) centre[k] += p[k];
+      n++;
+    }
+    if (n === 0) return created;
+    for (let k = 0; k < 3; k++) centre[k] /= n;
+    const kept = new Set<string>();
+    for (const p of uniqueVertices(made)) {
+      const key = vertexKey(p);
+      if (!created.has(key)) continue;
+      const mine = distance3(p, centre);
+      const loses = mirrors.some((mirror) => {
+        const image = mirror.point(p);
+        const imageKey = vertexKey(image);
+        if (imageKey === key || !created.has(imageKey)) return false;
+        const theirs = distance3(image, centre);
+        return theirs < mine - 1e-9 || (Math.abs(theirs - mine) <= 1e-9 && imageKey < key);
+      });
+      if (!loses) kept.add(key);
+    }
+    return kept.size > 0 ? kept : created;
   }
 
   /**

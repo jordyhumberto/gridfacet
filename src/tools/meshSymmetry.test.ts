@@ -174,3 +174,114 @@ describe('teclas de Malla sin vértices elegidos', () => {
     }
   });
 });
+
+/** Simula un arrastre de los vértices elegidos (con sus imágenes en espejo) y lo suelta. */
+function dragChosen(tool: MeshTool, delta: Vec3): void {
+  const inner = tool as unknown as { buildTargets: () => unknown[]; pendingBefore: unknown; drag: unknown; preview: (d: Vec3) => void; finishDrag: (commit: boolean) => void; selection: Map<number, Set<string>> };
+  inner.pendingBefore = new Map([...inner.selection].map(([id, keys]) => [id, new Set(keys)]));
+  inner.drag = { targets: inner.buildTargets(), anchor: [0, 0, 0], plane: null, grab: null, startX: 0, startY: 0, moved: true, delta };
+  inner.preview(delta);
+  inner.finishDrag(true);
+}
+
+/** Posiciones de los vértices elegidos de la pieza. */
+function chosenPositions(model: ModelScene, tool: MeshTool): Vec3[] {
+  const selection = (tool as unknown as { selection: Map<number, Set<string>> }).selection;
+  return [...selection].flatMap(([id, keys]) => uniqueVertices(model.get(id)!).filter((p) => keys.has(vertexKey(p))));
+}
+
+describe('la elección tras una operación se queda en el lado elegido (no crece al espejo)', () => {
+  const extremes = (model: ModelScene) => {
+    const verts = uniqueVertices(model.all()[0]);
+    return { right: Math.max(...verts.map((p) => p[0])), top: Math.max(...verts.map((p) => p[1])), bottom: Math.min(...verts.map((p) => p[1])), front: Math.max(...verts.map((p) => p[2])), back: Math.min(...verts.map((p) => p[2])) };
+  };
+  /** Cada caso elige vértices de la derecha, ejecuta la operación y dice si el resultado tiene que ser simétrico. */
+  const cases: { name: string; prepare?: (model: ModelScene) => void; run: (s: ReturnType<typeof setup>) => void; symmetric: boolean }[] = [
+    {
+      name: 'Trazar segmento (U)',
+      run: ({ model, tool, choose }) => {
+        const e = extremes(model);
+        choose((p) => p[0] === e.right && ((p[1] === e.top && p[2] === e.front) || (p[1] === e.bottom && p[2] === e.back)));
+        tool.connectSelected();
+      },
+      symmetric: true,
+    },
+    {
+      name: 'Alinear en línea (L)',
+      run: ({ model, tool, choose }) => {
+        const e = extremes(model);
+        choose((p) => p[0] === e.right);
+        tool.straightenSelected();
+      },
+      symmetric: true,
+    },
+    {
+      name: 'Aplanar en plano (P)',
+      prepare: (model) => {
+        const e = extremes(model);
+        // Se tuerce de forma simétrica una esquina de cada lado para que haya algo que aplanar.
+        const piece = model.all()[0];
+        const corner = (x: number): Vec3 => uniqueVertices(piece).find((p) => p[0] === x && p[1] === e.top && p[2] === e.front)!;
+        const twisted = moveVertices(moveVertices(piece, new Set([vertexKey(corner(e.right))]), [0.2, 0, 0])!, new Set([vertexKey(corner(-e.right))]), [-0.2, 0, 0])!;
+        model.apply({ added: [twisted], removed: [piece] });
+      },
+      run: ({ tool, choose }) => {
+        choose((p) => p[0] > 0);
+        tool.flattenSelected();
+      },
+      symmetric: true,
+    },
+    {
+      name: 'Extruir cara',
+      run: ({ model, tool, choose }) => {
+        const e = extremes(model);
+        choose((p) => p[0] === e.right);
+        tool.extrudeSelected(0.5);
+      },
+      symmetric: true,
+    },
+    {
+      name: 'Cara desde segmento',
+      run: ({ model, tool, choose }) => {
+        const e = extremes(model);
+        choose((p) => p[0] === e.right && p[1] === e.top);
+        tool.growFaceFromEdge(0.5);
+      },
+      symmetric: true,
+    },
+    {
+      name: 'Biselar',
+      run: ({ model, tool, choose }) => {
+        const e = extremes(model);
+        choose((p) => p[0] === e.right && p[1] === e.top);
+        tool.bevelSelected();
+      },
+      symmetric: true,
+    },
+    {
+      name: 'Corte en anillo',
+      run: ({ model, tool, choose }) => {
+        const e = extremes(model);
+        choose((p) => p[0] === e.right && p[2] === e.front);
+        tool.ringCutSelected();
+      },
+      symmetric: true,
+    },
+  ];
+
+  for (const { name, prepare, run, symmetric } of cases) {
+    it(`${name}: los vértices elegidos siguen en un solo lado y un arrastre deja el modelo simétrico`, () => {
+      const s = setup();
+      prepare?.(s.model);
+      const depth = s.model.undoDepth;
+      run(s);
+      expect(s.model.undoDepth).toBeGreaterThan(depth);
+      if (symmetric) expect(isSymmetric(s.model.all())).toBe(true);
+      const chosen = chosenPositions(s.model, s.tool);
+      expect(chosen.length).toBeGreaterThan(0);
+      expect(chosen.every((p) => p[0] >= -1e-9)).toBe(true);
+      dragChosen(s.tool, [0.1, 0.05, 0.05]);
+      if (symmetric) expect(isSymmetric(s.model.all())).toBe(true);
+    });
+  }
+});

@@ -359,7 +359,7 @@ Marcar cada tarea al fusionar su PR. Si un defecto `[leído]` no se reproduce, p
 | 1.4 Supr en Malla | hecha | rama fix/plan-revision | Reproducido (`handleKey` devolvía false). En Malla Supr/Retroceso nunca borran piezas; Retroceso tampoco en Cortar, Rellenar y Figura (Supr sí sigue borrando la selección ahí, porque el plan solo cita Retroceso) |
 | 1.5 Capa al editar | hecha | rama fix/plan-revision | `apply` solo asigna la capa activa si el cambio no quita piezas (las derivadas conservan la suya) |
 | 1.6 Grupos al abrir | hecha | rama fix/plan-revision | `reserveGroupIds` en `core/piece.ts`; se llama desde `replaceProject` (abrir, nuevo y recuperar). Pegar no lo necesita: usa `newGroupId` y el contador ya va por delante |
-| 2.1 Elección crece al espejo | pendiente | | |
+| 2.1 Elección crece al espejo | hecha | rama fix/plan-revision | Reproducido. `ownKeys(parts)` y `oneSide` en `meshTool.ts`: conectar, quitar segmento, alinear, aplanar, extruir, cara desde segmento, biselar y anillo dejan elegido solo el lado de quien eligió (en el anillo y el bisel que cruzan el plano, de cada pareja espejo se queda la más cercana a lo elegido) |
 | 2.2 Simetrizar conserva el id | pendiente | | |
 | 2.3 Simetrizar y piezas que comparten vértice | pendiente | | |
 | 2.4 Bisel todo o nada | pendiente | | |
