@@ -73,9 +73,9 @@ export function faceColorOf(piece: Piece, index: number): number {
   return piece.faceColors?.[index] ?? piece.color;
 }
 
-/** Guarda los colores por cara solo si alguno difiere del de la pieza. */
-function normalizeFaceColors(color: number, faceColors: number[] | undefined): number[] | undefined {
-  return faceColors && faceColors.some((c) => c !== color) ? faceColors : undefined;
+/** Guarda los colores por cara solo si alguno difiere del de la pieza y hay uno por cada cara. */
+function normalizeFaceColors(color: number, faceColors: number[] | undefined, faceCount: number): number[] | undefined {
+  return faceColors && faceColors.length === faceCount && faceColors.some((c) => c !== color) ? faceColors : undefined;
 }
 
 export interface Plane {
@@ -91,7 +91,7 @@ let nextId = 1;
 
 export function makePiece(faces: Vec3[][], color: number, faceColors?: number[], faceTextures?: (FaceTexture | null | undefined)[], faceFlags?: (number | undefined)[]): Piece {
   const piece: Piece = { id: nextId++, faces, color };
-  const painted = normalizeFaceColors(color, faceColors);
+  const painted = normalizeFaceColors(color, faceColors, faces.length);
   if (painted) piece.faceColors = painted;
   const textures = normalizeTextures(faceTextures);
   if (textures && textures.length === faces.length) piece.faceTextures = textures;

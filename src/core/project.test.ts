@@ -90,3 +90,52 @@ describe('vértices canónicos al abrir', () => {
     expect([...byKey.values()].every((values) => values.size === 1)).toBe(true);
   });
 });
+
+describe('archivos dañados', () => {
+  const head = '{"format":"gridfacet","version":1';
+  const cubeJson = (color: number) => JSON.stringify(buildPiece(CATALOG[0], 0, 0, 0, 0, color).faces);
+
+  it('una cara con un vértice no numérico se descarta y el resto se carga', () => {
+    const faces = JSON.parse(cubeJson(1)) as unknown[];
+    faces[0] = [[0, 0, 0], [1, 0, 0], [1, 'x', 1]];
+    const text = `${head},"pieces":[{"color":1,"faces":${JSON.stringify(faces)}}]}`;
+    const loaded = parseProjectFull(text);
+    expect(loaded.pieces).toHaveLength(1);
+    expect(loaded.pieces[0].faces).toHaveLength(5);
+    expect(loaded.discarded).toEqual({ pieces: 0, faces: 1 });
+  });
+
+  it('al descartar una cara, los colores por cara siguen en paralelo', () => {
+    const faces = JSON.parse(cubeJson(1)) as unknown[];
+    faces[0] = [[0, 0, 0], [1, 0, 0], [null, 0, 1]];
+    const colors = [10, 11, 12, 13, 14, 15];
+    const text = `${head},"pieces":[{"color":1,"faces":${JSON.stringify(faces)},"faceColors":${JSON.stringify(colors)}}]}`;
+    expect(parseProjectFull(text).pieces[0].faceColors).toEqual([11, 12, 13, 14, 15]);
+  });
+
+  it('una pieza dañada se descarta y las demás se cargan', () => {
+    const text = `${head},"pieces":[{"color":"rojo","faces":${cubeJson(1)}},{"color":2,"faces":${cubeJson(2)}}]}`;
+    const loaded = parseProjectFull(text);
+    expect(loaded.pieces).toHaveLength(1);
+    expect(loaded.pieces[0].color).toBe(2);
+    expect(loaded.discarded.pieces).toBe(1);
+  });
+
+  it('una entrada nula en las capas no rompe el archivo ni deja el proyecto a medias', async () => {
+    const { Layers } = await import('./layers');
+    const text = `${head},"pieces":[{"color":2,"faces":${cubeJson(2)}}],"layers":{"layers":[null,{"id":2,"name":"Pelo"}],"active":2}}`;
+    const loaded = parseProjectFull(text);
+    expect(loaded.layers?.layers?.every((l) => l !== null)).toBe(true);
+    const manager = new Layers();
+    expect(() => manager.load(loaded.layers, loaded.pieces)).not.toThrow();
+    expect(() => manager.load({ layers: [null as never, { id: 3 }], active: 3 })).not.toThrow();
+  });
+});
+
+describe('describeDiscarded', () => {
+  it('dice qué se dejó fuera y calla si no hubo nada', async () => {
+    const { describeDiscarded } = await import('./project');
+    expect(describeDiscarded({ pieces: 0, faces: 0 })).toBe('');
+    expect(describeDiscarded({ pieces: 1, faces: 3 })).toBe('Se descartaron 1 pieza dañada y 3 caras dañadas del archivo');
+  });
+});

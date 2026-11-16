@@ -16,7 +16,7 @@ import { STEP_XZ, STEP_Y, mirrorChange, mirrorCopyChange, moveChange, rotateChan
 import { alignChange, distributeChange, groundChange, partsOf, resizeLongestChange } from './core/arrange';
 import { searchCommands, type Command } from './core/commands';
 import { parseHexColors, parsePalettes, toHexText, upsertPalette, type Palette } from './core/palettes';
-import { parseProjectFull, serializeProject } from './core/project';
+import { describeDiscarded, parseProjectFull, serializeProject } from './core/project';
 import { defaultReference, nextReferenceId, withPlane, type RefImage, type RefPlane } from './core/references';
 import { ReferenceLayer, loadReferenceFile } from './render/references';
 import { groupCentre, emptyAnimation, pruneTracks, removeKey, resize as resizeAnimation, sampleTrack, setKey, trackOf, MAX_FPS, MAX_FRAMES, type Animation, type Pose } from './core/animation';
@@ -3375,6 +3375,8 @@ async function openProject(file: File, handle: FileHandle | null = null): Promis
     const project = parseProjectFull(await file.text());
     replaceProject(project, file.name, handle);
     statusEl.textContent = `Abierto ${file.name} (${project.pieces.length} piezas)`;
+    const lost = describeDiscarded(project.discarded);
+    if (lost) statusEl.textContent += ` · ${lost}`;
     // Vértices que parecen soldados y no lo están: se avisa, sin tocar nada.
     const near = project.pieces.reduce((sum, piece) => sum + nearVertexCount(piece, WELD_DISTANCE), 0);
     if (near > 0) statusEl.textContent += ` · ${near} ${near === 1 ? 'vértice casi encima de otro' : 'vértices casi encima de otro'}: Soldar cercanos (en Malla) los junta`;
@@ -3391,7 +3393,7 @@ function confirmDiscard(question: string): boolean {
 /** Empieza de cero: lienzo en blanco sin piezas, capas, animación ni referencias, y sin archivo vinculado. No se puede deshacer. */
 function newProject(): void {
   if (!confirmDiscard('¿Empezar un proyecto nuevo de todas formas?')) return;
-  replaceProject({ pieces: [], marks: [], references: [] }, 'Sin título', null);
+  replaceProject({ pieces: [], marks: [], references: [], discarded: { pieces: 0, faces: 0 } }, 'Sin título', null);
   statusEl.textContent = 'Proyecto nuevo en blanco';
 }
 
@@ -4120,7 +4122,9 @@ setInterval(updateHint, 120);
 const COLLAPSE_KEY = 'gridfacet.collapsed';
 let collapsed: string[] = [];
 try {
-  collapsed = JSON.parse(localStorage.getItem(COLLAPSE_KEY) ?? '[]');
+  const saved: unknown = JSON.parse(localStorage.getItem(COLLAPSE_KEY) ?? '[]');
+  // Lo guardado puede estar dañado o ser de otra versión: solo vale una lista de textos.
+  collapsed = Array.isArray(saved) ? saved.filter((name): name is string => typeof name === 'string') : [];
 } catch {
   collapsed = [];
 }
@@ -5087,7 +5091,7 @@ function recoverGeneration(entry: RecoveryEntry): void {
     replaceProject(project, 'Sin título', null);
     dirty = true;
     syncFileName();
-    statusEl.textContent = `Recuperado el trabajo anterior (${project.pieces.length} piezas). Guárdalo en un archivo para no perderlo`;
+    statusEl.textContent = `Recuperado el trabajo anterior (${project.pieces.length} piezas). Guárdalo en un archivo para no perderlo${describeDiscarded(project.discarded) ? ` · ${describeDiscarded(project.discarded)}` : ''}`;
   } catch (error) {
     fileProblem(`No se pudo recuperar: ${errorText(error)}`);
   }
