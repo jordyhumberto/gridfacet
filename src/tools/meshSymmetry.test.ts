@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { CATALOG, buildPiece } from '../core/catalog';
 import type { Piece, Vec3 } from '../core/piece';
 import { translatePiece } from '../core/transform';
-import { moveVertices, uniqueVertices, vertexKey } from '../core/vertices';
+import { moveVertices, scaleAbout, splitEdge, uniqueVertices, vertexKey } from '../core/vertices';
 import { ModelScene } from '../scene';
 import { MeshTool } from './meshTool';
 
@@ -402,5 +402,41 @@ describe('un arrastre sin desplazamiento', () => {
     inner.modal.moved = true;
     inner.finishModal(true);
     expect(model.undoDepth).toBe(depth);
+  });
+});
+
+describe('un vértice sobre el plano de simetría no se sale de él', () => {
+  /** Un cubo con un vértice puesto en medio de la arista de arriba y delante, justo sobre el plano X=0. */
+  function withPlaneVertex() {
+    const s = setup();
+    const piece = s.model.all()[0];
+    const verts = uniqueVertices(piece);
+    const right = Math.max(...verts.map((p) => p[0]));
+    const top = Math.max(...verts.map((p) => p[1]));
+    const front = Math.max(...verts.map((p) => p[2]));
+    const back = Math.min(...verts.map((p) => p[2]));
+    const a = verts.find((p) => p[0] === -right && p[1] === top && p[2] === front)!;
+    const b = verts.find((p) => p[0] === right && p[1] === top && p[2] === front)!;
+    const split = splitEdge(piece, a, b, 0.5)!;
+    s.model.apply({ added: [{ ...split.piece, id: piece.id }], removed: [piece] });
+    s.choose((p) => (Math.abs(p[0]) < 1e-9 && p[1] === top && p[2] === front) || (p[0] === right && p[1] === top && p[2] === back));
+    return { ...s, top, front, right };
+  }
+  const near = (list: Vec3[], q: Vec3) => list.some((p) => Math.hypot(p[0] - q[0], p[1] - q[1], p[2] - q[2]) < 1e-6);
+
+  it('al arrastrar por el otro vértice, el del plano conserva su X', () => {
+    const { model, tool, top, front } = withPlaneVertex();
+    dragChosen(tool, [0.2, 0.1, 0]);
+    const verts = uniqueVertices(model.all()[0]);
+    expect(near(verts, [0, top + 0.1, front])).toBe(true);
+    expect(isSymmetric(model.all())).toBe(true);
+  });
+
+  it('al escalar o girar con esa elección, el del plano conserva su X', () => {
+    const { model, tool, top, front } = withPlaneVertex();
+    const inner = tool as unknown as { buildTargets: () => unknown[]; previewMap: (targets: unknown[], map: (p: Vec3) => Vec3) => void };
+    inner.previewMap(inner.buildTargets(), (p) => scaleAbout(p, [0.3, 0, 0], [1.5, 1.5, 1.5]));
+    expect(near(uniqueVertices(model.all()[0]), [0, top * 1.5, front * 1.5])).toBe(true);
+    expect(isSymmetric(model.all())).toBe(true);
   });
 });

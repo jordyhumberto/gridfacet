@@ -365,7 +365,7 @@ Marcar cada tarea al fusionar su PR. Si un defecto `[leído]` no se reproduce, p
 | 2.4 Bisel todo o nada | hecha | rama fix/plan-revision | Reproducido (cubo de 1, tamaño 0,6: 7 caras). `bevelSelected` prueba antes en una copia (`bevelParts`) y, si algún lado no cabe, no aplica nada y da el máximo (búsqueda binaria, redondeado hacia abajo a centésimas); si el espejo comparte un extremo lo dice |
 | 2.5 Teclas durante un arrastre | hecha | rama fix/plan-revision | Reproducido. `MeshTool.busy` (arrastre, modal o recuadro): `handleKey` ignora Ctrl+Z/Ctrl+Y/Supr/Retroceso, R y T no arrancan con el recuadro, `change`, `beginTransform`, `symmetrizeAll` y `bevelSelected` no hacen nada, y `undo`/`redo` y los botones del panel de `main.ts` también se detienen |
 | 2.6 Paso de deshacer vacío | hecha | rama fix/plan-revision | Reproducido. `ModelScene.commitPreview` descarta las piezas cuya geometría no cambió (`sameGeometry`) y no anota ni borra el rehacer; `finishDrag` y `finishModal` solo anotan la elección si el historial subió |
-| 2.7 Vértices del plano | pendiente | | |
+| 2.7 Vértices del plano | hecha | rama fix/plan-revision | Reproducido. `keepPlanes` en `meshTool.ts`: con simetría, todo vértice a menos de `MIRROR_TOLERANCE` de un plano activo conserva esa coordenada en el arrastre, giro, escala y deformaciones (vale para cualquier vértice, no solo el agarrado); conserva la coordenada que tenía, no la lleva al centro |
 | 2.8 Pequeños de Malla | pendiente | | |
 | 3.1 Tecla E | pendiente | | |
 | 3.2 Atajos en Malla | pendiente | | |

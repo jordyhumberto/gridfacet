@@ -921,13 +921,31 @@ export class MeshTool {
     return (prepared && placeVertices(prepared, target.keys, to, true)) || moved;
   }
 
+  /**
+   * Con simetría, un vértice que está sobre un plano de espejo (a menos de MIRROR_TOLERANCE) conserva esa coordenada: es su propia imagen, y si se
+   * saliera del plano la pieza dejaría de ser simétrica. Vale para el arrastre y para girar, escalar y deformar, sea cual sea el vértice agarrado.
+   */
+  private keepPlanes(to: (p: Vec3) => Vec3): (p: Vec3) => Vec3 {
+    const sym = this.host.symmetry();
+    const axes = ([sym.x, sym.y, sym.z] as const).map((on, i) => (on ? i : -1)).filter((i) => i >= 0);
+    if (axes.length === 0) return to;
+    return (p) => {
+      const q = to(p);
+      for (const i of axes) if (Math.abs(p[i] - sym.center[i]) < MIRROR_TOLERANCE) q[i] = p[i];
+      return q;
+    };
+  }
+
   /** Las piezas con los vértices desplazados (null si una desaparece). */
   private placed(targets: Target[], delta: Vec3): (Piece | null)[] {
     return targets.map((target) =>
-      this.place(target, (p) => {
-        const d = partOf(target, p).dir(delta);
-        return [p[0] + d[0], p[1] + d[1], p[2] + d[2]];
-      }),
+      this.place(
+        target,
+        this.keepPlanes((p) => {
+          const d = partOf(target, p).dir(delta);
+          return [p[0] + d[0], p[1] + d[1], p[2] + d[2]];
+        }),
+      ),
     );
   }
 
@@ -955,10 +973,11 @@ export class MeshTool {
     const drag = this.drag!;
     this.showGuide([drag.anchor[0] + delta[0], drag.anchor[1] + delta[1], drag.anchor[2] + delta[2]]);
     // La selección sigue a los vértices movidos (cambian de clave al cambiar de sitio) antes de avisar al modelo, que la revisa.
-    const shifted = (target: Target) => (p: Vec3): Vec3 => {
-      const d = partOf(target, p).dir(delta);
-      return [p[0] + d[0], p[1] + d[1], p[2] + d[2]];
-    };
+    const shifted = (target: Target) =>
+      this.keepPlanes((p: Vec3): Vec3 => {
+        const d = partOf(target, p).dir(delta);
+        return [p[0] + d[0], p[1] + d[1], p[2] + d[2]];
+      });
     for (const target of drag.targets) {
       if (!this.selection.has(target.original.id)) continue;
       const chosen = chosenKeys(target);
@@ -1390,19 +1409,23 @@ export class MeshTool {
   /** Las piezas con cada vértice elegido llevado por `map` (las imágenes en espejo reciben la transformación reflejada). */
   private placedMap(targets: Target[], map: (p: Vec3) => Vec3): (Piece | null)[] {
     return targets.map((target) =>
-      this.place(target, (p) => {
-        const { mirror } = partOf(target, p);
-        return mirror ? mirror(map(mirror(p))) : map(p);
-      }),
+      this.place(
+        target,
+        this.keepPlanes((p) => {
+          const { mirror } = partOf(target, p);
+          return mirror ? mirror(map(mirror(p))) : map(p);
+        }),
+      ),
     );
   }
 
   /** Coloca las piezas en su estado inicial con cada vértice elegido llevado por `map` (las imágenes en espejo reciben la transformación reflejada). */
   private previewMap(targets: Target[], map: (p: Vec3) => Vec3): void {
-    const placed = (target: Target) => (p: Vec3): Vec3 => {
-      const { mirror } = partOf(target, p);
-      return mirror ? mirror(map(mirror(p))) : map(p);
-    };
+    const placed = (target: Target) =>
+      this.keepPlanes((p: Vec3): Vec3 => {
+        const { mirror } = partOf(target, p);
+        return mirror ? mirror(map(mirror(p))) : map(p);
+      });
     for (const target of targets) {
       if (!this.selection.has(target.original.id)) continue;
       const to = placed(target);
