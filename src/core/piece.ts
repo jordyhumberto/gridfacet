@@ -112,6 +112,13 @@ const norm = (a: Vec3): Vec3 => {
   return [a[0] / l, a[1] / l, a[2] / l];
 };
 
+/** Centro (media de los vértices) de una cara. */
+export const faceCentre = (face: Vec3[]): Vec3 => [
+  face.reduce((s, q) => s + q[0], 0) / face.length,
+  face.reduce((s, q) => s + q[1], 0) / face.length,
+  face.reduce((s, q) => s + q[2], 0) / face.length,
+];
+
 /** Normal de una cara (método de Newell, sin normalizar). */
 export function faceNormal(face: Vec3[]): Vec3 {
   const n: Vec3 = [0, 0, 0];

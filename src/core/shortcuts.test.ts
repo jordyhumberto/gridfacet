@@ -1,5 +1,6 @@
+import html from '../../index.html?raw';
 import { describe, expect, it } from 'vitest';
-import { ALL_MODES, SHORTCUTS, clashes, ctrlBeatsField, escLeavesTool, freeKeys, isTextField, meshIgnoresKey, shortcutsFor, toolForKey, toolKey, undoRedoKey, verticalMoveKey } from './shortcuts';
+import { ACTIONS, ALL_MODES, SHORTCUTS, clashes, ctrlBeatsField, escLeavesTool, freeKeys, isPanMode, isTextField, keyLabel, matchNumpad, matchShortcuts, meshIgnoresKey, shortcutLabel, shortcutsFor, toolForKey, toolKey, undoRedoKey, verticalMoveKey, type KeyLike, type KeyMode } from './shortcuts';
 
 describe('atajos estándar', () => {
   it('Ctrl+Z deshace, Ctrl+Mayús+Z y Ctrl+Y rehacen', () => {
@@ -108,5 +109,165 @@ describe('la tabla de atajos', () => {
       const leaves = shortcutsFor(mode).some((s) => s.key === 'escape' && s.description === 'volver a Colocar');
       expect(leaves, mode).toBe(escLeavesTool(mode));
     }
+  });
+});
+
+const ev = (key: string, mods: Partial<KeyLike> = {}): KeyLike => ({ key, ...mods });
+const actionsOf = (e: KeyLike, mode: KeyMode): string[] => matchShortcuts(e, mode).map((row) => row.action!);
+
+describe('la tabla ejecuta las acciones', () => {
+  it('toda fila de la aplicación apunta a una acción y las de Malla no', () => {
+    for (const s of SHORTCUTS) {
+      if (s.by === 'mesh') expect(s.action, `${s.key} (Malla)`).toBeUndefined();
+      else expect(ACTIONS, `${s.key}: ${s.description}`).toContain(s.action);
+    }
+  });
+
+  it('toda acción tiene al menos una fila', () => {
+    const used = new Set(SHORTCUTS.map((s) => s.action));
+    for (const id of ACTIONS) expect(used.has(id), id).toBe(true);
+  });
+
+  it('una tecla da las filas por orden: las que piden Alt o Mayús, primero', () => {
+    expect(actionsOf(ev('z', { ctrlKey: true }), 'place')).toEqual(['undo']);
+    expect(actionsOf(ev('z', { ctrlKey: true, shiftKey: true }), 'place')).toEqual(['redo', 'undo']);
+    expect(actionsOf(ev('y', { ctrlKey: true }), 'place')).toEqual(['redo']);
+    expect(actionsOf(ev('s', { ctrlKey: true, altKey: true }), 'place')).toEqual(['saveAs', 'save']);
+    expect(actionsOf(ev('o', { altKey: true }), 'place')).toEqual(['showHidden', 'hideSelected']);
+    expect(actionsOf(ev('o'), 'place')).toEqual(['hideSelected']);
+    expect(actionsOf(ev('g', { ctrlKey: true, altKey: true }), 'place')).toEqual(['ungroup', 'group']);
+  });
+
+  it('Cmd vale como Ctrl, y Mayús se ignora donde no se pide', () => {
+    expect(actionsOf(ev('s', { metaKey: true }), 'place')).toEqual(['save']);
+    expect(actionsOf(ev('x', { shiftKey: true }), 'place')).toEqual(['toggleSymmetry']);
+    expect(actionsOf(ev('c'), 'place')).toEqual(['toggleTool']);
+    expect(actionsOf(ev('c', { ctrlKey: true }), 'place')).toEqual(['copy', 'copyPixels']);
+    expect(actionsOf(ev('v', { ctrlKey: true }), 'place')).toEqual(['paste', 'pastePixels']);
+  });
+
+  it('con Ctrl solo siguen las filas de Ctrl y las flechas; con Alt, solo R, O y las flechas', () => {
+    expect(actionsOf(ev('b', { ctrlKey: true }), 'place')).toEqual([]);
+    expect(actionsOf(ev('b', { altKey: true }), 'place')).toEqual([]);
+    expect(actionsOf(ev('r', { altKey: true }), 'place')).toEqual(['rotatePlace']);
+    expect(actionsOf(ev('r', { altKey: true }), 'select')).toEqual(['rotateSelection', 'rotateSelection']);
+    expect(actionsOf(ev('ArrowUp', { ctrlKey: true }), 'place')).toEqual(['panCamera', 'moveSelection']);
+    expect(actionsOf(ev('ArrowUp', { altKey: true }), 'place')).toEqual(['tumbleSelection', 'panCamera', 'moveSelection']);
+    expect(actionsOf(ev('PageUp', { ctrlKey: true }), 'place')).toEqual(['moveVertical']);
+    expect(actionsOf(ev('Escape', { ctrlKey: true }), 'place')).toEqual([]);
+  });
+
+  it('las flechas mueven la cámara siempre en las herramientas de puntos y en Malla; en las demás, según haya selección', () => {
+    for (const mode of ALL_MODES) {
+      const rows = actionsOf(ev('ArrowLeft'), mode);
+      if (isPanMode(mode)) expect(rows, mode).toEqual(['panCamera']);
+      else expect(rows, mode).toEqual(['panCamera', 'moveSelection']);
+    }
+  });
+
+  it('Esc: primero cancela lo que está en curso y luego hace lo propio de la herramienta', () => {
+    expect(actionsOf(ev('Escape'), 'place')).toEqual(['cancelDrag', 'clearSelection']);
+    expect(actionsOf(ev('Escape'), 'select')).toEqual(['cancelDrag', 'clearSelection']);
+    expect(actionsOf(ev('Escape'), 'cut')).toEqual(['cancelDrag', 'cancelTool']);
+    expect(actionsOf(ev('Escape'), 'grow')).toEqual(['cancelDrag', 'leaveTool']);
+    expect(actionsOf(ev('Escape'), 'mesh')).toEqual(['cancelDrag', 'leaveTool']);
+  });
+
+  it('las teclas de MeshTool no salen como acción de la aplicación en Malla', () => {
+    expect(actionsOf(ev('x'), 'mesh')).toEqual([]);
+    expect(actionsOf(ev('f'), 'mesh')).toEqual([]);
+    expect(actionsOf(ev('Delete'), 'mesh')).toEqual([]);
+    expect(actionsOf(ev('Delete'), 'place')).toEqual(['deleteSelection']);
+    expect(actionsOf(ev('Backspace'), 'cut')).toEqual([]);
+    expect(actionsOf(ev('e'), 'mesh')).toEqual(['toggleTool']);
+  });
+
+  it('«?» y F1 abren la ayuda con cualquier modificador (AltGr)', () => {
+    expect(actionsOf(ev('?'), 'place')).toEqual(['help']);
+    expect(actionsOf(ev('?', { ctrlKey: true, altKey: true }), 'mesh')).toEqual(['help']);
+    expect(actionsOf(ev('F1', { shiftKey: true }), 'cut')).toEqual(['help']);
+  });
+
+  it('el teclado numérico elige la vista, con Ctrl la opuesta, y el 5 alterna con o sin Ctrl', () => {
+    const view = (code: string, mods: Partial<KeyLike> = {}) => matchNumpad({ key: '1', code, ...mods }).map((row) => row.arg ?? row.action);
+    expect(view('Numpad1')).toEqual(['+z']);
+    expect(view('Numpad1', { ctrlKey: true })).toEqual(['-z']);
+    expect(view('Numpad3')).toEqual(['+x']);
+    expect(view('Numpad7', { ctrlKey: true })).toEqual(['-y']);
+    expect(view('Numpad5')).toEqual(['toggleOrtho']);
+    expect(view('Numpad5', { ctrlKey: true })).toEqual(['toggleOrtho']);
+    expect(view('Numpad2')).toEqual([]);
+    expect(view('Numpad1', { altKey: true })).toEqual([]);
+    expect(view('Numpad1', { shiftKey: true })).toEqual([]);
+    expect(matchNumpad({ key: '1', code: 'Digit1' })).toEqual([]);
+  });
+
+  it('los dígitos eligen pieza; la tecla de cada herramienta, la enciende', () => {
+    expect(actionsOf(ev('3'), 'place')).toEqual(['selectPiece']);
+    for (const mode of ALL_MODES) {
+      const key = toolKey(mode);
+      if (!key) continue;
+      const rows = matchShortcuts(ev(key), 'place');
+      expect(rows.find((row) => row.toggles === mode), mode).toBeDefined();
+    }
+  });
+
+  it('solo valen con el foco en un campo F1 y las teclas con Ctrl que lo piden; coincide con ctrlBeatsField', () => {
+    const inField = SHORTCUTS.filter((s) => s.inField);
+    expect(inField.map((s) => `${s.mods ?? ''}:${s.key}`).sort()).toEqual(['ctrl+alt:s', 'ctrl:k', 'ctrl:o', 'ctrl:s', ':f1'].sort());
+    for (const key of 'abcdefghijklmnopqrstuvwxyz') expect(ctrlBeatsField(key), key).toBe(['k', 'o', 's'].includes(key));
+  });
+
+  it('en cada herramienta, una tecla suelta no da dos filas sin condición que las separen', () => {
+    for (const mode of ALL_MODES) {
+      for (const key of [...'abcdefghijklmnopqrstuvwxyz0123456789', 'enter', 'escape', 'delete', 'backspace', 'arrowup', 'pageup']) {
+        const rows = matchShortcuts(ev(key), mode);
+        const bare = rows.filter((row) => !row.when);
+        expect(bare.length, `${key} en ${mode}`).toBeLessThanOrEqual(1);
+      }
+    }
+  });
+});
+
+describe('los nombres de las teclas', () => {
+  it('se escriben como en la interfaz', () => {
+    expect(shortcutLabel('hideSelected')).toBe('O');
+    expect(shortcutLabel('group')).toBe('Ctrl+G');
+    expect(shortcutLabel('ungroup')).toBe('Ctrl+Alt+G');
+    expect(shortcutLabel('saveAs')).toBe('Ctrl+Alt+S');
+    expect(shortcutLabel('help')).toBe('?');
+    expect(shortcutLabel('view:+x')).toBe('teclado numérico 3');
+    expect(shortcutLabel('view:-x')).toBe('Ctrl+3');
+    expect(shortcutLabel('toggleOrtho')).toBe('teclado numérico 5');
+    expect(shortcutLabel('mesh:face')).toBe('F');
+    expect(shortcutLabel('mesh:add')).toBe('A');
+    expect(shortcutLabel('nada')).toBe('');
+    expect(keyLabel({ key: 'pageup', modes: 'all', description: '' })).toBe('Re Pág');
+  });
+
+  it('cada botón de Malla con tecla propia sale una sola vez en la tabla', () => {
+    const names = SHORTCUTS.filter((s) => s.mesh).map((s) => s.mesh);
+    expect(new Set(names).size).toBe(names.length);
+  });
+});
+
+describe('los textos de la página salen de la tabla', () => {
+  const refs = [...html.matchAll(/data-shortcut="([^"]+)"/g)].map((m) => m[1]);
+
+  it('cada data-shortcut de index.html apunta a una fila de la tabla', () => {
+    expect(refs.length).toBeGreaterThan(30);
+    for (const ref of refs) expect(shortcutLabel(ref), ref).not.toBe('');
+  });
+
+  it('cada elemento con data-shortcut deja el nombre de la tecla en {key}', () => {
+    for (const tag of html.match(/<[a-z]+[^>]*data-shortcut="[^"]+"[^>]*>/g) ?? []) expect(tag.includes('{key}') || /<(button|label)[^>]*>[^<]*{key}/.test(html.slice(html.indexOf(tag))), tag).toBe(true);
+  });
+
+  it('los botones de Malla no llevan la tecla escrita a mano', () => {
+    expect(html).not.toMatch(/Atajo: tecla [A-Z]/);
+  });
+
+  it('la tecla de una herramienta sale de la tabla', () => {
+    expect(shortcutLabel('tool:bevel')).toBe('J');
   });
 });

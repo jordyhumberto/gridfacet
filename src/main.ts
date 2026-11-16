@@ -1,13 +1,9 @@
-import { panStep, type PanState } from './core/pan';
 import { MODE_INFO, GUIDE, setupHelp } from './ui/help';
-import { meshNeedReason, titleWithReason } from './core/meshNeeds';
-import { ctrlBeatsField, escLeavesTool, isTextField, meshIgnoresKey, toolForKey, toolKey, undoRedoKey, verticalMoveKey, type KeyMode } from './core/shortcuts';
+import { isPanMode, toolKey, verticalMoveKey, type KeyMode } from './core/shortcuts';
 import * as THREE from 'three';
 import { axisAllowed, lockLabel, planeNormal, type AxisLock } from './core/axisLock';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-import { CATALOG, SLAB_THICKNESS, buildPieces, buildSlab } from './core/catalog';
-import { clearanceLift, edgeLines, flatSurface, gridLines as cellLines, snapSpan } from './core/placement';
-import { faceSpin, leanOnWall, seatOnSlope, slopeAxes, slopeKindOf, standOnSlope, type SlopeKind } from './core/slope';
+import { CATALOG, buildPieces } from './core/catalog';
 import { coplanarRegion, type FaceOf } from './core/region';
 import type { Change } from './core/cut';
 import type { ExportMode } from './core/export';
@@ -16,22 +12,25 @@ import { pieceKey, reflectPiece, reflections, withSymmetry, withSymmetryPoints, 
 import type { Piece, Vec3 } from './core/piece';
 import { STEP_XZ, STEP_Y, mirrorChange, mirrorCopyChange, moveChange, rotateChange, rotateQuarterChange, translatePiece, type Axis } from './core/transform';
 import { alignChange, distributeChange, groundChange, partsOf, resizeLongestChange } from './core/arrange';
-import { searchCommands, type Command } from './core/commands';
+import type { Command } from './core/commands';
 import { parseHexColors, parsePalettes, toHexText, upsertPalette, type Palette } from './core/palettes';
 import { serializeProject } from './core/project';
 import { createFiles } from './ui/files';
+import { createKeyboard, type KeyActions } from './ui/keyboard';
+import { createPlacement } from './ui/placement';
+import { createPixelPanel } from './ui/pixelPanel';
+import { createLayersPanel } from './ui/layersPanel';
+import { createMeshPanel } from './ui/meshPanel';
+import { applyShortcutLabels } from './ui/shortcutLabels';
+import { createCommandPalette } from './ui/commandPalette';
 import { createReferencesPanel } from './ui/referencesPanel';
 import { emptyAnimation, pruneTracks } from './core/animation';
 import { createAnimationPanel } from './ui/animationPanel';
 import { downloadBlob, exportGlb } from './render/glb';
 import { TextureLayer } from './render/textures';
-import type { BrushOptions, PixelEdit, Rect } from './core/pixels';
-import { copyRegion, editRegion, paintCell, pasteRegion, pixelClipboard, rectBetween, texelAt, textureOfFace, visibleColor, withFaceTexture } from './core/pixels';
-import { pointOf, type FaceTexture } from './core/texture';
 import { PieceBatches } from './render/batches';
 import { createPieceObject, disposeObject, isWireframeView, setHighlight, setSmoothShading, setWireframeView } from './render/meshes';
 import { ModelScene } from './scene';
-import { Layers, layerOf } from './core/layers';
 import { Selection } from './selection';
 import type { Guides } from './core/guides';
 import { CutTool, snapPoint, type SnapOptions } from './tools/cutTool';
@@ -42,10 +41,9 @@ import { connectedPieces, sizeOf } from './core/connected';
 import { bevelChange, edgeBetween, nearestEdge, type PieceEdge } from './core/bevel';
 import { buildShape, MAX_RINGS, MAX_SIDES, MIN_RINGS, MIN_SIDES, SECTIONS, SHAPES, type ShapeKind, type ShapeSpec, type SphereSection } from './core/shapes';
 import { facesAt, paintChange, type FaceRef } from './core/paint';
-import { FACE_BEHIND, FACE_DOUBLE, FACE_UNLIT, faceColorOf, faceNormal, newGroupId, reserveGroupIds, withGroup, withLayer } from './core/piece';
+import { faceCentre, faceColorOf, newGroupId, reserveGroupIds, withGroup } from './core/piece';
 import { VertexTool } from './tools/vertexTool';
-import { FaceEditor } from './tools/faceEditor';
-import { AXIS_COLORS, MeshTool } from './tools/meshTool';
+import { AXIS_COLORS } from './tools/meshTool';
 import { isConvex } from './core/convex';
 import { excavateChange, extrudeFaceChange, findSlivers, joinChange, mergeChange, repeatChange, sinkCutters, sinkFacesChange, splitFaceChange, triangleCount } from './core/modeling';
 
@@ -248,8 +246,7 @@ selection.subscribe(() => {
   if (mode !== 'cut') statusEl.textContent = selection.size > 0 ? selectionLabel() : '';
   syncSelectionActions();
   syncInspector();
-  syncGroupName();
-  layerMoveEl.hidden = selection.size === 0;
+  layersPanel.syncSelection();
 });
 
 if (import.meta.env.DEV) {
@@ -260,7 +257,7 @@ if (import.meta.env.DEV) {
   dev.__fill = fillTool;
   dev.__camera = camera;
   dev.__controls = controls;
-  dev.__ghost = () => ghost && new THREE.Box3().setFromObject(ghost);
+  dev.__ghost = () => placement.ghost && new THREE.Box3().setFromObject(placement.ghost);
   // Utilidades de medición: rellenan la escena con cubos y miden el coste de dibujo.
   dev.__stress = (count: number) => {
     const side = Math.ceil(Math.cbrt(count));
@@ -295,9 +292,6 @@ let mode: Mode = 'place';
 let selected = 0;
 let rotation = 0;
 let color = 0xd9534f;
-let ghost: THREE.Object3D | null = null;
-let target = { cx: 0, cy: 0, cz: 0, ox: 0, oz: 0 };
-let hasTarget = false;
 let snapped: ReturnType<typeof snapPoint> | null = null;
 
 const pointer = new THREE.Vector2();
@@ -598,8 +592,8 @@ function updateHover(event: PointerEvent): void {
   if (mode === 'paint') {
     const found = hit && !backdrops.includes(hit.object) ? findFace(hit) : undefined;
     setFaceHover(found);
-    if (found && pixelPainting()) lastPixelFace = { piece: found.piece, faceIndex: found.piece.faces.indexOf(found.face) };
-    statusEl.textContent = found ? (pixelPainting() ? 'Arrastra: pintar píxeles · Alt: tomar el color del píxel' : 'Clic: pintar la cara · Ctrl: toda la pieza · Alt: tomar su color') : '';
+    if (found && pixelPanel.painting()) pixelPanel.noteFace(found.piece, found.face);
+    statusEl.textContent = found ? (pixelPanel.painting() ? 'Arrastra: pintar píxeles · Alt: tomar el color del píxel' : 'Clic: pintar la cara · Ctrl: toda la pieza · Alt: tomar su color') : '';
     return;
   }
   if (mode === 'face') {
@@ -630,246 +624,10 @@ function updateHover(event: PointerEvent): void {
     return;
   }
   if (mode === 'select' || mode === 'erase') {
-    if (hasTarget) {
-      hasTarget = false;
-      refreshGhost();
-    }
+    placement.release();
     return;
   }
-  if (!hit || !hit.face) {
-    hasTarget = false;
-    refreshGhost();
-    return;
-  }
-  // Apoyada sobre una cara horizontal, la pieza admite medias placas; al lado de otra, queda a ras de placa.
-  // Se avanza un poco por la normal para caer en la celda vecina a la cara tocada.
-  const probe = hit.point.clone().addScaledVector(hit.face.normal, 0.001);
-  slopeAim = null;
-  if (CATALOG[selected].grows) {
-    slabTarget = slabAt(hit, probe);
-    hasTarget = slabTarget !== null;
-    refreshGhost();
-    return;
-  }
-  // Sobre una pendiente (el techo de rampas) la pieza se asienta o se apoya perpendicular, en vez de caer a la rejilla.
-  const slope = slopeKindOf([hit.face.normal.x, hit.face.normal.y, hit.face.normal.z], slopeMode);
-  if (slope) {
-    const n: Vec3 = [hit.face.normal.x, hit.face.normal.y, hit.face.normal.z];
-    const hitId = pieceIdOf(hit);
-    const hitPiece = hitId === undefined ? undefined : model.get(hitId);
-    // El polígono de la cara apuntada: la pieza que la tiene y el plano que pasa por el punto.
-    const face = hitPiece?.faces.find((f) => {
-      const fn = faceNormal(f);
-      const length = Math.hypot(...fn) || 1;
-      return (fn[0] * n[0] + fn[1] * n[1] + fn[2] * n[2]) / length > 0.999 && Math.abs((fn[0] * (hit.point.x - f[0][0]) + fn[1] * (hit.point.y - f[0][1]) + fn[2] * (hit.point.z - f[0][2])) / length) < 1e-3;
-    });
-    slopeAim = { kind: slope, n, point: [hit.point.x, hit.point.y, hit.point.z], face: face ?? null };
-    hasTarget = Math.abs(hit.point.x - 0.5) < gridSize / 2 + 0.5 && Math.abs(hit.point.z - 0.5) < gridSize / 2 + 0.5 && hit.point.y >= 0;
-    refreshGhost();
-    return;
-  }
-  slopeAim = null;
-  // Sobre una cara plana la pieza se apoya justo en ella, aunque no caiga en la rejilla de placas (por ejemplo encima de una lámina);
-  // sobre una inclinada se alinea a media placa.
-  const flatTop = hit.face.normal.y > 0.999;
-  // Colgada de una cara plana de abajo, la pieza queda debajo de ella: su base es la cara menos su alto.
-  const flatBottom = hit.face.normal.y < -0.999;
-  const hangHeight = (CATALOG[selected].heightPlates / 3) * (placeSizeOf() ?? 1);
-  target = {
-    cx: Math.floor(probe.x),
-    cy: flatTop ? (Math.round(hit.point.y * 1e4) / 1e4) * 3 : flatBottom ? (Math.round((hit.point.y - hangHeight) * 1e4) / 1e4) * 3 : Math.abs(hit.face.normal.y) > 0.5 ? Math.floor(probe.y * 6 + 1e-6) / 2 : Math.floor(probe.y * 3),
-    cz: Math.floor(probe.z),
-    ox: 0,
-    oz: 0,
-  };
-  // Las piezas menores que una celda se colocan en el trozo de la celda sobre el que apunta el cursor (mitades, tercios, cuartos...).
-  const scale = placeSizeOf() ?? 1;
-  const turned = rotation % 2 !== 0;
-  const footW = CATALOG[selected].footprint[turned ? 1 : 0] * scale;
-  const footD = CATALOG[selected].footprint[turned ? 0 : 1] * scale;
-  freePlacement(hit, footW, footD, scale);
-  hasTarget = Math.abs(target.cx + 0.5) < gridSize / 2 && Math.abs(target.cz + 0.5) < gridSize / 2 && target.cy >= 0 && target.cy < gridSize * 3;
-  refreshGhost();
-}
-
-/**
- * Coloca una pieza menor que una celda siguiendo al cursor dentro de la cara apuntada, sin saltar de celda en celda:
- * se mueve en pasos de un cuarto de su tamaño, se imanta a las aristas de las piezas cercanas y a la rejilla, y no se sale de la superficie que la recibe.
- * En el eje de la cara queda a ras de ella. En una pared también se mueve en vertical.
- * Las piezas de una celda o más también se sueltan de la rejilla: en el suelo y las paredes de la sala, y sobre una superficie de varias figuras en la que caben.
- */
-function freePlacement(hit: THREE.Intersection, footW: number, footD: number, scale: number): void {
-  const n = hit.face!.normal;
-  const components = [n.x, n.y, n.z];
-  const axis = components.map(Math.abs).indexOf(Math.max(...components.map(Math.abs))) as 0 | 1 | 2;
-  const sign = components[axis] >= 0 ? 1 : -1;
-  const point: [number, number, number] = [hit.point.x, hit.point.y, hit.point.z];
-  const id = pieceIdOf(hit);
-  const host = id === undefined ? undefined : model.get(id);
-  const others = model.all().filter((piece) => !hidden.has(piece.id));
-  // Con una cara recta, el límite es toda la superficie continua (varios cubos juntos son una pared); si no, la pieza apuntada.
-  const flat = Math.abs(components[axis]) > 0.999 ? flatSurface(others, axis, sign, [point[0], point[1], point[2]]) : null;
-  const hostBox = flat ?? (host ? boundsOf([host]) : null);
-  const place = (a: 0 | 2, size: number): number => {
-    if (axis === a) return sign > 0 ? Math.round(point[a] * 1e4) / 1e4 : Math.round(point[a] * 1e4) / 1e4 - size;
-    // Puede sobresalir hasta la mitad de su largo del borde de la cara: la mitad queda apoyada y la alineación con la rejilla sigue.
-    return snapSpan(point[a], size, edgeLines(others, a, point, size + 0.6), hostBox?.min[a], hostBox?.max[a], cellLines(a, point, size + 0.6), size / 2);
-  };
-  // Una pieza de una celda o más también se mueve libre sobre una superficie formada por varias figuras, si cabe en ella.
-  // En el suelo y en las paredes de la sala (sin pieza debajo) también se mueve libre, no solo de celda en celda.
-  const fits = (a: 0 | 1 | 2, size: number): boolean => (flat !== null && (axis === a || flat.max[a] - flat.min[a] >= size - 1e-6)) || (flat === null && host === undefined);
-  if (footW < 1 || fits(0, footW)) {
-    const start = place(0, footW);
-    target.cx = Math.floor(start + 1e-6);
-    target.ox = start - target.cx;
-  }
-  if (footD < 1 || fits(2, footD)) {
-    const start = place(2, footD);
-    target.cz = Math.floor(start + 1e-6);
-    target.oz = start - target.cz;
-  }
-  const height = (CATALOG[selected].heightPlates / 3) * scale;
-  if (axis !== 1 && (scale < 1 || fits(1, height))) {
-    const start = snapSpan(point[1], height, edgeLines(others, 1, point, height + 0.6), hostBox?.min[1], hostBox?.max[1], cellLines(1, point, height + 0.6));
-    target.cy = start * 3;
-  }
-}
-
-/**
- * Dónde empieza (dentro de la celda, de 0 a 1 − tamaño) una pieza de `size` < 1 centrada en el cursor `frac`.
- * Salta de medio en medio tamaño, así una pieza de ½ cabe en las dos esquinas y también en el centro de la celda.
- */
-function centeredOffset(frac: number, size: number): number {
-  const step = size / 2;
-  const offset = Math.round((frac - size / 2) / step) * step;
-  return Math.min(Math.max(offset, 0), 1 - size);
-}
-
-function refreshGhost(): void {
-  if (ghost) {
-    scene3d.remove(ghost);
-    disposeObject(ghost);
-    ghost = null;
-  }
-  if (mode !== 'place' || !hasTarget) return;
-  const group = new THREE.Group();
-  for (const piece of currentParts()) group.add(createPieceObject(piece, true));
-  ghost = group;
-  scene3d.add(ghost);
-}
-
-/** Lámina que crece desde la cara apuntada: eje y sentido de la cara, dónde está y la esquina de su celda en los otros ejes. */
-let slabTarget: { axis: 0 | 1 | 2; sign: 1 | -1; surface: number; tangentMin: Vec3 } | null = null;
-
-function slabAt(hit: THREE.Intersection, probe: THREE.Vector3): typeof slabTarget {
-  const n = hit.face!.normal;
-  const components = [n.x, n.y, n.z];
-  const axis = components.map(Math.abs).indexOf(Math.max(...components.map(Math.abs))) as 0 | 1 | 2;
-  const sign: 1 | -1 = components[axis] >= 0 ? 1 : -1;
-  const surface = Math.round(hit.point.getComponent(axis) * 1e4) / 1e4;
-  // El lado de la lámina es el "Tamaño" del panel. Menor que una celda, se coloca en el trozo de la celda al que apunta el cursor.
-  const side = placeSizeOf() ?? 1;
-  const snap = (value: number): number => {
-    const cell = Math.floor(value);
-    return side < 1 ? cell + centeredOffset(value - cell, side) : cell;
-  };
-  const tangentMin: Vec3 = [snap(probe.x), Math.floor(probe.y * 3) / 3, snap(probe.z)];
-  // De costado, la lámina arranca desde la base de la pieza a la que se pega, así queda a ras aunque esa pieza no siga la rejilla de placas.
-  if (axis !== 1) {
-    const id = pieceIdOf(hit);
-    const piece = id === undefined ? undefined : model.get(id);
-    const box = piece ? boundsOf([piece]) : null;
-    // Medida desde la base de la pieza; una lámina pequeña puede ir más arriba, centrada en el cursor, sin pasarse del alto de una celda.
-    if (box) tangentMin[1] = box.min[1] + (side < 1 ? centeredOffset(probe.y - box.min[1], side) : 0);
-    else if (side < 1) tangentMin[1] = snap(probe.y);
-  }
-  const [x, y, z] = tangentMin;
-  if (Math.abs(x + 0.5) >= gridSize / 2 || Math.abs(z + 0.5) >= gridSize / 2 || y < 0 || y >= gridSize) return null;
-  return { axis, sign, surface, tangentMin: [x, y, z] };
-}
-
-/** Qué hacer al apuntar a una cara inclinada, y a dónde. */
-let slopeAim: { kind: SlopeKind; n: Vec3; point: Vec3; face: Vec3[] | null } | null = null;
-let slopeMode: SlopeKind | 'grid' = 'seat';
-const slopeModeEl = document.getElementById('slopeMode') as HTMLSelectElement;
-slopeModeEl.addEventListener('change', () => {
-  slopeMode = slopeModeEl.value as SlopeKind | 'grid';
-  slopeAim = null;
-  slopeModeEl.blur();
-  hasTarget = false;
-  refreshGhost();
-});
-
-/** La pieza elegida sobre la pendiente apuntada: asentada (vertical con la base cortada) o perpendicular a ella. */
-function slopeParts(def: (typeof CATALOG)[number], others: Piece[]): Piece[] {
-  if (!slopeAim) return [];
-  const { kind, n, point } = slopeAim;
-  const parts = buildPieces(def, 0, 0, 0, rotation, color, placeSizeOf() ?? 1);
-  const box = boundsOf(parts)!;
-  const [w, d] = [box.max[0] - box.min[0], box.max[2] - box.min[2]];
-  const length = Math.hypot(...n);
-  const unit: Vec3 = [n[0] / length, n[1] / length, n[2] / length];
-  if (kind === 'seat') {
-    // El centro de la huella sigue al cursor en pasos de un cuarto de su tamaño y se imanta a las aristas cercanas.
-    const x = snapSpan(point[0], w, edgeLines(others, 0, point, w + 0.6), undefined, undefined, cellLines(0, point, w + 0.6)) + w / 2;
-    const z = snapSpan(point[2], d, edgeLines(others, 2, point, d + 0.6), undefined, undefined, cellLines(2, point, d + 0.6)) + d / 2;
-    return seatOnSlope(parts, unit, point, [x, z]);
-  }
-  // Perpendicular: la pieza se alinea con los lados de la cara que la recibe y se mueve sobre ella en pasos de un cuarto de su
-  // tamaño, imantada a los bordes de esa cara y de las vecinas del mismo plano. Así se pega a otras y se apila en línea.
-  const spin = slopeAim.face ? faceSpin(unit, slopeAim.face) : 0;
-  const [ax, az] = slopeAxes(unit, spin);
-  const along = (v: Vec3, axis: Vec3): number => v[0] * axis[0] + v[1] * axis[1] + v[2] * axis[2];
-  const coplanar = [slopeAim.face, ...others.flatMap((piece) => piece.faces)].filter((f): f is Vec3[] => {
-    if (!f) return false;
-    const fn = faceNormal(f);
-    const length = Math.hypot(...fn) || 1;
-    const offset = (fn[0] * (point[0] - f[0][0]) + fn[1] * (point[1] - f[0][1]) + fn[2] * (point[2] - f[0][2])) / length;
-    return (fn[0] * unit[0] + fn[1] * unit[1] + fn[2] * unit[2]) / length > 0.9995 && Math.abs(offset) < 1e-3 && f.some((p) => Math.hypot(p[0] - point[0], p[1] - point[1], p[2] - point[2]) < Math.max(w, d) + 0.8);
-  });
-  const slide = (axis: Vec3, size: number): number => {
-    const cursor = along(point, axis);
-    const origin = slopeAim!.face ? Math.min(...slopeAim!.face.map((p) => along(p, axis))) : 0;
-    const lines = coplanar.flatMap((f) => f.map((p) => along(p, axis) - origin));
-    return origin + snapSpan(cursor - origin, size, lines) + size / 2 - cursor;
-  };
-  if (kind === 'wall') {
-    // Pared que no sigue los ejes: de pie contra ella, girada para quedar a ras, moviéndose a lo largo y en altura.
-    const flat = Math.hypot(unit[0], unit[2]) || 1;
-    const out: Vec3 = [unit[0] / flat, 0, unit[2] / flat];
-    const tangent: Vec3 = [out[2], 0, -out[0]];
-    const shift = slide(tangent, w);
-    const height = box.max[1] - box.min[1];
-    const y = snapSpan(point[1], height, edgeLines(others, 1, point, height + 0.6), undefined, undefined, cellLines(1, point, height + 0.6));
-    return leanOnWall(parts, out, [point[0] + tangent[0] * shift, Math.max(0, y), point[2] + tangent[2] * shift]);
-  }
-  const [da, db] = [slide(ax, w), slide(az, d)];
-  const center: Vec3 = [point[0] + ax[0] * da + az[0] * db, point[1] + ax[1] * da + az[1] * db, point[2] + ax[2] * da + az[2] * db];
-  return standOnSlope(parts, unit, center, spin);
-}
-
-/** Piezas que se colocarían ahora; un elemento del catálogo puede componerse de varias partes convexas. */
-function currentParts(): Piece[] {
-  const def = CATALOG[selected];
-  const others = model.all().filter((piece) => !hidden.has(piece.id));
-  if (def.grows) {
-    if (!slabTarget) return [];
-    const { axis, sign, surface, tangentMin } = slabTarget;
-    let slab = buildSlab(axis, sign, surface, tangentMin, color, placeSizeOf() ?? 1, slabThickOf() ?? SLAB_THICKNESS);
-    // Sobre una cara de arriba, si la celda cubre algo más alto se apoya encima en vez de atravesarlo.
-    if (axis === 1 && sign > 0) slab = translatePiece(slab, 0, clearanceLift([slab], others), 0);
-    return expand([slab]);
-  }
-  if (slopeAim) return expand(slopeParts(def, others));
-  const parts = buildPieces(def, target.cx + target.ox, target.cy, target.cz + target.oz, rotation, color, placeSizeOf() ?? 1);
-  const lift = clearanceLift(parts, others);
-  return expand(lift > 0 ? parts.map((part) => translatePiece(part, 0, lift, 0)) : parts);
-}
-
-function placePiece(): void {
-  if (!hasTarget) return;
-  model.apply({ added: currentParts(), removed: [] });
-  useColor(color);
+  placement.aim(hit);
 }
 
 function removeAt(event: PointerEvent): void {
@@ -884,229 +642,37 @@ function removeAt(event: PointerEvent): void {
   if (piece) model.apply({ added: [], removed: counterparts(piece) });
 }
 
-// Piezas ocultas: no se dibujan ni se pueden apuntar; siguen en el modelo (y en la exportación).
-const hidden = new Set<number>();
-function showPiece(piece: Piece): void {
-  if (!hidden.has(piece.id)) batches.add(piece);
-}
-function hidePieces(ids: number[]): void {
-  for (const id of ids) hidden.add(id);
-  selection.remove(ids);
-  for (const id of ids) {
-    batches.remove(id);
-    textureLayer.remove(id);
-  }
-  refreshHidden();
-}
-function showHidden(ids: number[] = [...hidden]): void {
-  for (const id of ids) {
-    hidden.delete(id);
-    const piece = model.get(id);
-    if (piece && !selection.has(id)) batches.add(piece);
-    if (piece) textureLayer.add(piece);
-  }
-  refreshHidden();
-}
-const showHiddenButton = document.getElementById('showHidden')!;
-function refreshHidden(): void {
-  showHiddenButton.hidden = hidden.size === 0;
-  showHiddenButton.textContent = `Mostrar ocultas (${hidden.size})`;
-  refreshGroups();
-}
-showHiddenButton.addEventListener('click', () => {
-  // "Mostrar ocultas" también muestra las capas ocultas.
-  for (const layer of layers.all()) layers.setHidden(layer.id, false);
-  showHidden();
+// Piezas ocultas, capas y lista de grupos (ui/layersPanel.ts).
+const layersPanel = createLayersPanel({
+  model,
+  selection,
+  batches,
+  textureLayer: { add: (piece) => textureLayer.add(piece), remove: (id) => textureLayer.remove(id) },
+  selectedPieces: () => selectedPieces(),
+  selectTool: () => setMode('select'),
+  markEdited: () => {
+    files.markDirty();
+    files.syncFileName();
+  },
+  scheduleAutosave: () => files.scheduleAutosave(),
 });
+const { hidden, layers, showPiece, hidePieces, showHidden, hideSelected, isolateSelected, applyLayerState, refreshLayers, refreshGroups } = layersPanel;
 
-// Capas: cada pieza está en una; una capa se oculta (no se ve ni se apunta) o se bloquea (se ve y choca, pero no se modifica).
-const layers = new Layers();
-model.isLocked = (piece) => layers.isLocked(piece);
-selection.canSelect = (id) => {
-  const piece = model.get(id);
-  return !piece || !layers.isLocked(piece);
-};
-const layerListEl = document.getElementById('layerList')!;
-const layerMoveEl = document.getElementById('layerMove')!;
-const idsOfLayer = (id: number): number[] => model.all().filter((piece) => layerOf(piece) === id).map((piece) => piece.id);
-
-/** Aplica a las piezas el estado de las capas: las de capas ocultas se esconden y las de bloqueadas dejan de estar elegidas. */
-function applyLayerState(): void {
-  for (const layer of layers.all()) {
-    const ids = idsOfLayer(layer.id);
-    if (layer.hidden) hidePieces(ids.filter((id) => !hidden.has(id)));
-    if (layer.locked) selection.remove(ids);
-  }
-}
-/** Un cambio de capas (crear, renombrar, ocultar, bloquear, quitar) cuenta como cambio sin guardar; elegir la capa activa no. */
-function markLayersEdited(): void {
-  files.markDirty();
-  files.syncFileName();
-}
-function toggleLayerHidden(id: number): void {
-  const layer = layers.get(id);
-  if (!layer) return;
-  markLayersEdited();
-  layers.setHidden(id, !layer.hidden);
-  if (layer.hidden) applyLayerState();
-  else showHidden(idsOfLayer(id).filter((pid) => hidden.has(pid)));
-}
-function toggleLayerLocked(id: number): void {
-  const layer = layers.get(id);
-  if (!layer) return;
-  markLayersEdited();
-  layers.setLocked(id, !layer.locked);
-  applyLayerState();
-}
-function removeLayer(id: number): void {
-  const layer = layers.get(id);
-  if (!layer || id === 1) return;
-  // Sus piezas pasan a la primera capa, como un cambio más del modelo (se puede deshacer y marca «sin guardar»).
-  const moved = model.all().filter((piece) => layerOf(piece) === id);
-  const wasHidden = layer.hidden;
-  layers.remove(id);
-  model.activeLayer = layers.active;
-  if (moved.length > 0) {
-    const added = moved.map((piece) => withLayer(piece, 1));
-    model.apply({ added, removed: moved });
-    if (wasHidden) showHidden(added.map((piece) => piece.id).filter((pid) => hidden.has(pid)));
-  }
-  markLayersEdited();
-  applyLayerState();
-}
-/** Pasa las piezas elegidas a la capa activa. */
-function moveSelectionToActiveLayer(): void {
-  const target = layers.active;
-  // Como un cambio más (piezas nuevas), para poder deshacerlo.
-  const removed = selection.list().map((id) => model.get(id)).filter((piece): piece is Piece => !!piece && layerOf(piece) !== target);
-  if (removed.length === 0) return;
-  const added = removed.map((piece) => withLayer(piece, target));
-  model.apply({ added, removed });
-  selection.set(added.map((piece) => piece.id));
-  applyLayerState();
-  refreshLayers();
-}
-function refreshLayers(): void {
-  const counts = new Map<number, number>();
-  for (const piece of model.all()) counts.set(layerOf(piece), (counts.get(layerOf(piece)) ?? 0) + 1);
-  layerListEl.replaceChildren();
-  for (const layer of layers.all()) {
-    const row = document.createElement('div');
-    row.className = `lrow${layer.id === layers.active ? ' active' : ''}${layer.hidden ? ' off' : ''}`;
-    const name = document.createElement('button');
-    name.className = 'lname';
-    name.textContent = `${layer.name} (${counts.get(layer.id) ?? 0})`;
-    name.title = 'Capa activa: lo que coloques o crees va aquí. Doble clic: renombrar';
-    name.addEventListener('click', () => layers.setActive(layer.id));
-    name.addEventListener('dblclick', () => {
-      const next = window.prompt('Nombre de la capa', layer.name);
-      if (next !== null) {
-        layers.rename(layer.id, next);
-        markLayersEdited();
-      }
-    });
-    const eye = document.createElement('button');
-    eye.className = `tool${layer.hidden ? ' on' : ''}`;
-    eye.textContent = layer.hidden ? 'Oculta' : 'Ojo';
-    eye.title = layer.hidden ? 'Mostrar la capa' : 'Ocultar la capa';
-    eye.addEventListener('click', () => toggleLayerHidden(layer.id));
-    const lock = document.createElement('button');
-    lock.className = `tool${layer.locked ? ' on' : ''}`;
-    lock.textContent = layer.locked ? 'Bloq.' : 'Candado';
-    lock.title = layer.locked ? 'Desbloquear la capa' : 'Bloquear la capa: se ve y choca, pero no se puede modificar';
-    lock.addEventListener('click', () => toggleLayerLocked(layer.id));
-    row.append(name, eye, lock);
-    if (layer.id !== 1) {
-      const del = document.createElement('button');
-      del.className = 'tool';
-      del.textContent = '✕';
-      del.title = 'Quitar la capa (sus piezas pasan a la primera)';
-      del.addEventListener('click', () => removeLayer(layer.id));
-      row.append(del);
-    }
-    layerListEl.appendChild(row);
-  }
-  layerMoveEl.hidden = selection.size === 0;
-}
-layers.onChange = () => {
-  model.activeLayer = layers.active;
-  refreshLayers();
-  files.scheduleAutosave();
-};
-document.getElementById('layerAdd')!.addEventListener('click', () => {
-  layers.add();
-  markLayersEdited();
-});
-layerMoveEl.addEventListener('click', moveSelectionToActiveLayer);
-refreshLayers();
-function hideSelected(): void {
-  if (selection.size > 0) hidePieces(selection.list());
-}
-function isolateSelected(): void {
-  if (selection.size === 0) {
-    if (hidden.size > 0) showHidden();
-    return;
-  }
-  hidePieces(model.all().filter((piece) => !selection.has(piece.id)).map((piece) => piece.id));
-}
-
-// Lista de grupos: elegir, ocultar o mostrar cada uno y darle nombre.
-const groupsEl = document.getElementById('groups')!;
-const groupListEl = document.getElementById('groupList')!;
-const groupNameRow = document.getElementById('groupName')!;
-const groupNameInput = document.getElementById('groupNameInput') as HTMLInputElement;
-function refreshGroups(): void {
-  const groups = new Map<number, { name: string; ids: number[] }>();
-  for (const piece of model.all()) {
-    if (piece.group === undefined) continue;
-    const entry = groups.get(piece.group) ?? { name: piece.groupName ?? `Grupo ${piece.group}`, ids: [] };
-    entry.ids.push(piece.id);
-    groups.set(piece.group, entry);
-  }
-  groupsEl.hidden = groups.size === 0;
-  groupListEl.replaceChildren();
-  for (const [group, entry] of groups) {
-    const isHidden = entry.ids.every((id) => hidden.has(id));
-    const row = document.createElement('div');
-    row.className = `grow${isHidden ? ' hiddenGroup' : ''}`;
-    const pick = document.createElement('button');
-    pick.textContent = `${entry.name} (${entry.ids.length})`;
-    pick.title = 'Elegir el grupo';
-    pick.addEventListener('click', () => {
-      if (isHidden) showHidden(entry.ids);
-      setMode('select');
-      selection.set(entry.ids);
-    });
-    const eye = document.createElement('button');
-    eye.textContent = isHidden ? 'Mostrar' : 'Ocultar';
-    eye.title = isHidden ? 'Mostrar el grupo' : 'Ocultar el grupo';
-    eye.addEventListener('click', () => (isHidden ? showHidden(entry.ids) : hidePieces(entry.ids)));
-    row.append(pick, eye);
-    row.dataset.group = String(group);
-    groupListEl.appendChild(row);
-  }
-}
-
-/** Campo de nombre: aparece cuando la selección es justo un grupo. */
-function selectedGroup(): { group: number; pieces: Piece[] } | null {
-  const pieces = selectedPieces();
-  const group = pieces[0]?.group;
-  if (group === undefined || pieces.some((piece) => piece.group !== group)) return null;
-  return { group, pieces: model.all().filter((piece) => piece.group === group) };
-}
-function syncGroupName(): void {
-  const found = selectedGroup();
-  groupNameRow.hidden = !found;
-  if (found && document.activeElement !== groupNameInput) groupNameInput.value = found.pieces[0].groupName ?? '';
-}
-groupNameInput.addEventListener('change', () => {
-  const found = selectedGroup();
-  if (!found) return;
-  const name = groupNameInput.value.trim();
-  const added = found.pieces.map((piece) => withGroup(piece, found.group, name || undefined));
-  model.apply({ added, removed: found.pieces });
-  selection.set(added.map((piece) => piece.id));
-  groupNameInput.blur();
+// Colocar: la sombra de la pieza y dónde cae (ui/placement.ts).
+const placement = createPlacement({
+  scene3d,
+  model,
+  hidden,
+  mode: () => mode,
+  selected: () => selected,
+  rotation: () => rotation,
+  color: () => color,
+  gridSize: () => gridSize,
+  placeSize: () => placeSizeOf(),
+  slabThick: () => slabThickOf(),
+  expand: (pieces) => expand(pieces),
+  useColor: (c) => useColor(c),
+  pieceIdOf: (hit) => pieceIdOf(hit),
 });
 
 // Panel «Selección»: las acciones sobre las piezas elegidas (selActions) y sus campos de centro, tamaño y giro (inspectorFields).
@@ -1895,280 +1461,32 @@ function paintTargets(found: FaceHit, wholePiece: boolean): FaceRef[] {
   return refs;
 }
 
-const faceCentre = (face: Vec3[]): Vec3 => [
-  face.reduce((s, p) => s + p[0], 0) / face.length,
-  face.reduce((s, p) => s + p[1], 0) / face.length,
-  face.reduce((s, p) => s + p[2], 0) / face.length,
-];
-
-// Pintura de píxeles: dentro de Pintar, con la casilla "Píxeles" se pinta casilla a casilla en lugar de cara entera.
+// Pintura de píxeles: dentro de Pintar, con la casilla "Píxeles" se pinta casilla a casilla en lugar de cara entera (ui/pixelPanel.ts).
 const textureLayer = new TextureLayer();
 scene3d.add(textureLayer.group);
-const pixelModeEl = document.getElementById('pixelMode') as HTMLInputElement;
-const pixelToolEl = document.getElementById('pixelTool') as HTMLSelectElement;
-const pixelSizeEl = document.getElementById('pixelSize') as HTMLSelectElement;
-const pixelActionsEl = document.getElementById('pixelActions')!;
-const pixelShapeEl = document.getElementById('pixelShape') as HTMLSelectElement;
-const pixelMirrorXEl = document.getElementById('pixelMirrorX') as HTMLInputElement;
-const pixelMirrorYEl = document.getElementById('pixelMirrorY') as HTMLInputElement;
-/** Forma del pincel y espejo dentro de la cara, según los controles del panel. */
-const brushOptions = (): BrushOptions => ({ round: pixelShapeEl.value === 'round', mirrorX: pixelMirrorXEl.checked, mirrorY: pixelMirrorYEl.checked });
-const pixelPainting = (): boolean => mode === 'paint' && pixelModeEl.checked;
-/** Última cara tocada en modo píxeles: la que abre el botón "Plano". */
-let lastPixelFace: { piece: Piece; faceIndex: number } | null = null;
-const syncPixelActions = (): void => {
-  pixelActionsEl.hidden = mode !== 'paint';
-};
-pixelModeEl.addEventListener('change', () => {
-  (document.activeElement as HTMLElement | null)?.blur();
-  setFaceHover(undefined);
-});
-
-/** Una cara que recibe el trazo: la pulsada o su reflejo con simetría (`reflect` lleva el punto pintado hasta ella). */
-interface StrokeTarget {
-  piece: Piece;
-  faceIndex: number;
-  texture: FaceTexture;
-  reflect: ((p: Vec3) => Vec3) | null;
-  last: { x: number; y: number } | null;
-  start: { x: number; y: number } | null;
-  base: FaceTexture | null;
-  selection?: Rect | null;
-  copy?: boolean;
-  shift?: { x: number; y: number };
-}
-/** Trazo en curso: se pinta en copias de las texturas y solo al soltar pasan al modelo, como un único cambio. */
-let pixelStroke: { piece: Piece; faceIndex: number; targets: StrokeTarget[]; changed: boolean } | null = null;
-
-/** Dibuja las texturas provisionales del trazo (una pieza puede recibir en varias caras a la vez). */
-function previewStroke(stroke: NonNullable<typeof pixelStroke>): void {
-  const ids = new Set(stroke.targets.map((t) => t.piece.id));
-  for (const id of ids) {
-    const mine = stroke.targets.filter((t) => t.piece.id === id);
-    const piece = mine[0].piece;
-    const textures = piece.faces.map((_, i) => mine.find((t) => t.faceIndex === i)?.texture ?? piece.faceTextures?.[i] ?? null);
-    textureLayer.add({ ...piece, faceTextures: textures });
-  }
-}
-
-function applyPixelTool(stroke: NonNullable<typeof pixelStroke>, point: Vec3): void {
-  const tool = pixelToolEl.value;
-  const size = Number(pixelSizeEl.value);
-  let changed = 0;
-  for (const target of stroke.targets) {
-    const cell = texelAt(target.piece.faces[target.faceIndex], target.texture, target.reflect ? target.reflect(point) : point);
-    if (!cell) continue;
-    // Entre dos movimientos se pinta la recta de casillas, para que un arrastre rápido no deje huecos.
-    changed += paintCell(target.texture, target, tool, cell, size, color, brushOptions());
-  }
-  if (changed === 0) return;
-  stroke.changed = true;
-  previewStroke(stroke);
-}
-
-/** Región elegida en la vista 3D con la herramienta Elegir de los píxeles: sobre qué cara y qué casillas. La sigue un recuadro amarillo. */
-let pixelSelection: { pieceId: number; faceIndex: number; rect: Rect } | null = null;
-let pixelSelecting: { piece: Piece; faceIndex: number; start: { x: number; y: number }; moved: boolean } | null = null;
-const pixelSelectionBox = new THREE.LineLoop(new THREE.BufferGeometry(), new THREE.LineBasicMaterial({ color: 0xffd24a, depthTest: false }));
-pixelSelectionBox.renderOrder = 999;
-pixelSelectionBox.frustumCulled = false;
-pixelSelectionBox.visible = false;
-scene3d.add(pixelSelectionBox);
-
-/** Pone o quita el recuadro según la selección (y que su pieza siga en el modelo). */
-function syncPixelSelection(): void {
-  const sel = pixelSelection;
-  const piece = sel && model.get(sel.pieceId);
-  if (!sel || !piece || !piece.faces[sel.faceIndex]) {
-    if (sel && !piece) pixelSelection = null;
-    pixelSelectionBox.visible = false;
-    return;
-  }
-  const face = piece.faces[sel.faceIndex];
-  const { w, h } = textureOfFace(piece, sel.faceIndex);
-  const { x0, y0, x1, y1 } = sel.rect;
-  const corners = [pointOf(face, x0 / w, y0 / h), pointOf(face, (x1 + 1) / w, y0 / h), pointOf(face, (x1 + 1) / w, (y1 + 1) / h), pointOf(face, x0 / w, (y1 + 1) / h)];
-  pixelSelectionBox.geometry.dispose();
-  pixelSelectionBox.geometry = new THREE.BufferGeometry().setFromPoints(corners.map((p) => new THREE.Vector3(p[0], p[1], p[2])));
-  pixelSelectionBox.visible = true;
-}
-model.subscribe(() => syncPixelSelection());
-
-/** Voltear, girar, contorno y tono: sobre la selección (o toda la cara) del editor plano si está abierto y, si no, de la vista 3D. */
-function applyPixelEdit(edit: PixelEdit): void {
-  let done: boolean;
-  if (faceEditor.isOpen) {
-    done = faceEditor.edit(edit);
-  } else {
-    const sel = pixelSelection && model.get(pixelSelection.pieceId) ? pixelSelection : null;
-    const piece = sel ? model.get(sel.pieceId)! : lastPixelFace && model.get(lastPixelFace.piece.id);
-    const faceIndex = sel ? sel.faceIndex : lastPixelFace?.faceIndex;
-    if (!piece || faceIndex === undefined) {
-      statusEl.textContent = 'Pasa el cursor por una cara en modo píxeles para elegirla';
-      return;
-    }
-    const next = editRegion(textureOfFace(piece, faceIndex), sel?.rect ?? null, edit, color);
-    done = next !== null;
-    if (next) {
-      const updated = withFaceTexture(piece, faceIndex, next);
-      model.apply({ added: [updated], removed: [piece] });
-      lastPixelFace = { piece: updated, faceIndex };
-      if (sel) pixelSelection = { pieceId: updated.id, faceIndex, rect: sel.rect };
-      syncPixelSelection();
-    }
-  }
-  if (!done) statusEl.textContent = edit === 'rotate' ? 'Girar necesita una región cuadrada (o una cara cuadrada)' : 'No hay nada que cambiar';
-}
-document.querySelectorAll<HTMLButtonElement>('button[data-pixeledit]').forEach((button) =>
-  button.addEventListener('click', () => {
-    button.blur();
-    applyPixelEdit(button.dataset.pixeledit as PixelEdit);
-  }),
-);
-
-/** Ctrl+C en modo píxeles: copia la región elegida o, sin ella, toda la última cara tocada. */
-function copyPixels(): void {
-  const sel = pixelSelection && model.get(pixelSelection.pieceId) ? pixelSelection : null;
-  const piece = sel ? model.get(sel.pieceId)! : lastPixelFace && model.get(lastPixelFace.piece.id);
-  const faceIndex = sel ? sel.faceIndex : lastPixelFace?.faceIndex;
-  if (!piece || faceIndex === undefined) {
-    statusEl.textContent = 'Pasa el cursor por una cara en modo píxeles para copiarla';
-    return;
-  }
-  pixelClipboard.value = copyRegion(textureOfFace(piece, faceIndex), sel?.rect ?? null);
-  statusEl.textContent = 'Píxeles copiados';
-}
-
-/** Ctrl+V en modo píxeles: pega en la cara elegida (con su esquina en la de la selección) o en la última tocada. */
-function pastePixels(): void {
-  const clip = pixelClipboard.value;
-  const sel = pixelSelection && model.get(pixelSelection.pieceId) ? pixelSelection : null;
-  const piece = sel ? model.get(sel.pieceId)! : lastPixelFace && model.get(lastPixelFace.piece.id);
-  const faceIndex = sel ? sel.faceIndex : lastPixelFace?.faceIndex;
-  if (!clip || !piece || faceIndex === undefined) {
-    statusEl.textContent = clip ? 'Pasa el cursor por una cara en modo píxeles para pegar' : 'No hay píxeles copiados';
-    return;
-  }
-  const pasted = pasteRegion(textureOfFace(piece, faceIndex), clip, sel?.rect.x0 ?? 0, sel?.rect.y0 ?? 0);
-  const next = withFaceTexture(piece, faceIndex, pasted.texture);
-  model.apply({ added: [next], removed: [piece] });
-  lastPixelFace = { piece: next, faceIndex };
-  pixelSelection = { pieceId: next.id, faceIndex, rect: pasted.rect };
-  syncPixelSelection();
-}
-
-function startPixelStroke(event: PointerEvent): void {
-  if (!pixelPainting() || event.button !== 0) return;
-  const hit = castRay(event, false);
-  const found = hit && !backdrops.includes(hit.object) ? findFace(hit) : undefined;
-  if (!found) return;
-  const faceIndex = found.piece.faces.indexOf(found.face);
-  const texture = textureOfFace(found.piece, faceIndex);
-  if (event.altKey) {
-    const cell = texelAt(found.face, texture, [found.point.x, found.point.y, found.point.z]);
-    if (cell) setColor(visibleColor(texture, cell.x, cell.y, faceColorOf(found.piece, faceIndex)));
-    return;
-  }
-  controls.enabled = false;
-  try {
-    renderer.domElement.setPointerCapture(event.pointerId);
-  } catch {
-    // Sin captura el trazo sigue mientras el puntero esté sobre el lienzo.
-  }
-  lastPixelFace = { piece: found.piece, faceIndex };
-  if (pixelToolEl.value === 'select') {
-    const cell = texelAt(found.face, texture, [found.point.x, found.point.y, found.point.z]);
-    if (!cell) return;
-    pixelSelecting = { piece: found.piece, faceIndex, start: cell, moved: false };
-    pixelSelection = { pieceId: found.piece.id, faceIndex, rect: rectBetween(cell, cell) };
-    syncPixelSelection();
-    return;
-  }
-  const targets: StrokeTarget[] = [{ piece: found.piece, faceIndex, texture, reflect: null, last: null, start: null, base: null }];
-  // Con simetría el trazo se repite en los reflejos de la cara, cada uno sobre su propia copia de la textura.
-  const centre = faceCentre(found.face);
-  for (const reflection of reflections(symmetry)) {
-    for (const image of facesAt(model.all(), reflection.point(centre), reflection.dir(found.normal))) {
-      if (targets.some((t) => t.piece.id === image.piece.id && t.faceIndex === image.index)) continue;
-      targets.push({ piece: image.piece, faceIndex: image.index, texture: textureOfFace(image.piece, image.index), reflect: reflection.point, last: null, start: null, base: null });
-    }
-  }
-  if (pixelToolEl.value === 'move') {
-    const sel = pixelSelection && pixelSelection.pieceId === found.piece.id && pixelSelection.faceIndex === faceIndex ? pixelSelection.rect : null;
-    // Con una región elegida solo se mueve esa cara: los reflejos no tienen la misma región.
-    if (sel) targets.splice(1);
-    for (const t of targets) {
-      t.selection = sel;
-      t.copy = event.ctrlKey || event.metaKey;
-    }
-  }
-  pixelStroke = { piece: found.piece, faceIndex, targets, changed: false };
-  applyPixelTool(pixelStroke, [found.point.x, found.point.y, found.point.z]);
-}
-
-function movePixelStroke(event: PointerEvent): void {
-  if (pixelSelecting) {
-    const hit = castRay(event, false);
-    const found = hit ? findFace(hit) : undefined;
-    if (!found || found.piece.id !== pixelSelecting.piece.id || found.face !== pixelSelecting.piece.faces[pixelSelecting.faceIndex]) return;
-    const cell = texelAt(found.face, textureOfFace(found.piece, pixelSelecting.faceIndex), [found.point.x, found.point.y, found.point.z]);
-    if (!cell) return;
-    pixelSelecting.moved = pixelSelecting.moved || cell.x !== pixelSelecting.start.x || cell.y !== pixelSelecting.start.y;
-    pixelSelection = { pieceId: pixelSelecting.piece.id, faceIndex: pixelSelecting.faceIndex, rect: rectBetween(pixelSelecting.start, cell) };
-    syncPixelSelection();
-    return;
-  }
-  if (!pixelStroke) return;
-  const hit = castRay(event, false);
-  const found = hit ? findFace(hit) : undefined;
-  // El trazo se queda en la cara donde empezó.
-  if (!found || found.piece.id !== pixelStroke.piece.id || found.face !== pixelStroke.piece.faces[pixelStroke.faceIndex]) return;
-  applyPixelTool(pixelStroke, [found.point.x, found.point.y, found.point.z]);
-}
-
-/** Editor plano: la misma pintura de píxeles sobre la textura ampliada de una cara. */
-const faceEditor = new FaceEditor(document.getElementById('faceEditor')!, document.getElementById('faceCanvas') as HTMLCanvasElement, {
-  tool: () => pixelToolEl.value,
-  size: () => Number(pixelSizeEl.value),
-  brush: brushOptions,
+const pixelPanel = createPixelPanel({
+  scene3d,
+  renderer,
+  controls,
+  model,
+  statusEl,
+  textureLayer,
+  hidden,
+  backdrops,
+  symmetry: () => symmetry,
+  mode: () => mode,
   color: () => color,
-  pickColor: (c) => setColor(c),
-  stillThere: (piece) => model.all().some((p) => p.id === piece.id),
-  preview: (piece, faceIndex, texture) => textureLayer.preview(piece, faceIndex, texture),
-  revert: (piece) => {
-    const current = model.get(piece.id);
-    if (current && !hidden.has(current.id)) textureLayer.add(current);
+  setColor: (c) => setColor(c),
+  useColor: (c) => useColor(c),
+  castRay: (event, includeGround) => castRay(event, includeGround),
+  findFace: (hit) => findFace(hit),
+  clearFaceHover: () => setFaceHover(undefined),
+  consumed: () => {
+    down = null;
   },
-  commit: (piece, faceIndex, texture) => {
-    const next = withFaceTexture(piece, faceIndex, texture);
-    model.apply({ added: [next], removed: [piece] });
-    useColor(color);
-    return next;
-  },
-});
-
-function openFaceEditor(): void {
-  const target = lastPixelFace && model.all().find((p) => p.id === lastPixelFace!.piece.id);
-  if (!target || !lastPixelFace) {
-    statusEl.textContent = 'Pasa el cursor por una cara en modo píxeles y vuelve a pulsar Plano';
-    return;
-  }
-  lastPixelFace = { piece: target, faceIndex: lastPixelFace.faceIndex };
-  faceEditor.open(target, lastPixelFace.faceIndex);
-}
-document.getElementById('pixelFlat')!.addEventListener('click', openFaceEditor);
-document.getElementById('faceEditorClose')!.addEventListener('click', () => faceEditor.close());
-renderer.domElement.addEventListener('dblclick', (e) => {
-  if (!pixelPainting()) return;
-  const hit = castRay(e as PointerEvent, false);
-  const found = hit && !backdrops.includes(hit.object) ? findFace(hit) : undefined;
-  if (!found) return;
-  lastPixelFace = { piece: found.piece, faceIndex: found.piece.faces.indexOf(found.face) };
-  openFaceEditor();
 });
 
 // Malla: elegir y mover los vértices de las piezas. Una pieza con un vértice hundido deja de ser convexa y pasa a ser malla libre.
-const meshActionsEl = document.getElementById('meshActions')!;
 // «Mover en / Plano» es un solo componente: con Elegir limita el arrastre de las piezas (`pieceAxis`) y en Malla el de los vértices (`meshTool.axis`).
 const axisRowEl = document.getElementById('axisRow')!;
 function syncAxisRow(): void {
@@ -2191,53 +1509,26 @@ axisRowEl.querySelectorAll<HTMLButtonElement>('button[data-axis]').forEach((butt
     statusEl.textContent = pieceAxis === null ? 'Arrastre libre' : `Las piezas solo se mueven en ${lockLabel(pieceAxis)}`;
   }),
 );
-const meshInfoEl = document.getElementById('meshInfo')!;
-const meshDoubleEl = document.getElementById('meshDouble') as HTMLInputElement;
-/** Lo que se deja elegido en el panel de Malla se recuerda entre sesiones (sin fallar si el navegador no deja guardar). */
-const meshPref = {
-  get: (name: string): string | null => {
-    try {
-      return localStorage.getItem(`gridfacet.mesh.${name}`);
-    } catch {
-      return null;
-    }
-  },
-  set: (name: string, value: string): void => {
-    try {
-      localStorage.setItem(`gridfacet.mesh.${name}`, value);
-    } catch {
-      // Sin almacenamiento la opción vale solo para esta sesión.
-    }
-  },
-};
-const meshAutoFlatEl = document.getElementById('meshAutoFlat') as HTMLInputElement;
-meshAutoFlatEl.checked = meshPref.get('autoFlat') === '1';
-meshAutoFlatEl.addEventListener('change', () => {
-  meshPref.set('autoFlat', meshAutoFlatEl.checked ? '1' : '0');
-  meshTool.flattenOnRelease = meshAutoFlatEl.checked;
-  statusEl.textContent = meshAutoFlatEl.checked ? 'Aplanar al soltar activado: al soltar un vértice, las caras que queden torcidas se aplanan solas' : 'Aplanar al soltar desactivado: las caras torcidas solo se marcan en naranja';
-});
-const meshUnlitEl = document.getElementById('meshUnlit') as HTMLInputElement;
-const meshBehindEl = document.getElementById('meshBehind') as HTMLInputElement;
-const meshTool = new MeshTool({
-  scene: scene3d,
+applyShortcutLabels();
+const meshPanel = createMeshPanel({
+  scene3d,
   camera,
-  domElement: renderer.domElement,
-  setOrbit: (on) => {
-    controls.enabled = on;
-  },
+  renderer,
+  controls,
   model,
+  statusEl,
   selectedPieces: () => selectedPieces(),
   isHidden: (piece) => hidden.has(piece.id) || layers.isHidden(piece),
   symmetry: () => symmetry,
-  status: (message) => (statusEl.textContent = message),
+  gridSize: () => gridSize,
+  inMeshMode: () => mode === 'mesh',
   // Un clic que Malla se queda no llega al resto: el «pulsar» pendiente del lienzo quedaría viejo y el siguiente soltar lo tomaría por un clic.
   consumed: () => {
     down = null;
   },
-  onSelectionChange: () => syncMeshActions(),
+  syncAxisRow: () => syncAxisRow(),
 });
-model.onHistory = (kind) => meshTool.historyMoved(kind);
+const meshTool = meshPanel.tool;
 syncAxisRow();
 meshTool.magnet = magnet;
 const magnetEl = document.getElementById('magnet') as HTMLInputElement;
@@ -2254,196 +1545,8 @@ magnetEl.addEventListener('change', () => {
   statusEl.textContent = magnet ? 'Imán activado: piezas y vértices caen en la rejilla' : 'Imán desactivado: piezas y vértices siguen al ratón';
 });
 if (import.meta.env.DEV) (window as unknown as Record<string, unknown>).__mesh = meshTool;
-/** Un botón o casilla de Malla apagado dice en su título qué hay que elegir (el título de siempre se guarda en `data-title`). */
-function setReasonTitle(element: HTMLElement, reason: string | null): void {
-  element.dataset.title ??= element.title;
-  element.title = titleWithReason(element.dataset.title, reason);
-}
-function syncMeshActions(): void {
-  meshActionsEl.hidden = mode !== 'mesh';
-  const count = meshTool.count;
-  const warped = meshTool.warpedCount;
-  const fullFaces = meshTool.faceFlagCount(FACE_DOUBLE).total;
-  const unpaired = meshTool.unpairedCount;
-  meshInfoEl.textContent = (count === 0 ? 'Ningún vértice elegido' : `${count} vértice(s) elegidos`) + (warped > 0 ? ` · ${warped} cara(s) torcida(s) en naranja` : '') + (unpaired > 0 ? ` · ${unpaired} vértice(s) sin gemelo en rosa (Simetrizar)` : '');
-  document.getElementById('meshAdd')!.classList.toggle('active', meshTool.addMode);
-  document.getElementById('meshSlide')!.classList.toggle('active', meshTool.slideMode);
-  document.getElementById('meshRemove')!.classList.toggle('active', meshTool.removeMode);
-  syncAxisRow();
-  meshActionsEl.querySelectorAll<HTMLButtonElement>('button[data-mesh]').forEach((button) => {
-    const reason = meshNeedReason(button.dataset.mesh!, { count, mostInOnePiece: meshTool.mostInOnePiece, fullFaces, symmetric: symmetry.x || symmetry.y || symmetry.z });
-    button.disabled = reason !== null;
-    setReasonTitle(button, reason);
-  });
-  // Las casillas reflejan las caras elegidas (todos sus vértices): marcadas si todas la tienen, a medias si solo algunas.
-  for (const [input, flag] of [[meshDoubleEl, FACE_DOUBLE], [meshUnlitEl, FACE_UNLIT], [meshBehindEl, FACE_BEHIND]] as const) {
-    const { total, on } = meshTool.faceFlagCount(flag);
-    input.disabled = total === 0;
-    setReasonTitle(input.parentElement!, total === 0 ? 'necesita elegir caras con todos sus vértices elegidos (no hay ninguna)' : null);
-    input.checked = total > 0 && on === total;
-    input.indeterminate = on > 0 && on < total;
-  }
-}
-for (const [input, flag] of [[meshDoubleEl, FACE_DOUBLE], [meshUnlitEl, FACE_UNLIT], [meshBehindEl, FACE_BEHIND]] as const) {
-  input.addEventListener('change', () => meshTool.setFaceFlag(flag, input.checked));
-}
-document.getElementById('meshSlide')!.addEventListener('click', (event) => {
-  (event.currentTarget as HTMLButtonElement).blur();
-  meshTool.setSlideMode(!meshTool.slideMode);
-});
-document.getElementById('meshRemove')!.addEventListener('click', (event) => {
-  (event.currentTarget as HTMLButtonElement).blur();
-  meshTool.setRemoveMode(!meshTool.removeMode);
-});
-const meshGrowAmountEl = document.getElementById('meshGrowAmount') as HTMLInputElement;
-{
-  const saved = Number(meshPref.get('grow'));
-  if (saved > 0 && saved <= gridSize) {
-    meshGrowAmountEl.value = String(saved);
-    meshTool.growDistance = saved;
-  }
-}
-meshGrowAmountEl.addEventListener('input', () => {
-  const value = Number(meshGrowAmountEl.value);
-  if (value > 0 && value <= gridSize) {
-    meshTool.growDistance = value;
-    meshPref.set('grow', String(value));
-  }
-});
-// El tamaño del chaflán es uno solo: lo comparten la herramienta Chaflán (J) y la acción «Chaflán» de Malla, y se recuerda entre sesiones.
-const meshBevelSizeEl = document.getElementById('meshBevelSize') as HTMLInputElement;
-function setBevelSize(value: number): void {
-  meshTool.bevelSize = value;
-  meshPref.set('bevel', String(value));
-  for (const input of [bevelSizeEl, meshBevelSizeEl]) if (Number(input.value) !== value) input.value = String(value);
-}
-{
-  const saved = Number(meshPref.get('bevel'));
-  if (saved > 0 && saved <= gridSize) setBevelSize(saved);
-}
-for (const input of [bevelSizeEl, meshBevelSizeEl]) {
-  input.addEventListener('input', () => {
-    const value = Number(input.value);
-    if (value > 0 && value <= gridSize) setBevelSize(value);
-  });
-}
-const meshWeldDistanceEl = document.getElementById('meshWeldDistance') as HTMLInputElement;
-{
-  const saved = Number(meshPref.get('weld'));
-  if (saved > 0 && saved <= 1) {
-    meshWeldDistanceEl.value = String(saved);
-    meshTool.weldDistance = saved;
-  }
-}
-meshWeldDistanceEl.addEventListener('input', () => {
-  const value = Number(meshWeldDistanceEl.value);
-  if (value > 0 && value <= 1) {
-    meshTool.weldDistance = value;
-    meshPref.set('weld', String(value));
-  }
-});
-const meshSeeBehindEl = document.getElementById('meshSeeBehind') as HTMLInputElement;
-// La casilla arranca con lo último que se eligió y la herramienta con ella (si no, se veían los vértices al revés).
-meshSeeBehindEl.checked = meshPref.get('seeBehind') !== '0';
-meshTool.setSeeBehind(meshSeeBehindEl.checked, false);
-meshTool.flattenOnRelease = meshAutoFlatEl.checked;
-meshSeeBehindEl.addEventListener('change', () => {
-  meshPref.set('seeBehind', meshSeeBehindEl.checked ? '1' : '0');
-  meshTool.setSeeBehind(meshSeeBehindEl.checked);
-  meshSeeBehindEl.blur();
-});
-document.getElementById('meshAdd')!.addEventListener('click', (event) => {
-  (event.currentTarget as HTMLButtonElement).blur();
-  meshTool.setAddMode(!meshTool.addMode);
-});
-meshActionsEl.querySelectorAll<HTMLButtonElement>('button[data-mesh]').forEach((button) =>
-  button.addEventListener('click', () => {
-    button.blur();
-    // Con un arrastre, un giro o un recuadro en marcha, las acciones del panel no hacen nada.
-    if (meshTool.busy) return;
-    const action = button.dataset.mesh;
-    if (action === 'all') meshTool.selectAll();
-    else if (action === 'merge') meshTool.mergeSelected();
-    else if (action === 'delete') meshTool.deleteSelected();
-    else if (action === 'snap') meshTool.snapToGrid();
-    else if (action === 'weld') meshTool.weldNearby();
-    else if (action === 'rotate') meshTool.beginTransform('rotate');
-    else if (action === 'scale') meshTool.beginTransform('scale');
-    else if (action === 'taper') meshTool.beginTransform('taper');
-    else if (action === 'twist') meshTool.beginTransform('twist');
-    else if (action === 'bend') meshTool.beginTransform('bend');
-    else if (action === 'face') meshTool.createFace();
-    else if (action === 'delface') meshTool.deleteFacesSelected();
-    else if (action === 'fillhole') meshTool.fillHolesSelected();
-    else if (action === 'flip') meshTool.flipSelected();
-    else if (action === 'triangulate') meshTool.triangulateSelected();
-    else if (action === 'extrude') meshTool.extrudeSelected();
-    else if (action === 'tip') meshTool.tipSelected();
-    else if (action === 'push') meshTool.beginTransform('push');
-    else if (action === 'growedge') meshTool.growFaceFromEdge();
-    else if (action === 'connect') meshTool.connectSelected();
-    else if (action === 'ring') meshTool.ringCutSelected();
-    else if (action === 'bevel') meshTool.bevelSelected();
-    else if (action === 'dissolve') meshTool.dissolveSelected();
-    else if (action === 'straighten') meshTool.straightenSelected();
-    else if (action === 'flatten') meshTool.flattenSelected();
-    else if (action === 'symmetrize') meshTool.symmetrizeAll();
-  }),
-);
 
-function finishPixelStroke(commit: boolean): boolean {
-  if (pixelSelecting) {
-    // Un clic sin arrastrar quita la selección.
-    if (!pixelSelecting.moved) pixelSelection = null;
-    pixelSelecting = null;
-    controls.enabled = true;
-    syncPixelSelection();
-    return true;
-  }
-  const stroke = pixelStroke;
-  if (!stroke) return false;
-  pixelStroke = null;
-  controls.enabled = true;
-  if (commit && stroke.changed) {
-    // Una pieza puede recibir en varias caras: se encadenan sobre la versión ya modificada.
-    const latest = new Map<number, Piece>();
-    for (const target of stroke.targets) {
-      latest.set(target.piece.id, withFaceTexture(latest.get(target.piece.id) ?? target.piece, target.faceIndex, target.texture));
-    }
-    const primary = stroke.targets[0];
-    const moved = pixelSelection && pixelSelection.pieceId === primary.piece.id && pixelSelection.faceIndex === primary.faceIndex && primary.shift ? primary.shift : null;
-    model.apply({ added: [...latest.values()], removed: stroke.targets.filter((t, i, all) => all.findIndex((o) => o.piece.id === t.piece.id) === i).map((t) => t.piece) });
-    // La última cara tocada sigue siendo la misma en la pieza nueva.
-    const renewed = lastPixelFace && latest.get(lastPixelFace.piece.id);
-    if (lastPixelFace && renewed) lastPixelFace = { piece: renewed, faceIndex: lastPixelFace.faceIndex };
-    // La selección sigue al contenido movido y a la pieza nueva que lo lleva.
-    if (pixelSelection && pixelSelection.pieceId === primary.piece.id) {
-      const next = latest.get(primary.piece.id)!;
-      const r = pixelSelection.rect;
-      const shifted = moved && pixelToolEl.value === 'move' ? { x0: r.x0 + moved.x, y0: r.y0 + moved.y, x1: r.x1 + moved.x, y1: r.y1 + moved.y } : r;
-      pixelSelection = { pieceId: next.id, faceIndex: pixelSelection.faceIndex, rect: shifted };
-      syncPixelSelection();
-    }
-    useColor(color);
-  } else {
-    // Sin cambios o cancelado: vuelve a dibujarse la pieza tal como está en el modelo.
-    for (const target of stroke.targets) textureLayer.add(target.piece);
-  }
-  return true;
-}
-
-renderer.domElement.addEventListener('pointerdown', startPixelStroke, { capture: true });
-renderer.domElement.addEventListener('pointermove', movePixelStroke);
-renderer.domElement.addEventListener(
-  'pointerup',
-  (e) => {
-    if (finishPixelStroke(true)) {
-      e.stopImmediatePropagation();
-      down = null;
-    }
-  },
-  { capture: true },
-);
+pixelPanel.bindPointer();
 
 /** Clic en modo pintar: pinta la cara; con Ctrl, toda la pieza; con Alt, toma su color como color actual. */
 function paintAt(event: PointerEvent): void {
@@ -2537,8 +1640,8 @@ function bindAmount(attr: string, input: HTMLInputElement, initial: number | nul
   return () => current;
 }
 // Tamaño al colocar: escala de la pieza (o lado de la lámina) y grosor de la lámina.
-const placeSizeOf = bindAmount('place-size', document.getElementById('placeSizeInput') as HTMLInputElement, 1, () => 4, refreshGhost);
-const slabThickOf = bindAmount('thick', document.getElementById('slabThickInput') as HTMLInputElement, 0.25, () => 4, refreshGhost);
+const placeSizeOf = bindAmount('place-size', document.getElementById('placeSizeInput') as HTMLInputElement, 1, () => 4, () => placement.refresh());
+const slabThickOf = bindAmount('thick', document.getElementById('slabThickInput') as HTMLInputElement, 0.25, () => 4, () => placement.refresh());
 const growAmountOf = bindAmount('grow-amount', document.getElementById('growAmount') as HTMLInputElement, null, () => gridSize);
 
 /** Un clic sin arrastrar hace crecer lo elegido en el panel; en automático, una celda en horizontal o una placa en vertical. */
@@ -2786,7 +1889,7 @@ renderer.domElement.addEventListener(
   { capture: true },
 );
 renderer.domElement.addEventListener('pointercancel', () => {
-  finishPixelStroke(false);
+  pixelPanel.finish(false);
   finishMarquee(false);
   finishDrag(false);
   finishGrow(false);
@@ -2838,7 +1941,7 @@ renderer.domElement.addEventListener('pointerup', (e) => {
   }
   if (mode === 'paint') {
     // En píxeles el trazo ya se hizo al pulsar.
-    if (!pixelPainting()) paintAt(e);
+    if (!pixelPanel.painting()) paintAt(e);
     return;
   }
   if (mode === 'shape') {
@@ -2868,14 +1971,13 @@ renderer.domElement.addEventListener('pointerup', (e) => {
   }
   if (mode === 'grow' || mode === 'sink') return;
   if (withCtrl(e)) removeAt(e);
-  else placePiece();
+  else placement.place();
   updateHover(e);
 });
 renderer.domElement.addEventListener('pointerleave', () => {
-  hasTarget = false;
   snapped = null;
   showGuides(null);
-  refreshGhost();
+  placement.clear();
   if (mode === 'cut') cutTool.setHover(null);
   if (mode === 'fill') fillTool.setHover(null);
   if (mode === 'outline') outlineTool.setHover(null);
@@ -3133,17 +2235,16 @@ function setMode(next: Mode): void {
   if (mode === 'outline') outlineTool.activate();
   if (mode === 'vertex') vertexTool.activate();
   if (mode === 'mesh') meshTool.activate();
-  hasTarget = false;
-  refreshGhost();
+  placement.clear();
   syncButtons();
   syncCutActions();
   syncFillActions();
   syncOutlineActions();
   syncVertexActions();
-  syncMeshActions();
+  meshPanel.sync();
   syncShapeActions();
   syncBevelActions();
-  syncPixelActions();
+  pixelPanel.syncActions();
   syncFaceActions();
   growActionsEl.hidden = mode !== 'grow' && mode !== 'sink' && mode !== 'outline';
   syncPlaceRows();
@@ -3164,7 +2265,7 @@ function selectPiece(index: number): void {
   setMode('place');
   syncButtons();
   syncPlaceRows();
-  refreshGhost();
+  placement.refresh();
 }
 
 function syncButtons(): void {
@@ -3193,7 +2294,7 @@ function setColor(next: number): void {
   color = next;
   colorInputEl.value = hex(next);
   shapeBase = null;
-  refreshGhost();
+  placement.refresh();
   renderRecentColors();
 }
 colorInputEl.addEventListener('input', () => setColor(parseInt(colorInputEl.value.slice(1), 16)));
@@ -3409,67 +2510,14 @@ const commands: Command[] = [
     keywords: 'pintar textura cara',
     run: () => {
       setMode('paint');
-      pixelModeEl.checked = true;
-      pixelToolEl.value = tool;
-      pixelModeEl.dispatchEvent(new Event('change'));
+      pixelPanel.useTool(tool);
     },
   })),
-  { name: 'Píxeles: abrir la cara en plano', keywords: 'editor 2d ampliar textura', enabled: () => lastPixelFace !== null, run: openFaceEditor },
-  { name: 'Píxeles: volver a pintar caras enteras', keywords: 'pintar color cara', run: () => { pixelModeEl.checked = false; pixelModeEl.dispatchEvent(new Event('change')); } },
+  { name: 'Píxeles: abrir la cara en plano', keywords: 'editor 2d ampliar textura', enabled: () => pixelPanel.hasLastFace(), run: pixelPanel.openFaceEditor },
+  { name: 'Píxeles: volver a pintar caras enteras', keywords: 'pintar color cara', run: pixelPanel.wholeFaces },
   { name: 'Mostrar ayuda', shortcut: '?', keywords: 'atajos', run: () => setHelp(true) },
 ];
-const paletteEl = document.getElementById('palette')!;
-const paletteInput = document.getElementById('paletteInput') as HTMLInputElement;
-const paletteList = document.getElementById('paletteList')!;
-let paletteMatches: Command[] = [];
-let paletteIndex = 0;
-const isPaletteOn = (c: Command): boolean => c.enabled?.() ?? true;
-
-function renderPalette(): void {
-  paletteMatches = searchCommands(commands, paletteInput.value);
-  paletteIndex = Math.max(0, paletteMatches.findIndex(isPaletteOn));
-  paletteList.replaceChildren();
-  paletteMatches.forEach((command, i) => {
-    const row = document.createElement('div');
-    row.className = `pcmd${i === paletteIndex ? ' active' : ''}${isPaletteOn(command) ? '' : ' off'}`;
-    row.append(Object.assign(document.createElement('span'), { textContent: command.name }));
-    if (command.shortcut) row.append(Object.assign(document.createElement('kbd'), { textContent: command.shortcut }));
-    row.addEventListener('click', () => runPaletteCommand(command));
-    paletteList.appendChild(row);
-  });
-}
-function runPaletteCommand(command: Command): void {
-  if (!isPaletteOn(command)) return;
-  setPalette(false);
-  command.run();
-}
-function setPalette(on: boolean): void {
-  paletteEl.hidden = !on;
-  if (!on) {
-    // Sin esto el campo oculto conserva el foco y se come los atajos siguientes.
-    paletteInput.blur();
-    return;
-  }
-  paletteInput.value = '';
-  renderPalette();
-  paletteInput.focus();
-}
-paletteInput.addEventListener('input', renderPalette);
-paletteInput.addEventListener('keydown', (e) => {
-  if (e.key === 'Escape') setPalette(false);
-  else if (e.key === 'Enter' && paletteMatches[paletteIndex]) runPaletteCommand(paletteMatches[paletteIndex]);
-  else if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
-    e.preventDefault();
-    const step = e.key === 'ArrowDown' ? 1 : -1;
-    paletteIndex = (paletteIndex + step + paletteMatches.length) % Math.max(1, paletteMatches.length);
-    [...paletteList.children].forEach((row, i) => row.classList.toggle('active', i === paletteIndex));
-    paletteList.children[paletteIndex]?.scrollIntoView({ block: 'nearest' });
-  }
-  e.stopPropagation();
-});
-paletteEl.addEventListener('pointerdown', (e) => {
-  if (e.target === paletteEl) setPalette(false);
-});
+const commandPalette = createCommandPalette(commands);
 
 /** Línea de “ahora”: dice qué toca hacer en este momento y cambia con la fase de la herramienta y la selección. */
 function hintText(): string {
@@ -3667,9 +2715,9 @@ function syncSymmetry(): void {
     const box = document.querySelector<HTMLInputElement>(`[data-sym="${axis}"]`)!;
     box.checked = symmetry[axis];
   }
-  refreshGhost();
+  placement.refresh();
   meshTool.refresh();
-  syncMeshActions();
+  meshPanel.sync();
 }
 function toggleSymmetry(axis: 'x' | 'y' | 'z'): void {
   symmetry[axis] = !symmetry[axis];
@@ -3707,7 +2755,7 @@ function setSmooth(on: boolean): void {
   }
   objects.clear();
   selection.notify();
-  refreshGhost();
+  placement.refresh();
   const box = document.getElementById('smoothToggle') as HTMLInputElement;
   box.checked = on;
   box.blur();
@@ -3737,269 +2785,186 @@ document.addEventListener('click', (e) => {
 });
 document.getElementById('exportMode')!.addEventListener('change', (e) => (e.target as HTMLSelectElement).blur());
 
-const PAN_KEYS: Record<string, [number, number]> = {
-  arrowleft: [-1, 0], arrowright: [1, 0], arrowup: [0, 1], arrowdown: [0, -1],
-};
-const panKeys = new Set<string>();
-let panFast = false;
-/** Cuánto lleva pulsada la flecha (segundos): al principio la cámara avanza despacio, para poder ajustar de a poco, y acelera si se mantiene. */
-const panState: PanState = { held: 0, vx: 0, vy: 0 };
-window.addEventListener('keyup', (e) => {
-  panKeys.delete(e.key.toLowerCase());
-  // Soltar Ctrl con la flecha pulsada vuelve a la velocidad normal (antes se quedaba rápida hasta la siguiente pulsación).
-  panFast = panKeys.size > 0 && (e.ctrlKey || e.metaKey);
-});
-// Si el navegador pierde el foco o la pestaña se oculta se pierde el «soltar tecla»: sin esto la cámara seguía avanzando sola.
-const stopPan = (): void => {
-  panKeys.clear();
-  panFast = false;
-};
-window.addEventListener('blur', stopPan);
-document.addEventListener('visibilitychange', () => document.hidden && stopPan());
-
-/** Desplaza cámara y punto de mira juntos por el plano de la pantalla: arranca lento, acelera si se mantiene pulsada y frena casi al soltar. */
-function updatePan(dt: number): void {
-  const want: [number, number] = [0, 0];
-  for (const key of panKeys) (want[0] += PAN_KEYS[key][0]), (want[1] += PAN_KEYS[key][1]);
-  const [x, y] = panStep(panState, want, dt, camera.position.distanceTo(controls.target), panFast);
-  if (x === 0 && y === 0) return;
-  const move = new THREE.Vector3(x, y, 0).applyQuaternion(camera.quaternion);
-  camera.position.add(move);
-  controls.target.add(move);
+// Teclado (ui/keyboard.ts): cada fila de core/shortcuts.ts apunta a una de estas acciones por su id. Una acción que no corresponde ahora devuelve false.
+const ctrlOf = (e: KeyboardEvent): boolean => e.ctrlKey || e.metaKey;
+/** Hacia dónde va cada flecha en pantalla, vista desde la cámara. */
+function arrowDirections(): Record<string, [number, number]> {
+  const { forward, right } = cameraAxes();
+  return { arrowup: forward, arrowdown: [-forward[0], -forward[1]], arrowright: right, arrowleft: [-right[0], -right[1]] };
 }
-
-window.addEventListener('keydown', (e) => {
-  if (faceEditor.isOpen) {
-    if (e.key === 'Escape') faceEditor.close();
-    // Deshacer y rehacer siguen disponibles; lo demás espera a que se cierre el editor.
-    if (!(e.ctrlKey || e.metaKey)) return;
-  }
-  if (help.isOpen()) {
-    // Con el foco en el buscador, "?" es una letra más.
-    if (e.key === 'Escape' || (e.key === '?' && !help.isSearch(e.target))) setHelp(false);
-    return;
-  }
-  const key = e.key.toLowerCase();
-  const typing = isTextField(e.target as { tagName?: string; type?: string } | null);
-  // «?» dentro de un campo de texto es un signo más; F1 abre la ayuda desde cualquier sitio.
-  if ((e.key === '?' && !typing) || e.key === 'F1') {
+const keyActions: KeyActions = {
+  help: (e) => {
     e.preventDefault();
     setHelp(true);
-    return;
-  }
-  // Con el foco en un campo las teclas le pertenecen a él, salvo Ctrl+S, Ctrl+O y Ctrl+K (si no, el navegador abre «Guardar página»).
-  if (typing && !((e.ctrlKey || e.metaKey) && ctrlBeatsField(key))) return;
-  if (animationPanel.poseKey(e)) {
+  },
+  commands: (e) => {
     e.preventDefault();
-    return;
-  }
-  // Teclado numérico, como en Blender: 1 frente, 3 derecha, 7 arriba (con Ctrl, la opuesta) y 5 alterna ortográfica/perspectiva.
-  if (e.code.startsWith('Numpad') && !e.altKey && !e.shiftKey) {
-    const numpad = e.code.slice(6);
-    const flip = e.ctrlKey || e.metaKey;
-    const views: Record<string, [string, string]> = { '1': ['+z', '-z'], '3': ['+x', '-x'], '7': ['+y', '-y'] };
-    if (numpad in views) {
-      e.preventDefault();
-      viewFrom(views[numpad][flip ? 1 : 0]);
-      setOrthographic(true);
-      return;
-    }
-    if (numpad === '5') {
-      e.preventDefault();
-      setOrthographic(camera.fov !== ORTHO_FOV);
-      return;
-    }
-  }
-  if (mode === 'mesh' && meshTool.handleKey(e)) {
+    commandPalette.open();
+  },
+  save: (e) => {
     e.preventDefault();
-    return;
-  }
-  // En Malla, lo que la herramienta no toma no actúa sobre las piezas (reflejar, ocultar, aislar) ni cambia de herramienta con vértices elegidos.
-  if (mode === 'mesh' && !e.ctrlKey && !e.metaKey && !e.altKey && meshIgnoresKey(key, meshTool.count)) return;
-  if ((e.ctrlKey || e.metaKey) && key === 'enter' && mode === 'cut') {
+    void files.saveProject(false);
+  },
+  saveAs: (e) => {
     e.preventDefault();
-    cutTool.applyNow();
-    return;
-  }
-  if ((e.ctrlKey || e.metaKey) && key === 'k') {
-    e.preventDefault();
-    setPalette(true);
-    return;
-  }
-  if ((e.ctrlKey || e.metaKey) && key === 'z') {
-    e.preventDefault();
-    // Ctrl+Mayús+Z rehace; con una herramienta a medias, Ctrl+Z retrocede un punto en vez de deshacer el último bloque.
-    if (undoRedoKey(key, e.shiftKey) === 'redo') {
-      redo();
-      return;
-    }
-    const tool = mode === 'cut' ? cutTool : mode === 'fill' ? fillTool : mode === 'outline' ? outlineTool : null;
-    if (tool?.hasPoints) {
-      tool.undoPoint();
-      return;
-    }
-    undo();
-    return;
-  }
-  if ((e.ctrlKey || e.metaKey) && key === 's') {
-    e.preventDefault();
-    void files.saveProject(e.altKey);
-    return;
-  }
-  if ((e.ctrlKey || e.metaKey) && key === 'o') {
+    void files.saveProject(true);
+  },
+  open: (e) => {
     e.preventDefault();
     void files.requestOpen();
-    return;
-  }
-  if ((e.ctrlKey || e.metaKey) && key === 'y') {
+  },
+  // Con una herramienta a medias, Ctrl+Z retrocede un punto en vez de deshacer el último bloque.
+  undo: (e) => {
+    e.preventDefault();
+    const tool = mode === 'cut' ? cutTool : mode === 'fill' ? fillTool : mode === 'outline' ? outlineTool : null;
+    if (tool?.hasPoints) tool.undoPoint();
+    else undo();
+  },
+  redo: (e) => {
     e.preventDefault();
     redo();
-    return;
-  }
-  if ((e.ctrlKey || e.metaKey) && key === 'g') {
+  },
+  group: (e) => {
     e.preventDefault();
-    if (e.altKey) ungroupSelected();
-    else groupSelected();
-    return;
-  }
-  if ((e.ctrlKey || e.metaKey) && key === 'a') {
+    groupSelected();
+  },
+  ungroup: (e) => {
+    e.preventDefault();
+    ungroupSelected();
+  },
+  selectAll: (e) => {
     e.preventDefault();
     selection.set(model.all().filter((piece) => !hidden.has(piece.id)).map((piece) => piece.id));
-    return;
-  }
-  if ((e.ctrlKey || e.metaKey) && (key === 'c' || key === 'v') && pixelPainting()) {
-    e.preventDefault();
-    if (key === 'c') copyPixels();
-    else pastePixels();
-    return;
-  }
-  if ((e.ctrlKey || e.metaKey) && key === 'c') {
+  },
+  copy: (e) => {
+    if (pixelPanel.painting()) return false;
     e.preventDefault();
     copySelected();
-    return;
-  }
-  if ((e.ctrlKey || e.metaKey) && key === 'v') {
+  },
+  paste: (e) => {
+    if (pixelPanel.painting()) return false;
     e.preventDefault();
     pasteClipboard();
-    return;
-  }
-  if ((e.ctrlKey || e.metaKey) && key === 'd') {
+  },
+  copyPixels: (e) => {
+    if (!pixelPanel.painting()) return false;
+    e.preventDefault();
+    pixelPanel.copy();
+  },
+  pastePixels: (e) => {
+    if (!pixelPanel.painting()) return false;
+    e.preventDefault();
+    pixelPanel.paste();
+  },
+  duplicate: (e) => {
     e.preventDefault();
     copySelected();
     pasteClipboard();
-    return;
-  }
-  // Con Ctrl solo siguen las flechas y Re Pág/Av Pág (paso doble); con Alt solo R y O (girar al revés, mostrar ocultas) y las flechas (tumbar).
-  if (e.ctrlKey || e.metaKey) {
-    if (!/^(arrow|page)/.test(key)) return;
-  } else if (e.altKey && key !== 'r' && key !== 'o' && !key.startsWith('arrow')) return;
-  const fast = e.ctrlKey || e.metaKey;
-
-  if (key === 'escape' && (drag || growDrag || marquee)) {
+  },
+  applyCutNow: (e) => {
+    e.preventDefault();
+    cutTool.applyNow();
+  },
+  // Teclado numérico, como en Blender: 1 frente, 3 derecha, 7 arriba (con Ctrl, la opuesta) y 5 alterna ortográfica/perspectiva.
+  view: (e, row) => {
+    e.preventDefault();
+    viewFrom(row.arg!);
+    setOrthographic(true);
+  },
+  toggleOrtho: (e) => {
+    e.preventDefault();
+    setOrthographic(camera.fov !== ORTHO_FOV);
+  },
+  toggleHud: () => toggleHud(),
+  toggleWire: () => setWireframe(!isWireframeView()),
+  // Alt+O muestra solo las piezas ocultas una a una: las de capas ocultas siguen ocultas (se muestran con el botón «Mostrar ocultas» o el ojo de la capa).
+  showHidden: () => showHidden([...hidden].filter((id) => { const piece = model.get(id); return !piece || !layers.isHidden(piece); })),
+  // Con selección, las flechas mueven las piezas (Ctrl duplica el paso: de un cuarto a media celda); sin ella, o en las herramientas de marcar puntos y en Malla, mueven la cámara.
+  moveSelection: (e) => {
+    if (isPanMode(mode) || selection.size === 0) return false;
+    const dir = arrowDirections()[e.key.toLowerCase()];
+    if (!dir) return false;
+    e.preventDefault();
+    const stepXZ = ctrlOf(e) ? 2 * STEP_XZ : STEP_XZ;
+    moveSelectionBy(dir[0] * stepXZ, 0, dir[1] * stepXZ);
+  },
+  // Alt + flechas: tumbar la selección un cuarto de vuelta, la parte de arriba va hacia donde apunta la flecha (según la cámara).
+  tumbleSelection: (e) => {
+    if (isPanMode(mode) || selection.size === 0 || ctrlOf(e)) return false;
+    const dir = arrowDirections()[e.key.toLowerCase()];
+    if (!dir) return false;
+    e.preventDefault();
+    const [dx, dz] = dir;
+    // Eje de giro = arriba × dirección, llevado al eje del mundo más cercano.
+    const k = [dz, -dx];
+    const axis: Axis = Math.abs(k[0]) >= Math.abs(k[1]) ? 'x' : 'z';
+    const turns = (axis === 'x' ? k[0] : k[1]) >= 0 ? 1 : -1;
+    commitTransform(rotateQuarterChange(selectedPieces(), axis, turns));
+  },
+  // E y Q no mueven piezas: E entra en Malla y Q es de sus acciones.
+  moveVertical: (e) => {
+    if (isPanMode(mode) || selection.size === 0) return false;
+    const vertical = verticalMoveKey(e.key.toLowerCase());
+    if (vertical === 0) return false;
+    moveSelectionBy(0, vertical * (ctrlOf(e) ? 2 * STEP_Y : STEP_Y), 0);
+  },
+  // Las teclas que encienden o apagan una herramienta salen de la tabla de atajos.
+  toggleTool: (_e, row) => setMode(mode === row.toggles ? 'place' : row.toggles!),
+  selectPiece: (e) => {
+    const n = Number(e.key);
+    if (!(n >= 1 && n <= Math.min(9, CATALOG.length))) return false;
+    selectPiece(n - 1);
+  },
+  rotatePlace: () => {
+    rotation = (rotation + 1) % 4;
+    placement.refresh();
+  },
+  rotateSelection: (e) => {
+    if (selection.size === 0) return false;
+    commitTransform(rotateChange(selectedPieces(), e.altKey ? 3 : 1));
+  },
+  turnShape: () => turnShape(),
+  flipCut: () => cutTool.flip(),
+  cancelDrag: () => {
+    if (!(drag || growDrag || marquee)) return false;
     finishMarquee(false);
     finishDrag(false);
     finishGrow(false);
-    return;
-  }
-
-  // Sin selección (o cortando, o en Malla) las flechas desplazan la cámara en pantalla; con selección mueven las piezas.
-  if (key in PAN_KEYS && (mode === 'cut' || mode === 'fill' || mode === 'outline' || mode === 'vertex' || mode === 'mesh' || selection.size === 0)) {
+  },
+  clearSelection: () => selection.clear(),
+  leaveTool: () => setMode('place'),
+  cancelTool: () => {
+    if (mode === 'cut') cutTool.cancel();
+    else if (mode === 'fill') fillTool.cancel();
+    else if (mode === 'outline') outlineTool.cancel();
+  },
+  applyTool: (e) => {
     e.preventDefault();
-    panKeys.add(key);
-    panFast = fast;
-    return;
-  }
-
-  if (mode !== 'cut' && mode !== 'fill' && mode !== 'outline' && mode !== 'vertex' && mode !== 'mesh' && selection.size > 0) {
-    // Ctrl duplica el paso: de un cuarto a media celda.
-    const stepXZ = fast ? 2 * STEP_XZ : STEP_XZ;
-    const stepY = fast ? 2 * STEP_Y : STEP_Y;
-    const { forward, right } = cameraAxes();
-    const arrows: Record<string, [number, number]> = {
-      arrowup: forward,
-      arrowdown: [-forward[0], -forward[1]],
-      arrowright: right,
-      arrowleft: [-right[0], -right[1]],
-    };
-    const dir = arrows[key];
-    // Alt + flechas: tumbar la selección un cuarto de vuelta, la parte de arriba va hacia donde apunta la flecha (según la cámara).
-    if (dir && e.altKey && !e.ctrlKey && !e.metaKey) {
-      e.preventDefault();
-      const [dx, dz] = dir;
-      // Eje de giro = arriba × dirección, llevado al eje del mundo más cercano.
-      const k = [dz, -dx];
-      const axis: Axis = Math.abs(k[0]) >= Math.abs(k[1]) ? 'x' : 'z';
-      const turns = (axis === 'x' ? k[0] : k[1]) >= 0 ? 1 : -1;
-      commitTransform(rotateQuarterChange(selectedPieces(), axis, turns));
-      return;
-    }
-    if (dir) {
-      e.preventDefault();
-      moveSelectionBy(dir[0] * stepXZ, 0, dir[1] * stepXZ);
-      return;
-    }
-    // E y Q no mueven piezas: E entra en Malla y Q es de sus acciones.
-    const vertical = verticalMoveKey(key);
-    if (vertical !== 0) {
-      moveSelectionBy(0, vertical * stepY, 0);
-      return;
-    }
-  }
-
-  const n = Number(e.key);
-  if (n >= 1 && n <= Math.min(9, CATALOG.length)) selectPiece(n - 1);
-  // Las teclas que encienden o apagan una herramienta salen de la tabla de atajos (core/shortcuts.ts).
-  const toggled = toolForKey(key, mode);
-  if (toggled) setMode(mode === toggled ? 'place' : toggled);
-  if (key === 'o') {
-    // Alt+O muestra solo las piezas ocultas una a una: las de capas ocultas siguen ocultas (se muestran con el botón «Mostrar ocultas» o el ojo de la capa).
-    if (e.altKey) showHidden([...hidden].filter((id) => { const piece = model.get(id); return !piece || !layers.isHidden(piece); }));
-    else hideSelected();
-  }
-  if (key === 'i') isolateSelected();
-  if (key === 'h') toggleHud();
-  if (key === 'a') setHintHidden(!hintHidden);
-  if (key === 'w') setWireframe(!isWireframeView());
-  if (key === 'x' || key === 'y' || key === 'z') toggleSymmetry(key);
-  if (mode !== 'cut' && mode !== 'fill' && mode !== 'vertex' && mode !== 'outline') {
-    if (key === 'm') mirrorSelected('x');
-    if (key === 'n') mirrorSelected('z');
-    if (key === 'u') mirrorSelected('y');
-    if (key === 'k') selectConnected();
-  }
+    if (mode === 'cut') cutTool.apply();
+    else if (mode === 'fill') fillTool.apply();
+    else if (mode === 'outline') outlineTool.apply();
+  },
+  hideSelected: () => hideSelected(),
+  isolateSelected: () => isolateSelected(),
+  toggleHint: () => setHintHidden(!hintHidden),
+  toggleSymmetry: (e) => toggleSymmetry(e.key.toLowerCase() as 'x' | 'y' | 'z'),
+  mirrorX: () => mirrorSelected('x'),
+  mirrorZ: () => mirrorSelected('z'),
+  mirrorY: () => mirrorSelected('y'),
+  selectConnected: () => selectConnected(),
   // En Malla Supr y Retroceso son de los vértices (MeshTool los toma), nunca borran piezas; Retroceso tampoco en Cortar, Rellenar y Figura.
-  if (key === 'delete' && mode !== 'mesh') deleteSelected();
-  if (key === 'backspace' && mode !== 'mesh' && mode !== 'cut' && mode !== 'fill' && mode !== 'outline') deleteSelected();
-  if (mode === 'cut') {
-    if (key === 'enter') {
-      e.preventDefault();
-      cutTool.apply();
-    }
-    if (key === 'f') cutTool.flip();
-    if (key === 'escape') cutTool.cancel();
-  } else if (escLeavesTool(mode)) {
-    if (key === 'escape') setMode('place');
-    if (key === 'r' && mode === 'shape') turnShape();
-  } else if (mode === 'fill') {
-    if (key === 'enter') {
-      e.preventDefault();
-      fillTool.apply();
-    }
-    if (key === 'escape') fillTool.cancel();
-  } else if (mode === 'outline') {
-    if (key === 'enter') {
-      e.preventDefault();
-      outlineTool.apply();
-    }
-    if (key === 'escape') outlineTool.cancel();
-  } else if (key === 'escape') {
-    selection.clear();
-  } else if (key === 'r' && mode === 'select' && selection.size > 0) {
-    commitTransform(rotateChange(selectedPieces(), e.altKey ? 3 : 1));
-  } else if (key === 'r' && mode === 'place') {
-    rotation = (rotation + 1) % 4;
-    refreshGhost();
-  }
+  deleteSelection: () => deleteSelected(),
+};
+const keyboard = createKeyboard({
+  camera,
+  controls,
+  mode: () => mode,
+  hasSelection: () => selection.size > 0,
+  editor: { isOpen: () => pixelPanel.editorOpen, close: () => pixelPanel.closeEditor() },
+  help: { isOpen: () => help.isOpen(), isSearch: (target) => help.isSearch(target), set: (open) => setHelp(open) },
+  poseKey: (e) => animationPanel.poseKey(e),
+  mesh: { handleKey: (e) => meshTool.handleKey(e), count: () => meshTool.count },
+  actions: keyActions,
 });
 
 // Animación: claves de pose por grupo de piezas (el panel vive en ui/animationPanel.ts).
@@ -4068,7 +3033,7 @@ document.addEventListener('visibilitychange', wakeRender);
 renderer.setAnimationLoop((now) => {
   const dt = Math.min((now - lastFrame) / 1000, 0.1);
   lastFrame = now;
-  updatePan(dt);
+  keyboard.updatePan(dt);
   if (animationPanel.playing) animationPanel.tick(dt);
   // Con la inercia de la cámara activa, `update` dice si todavía se está moviendo.
   if (controls.update()) wakeRender();

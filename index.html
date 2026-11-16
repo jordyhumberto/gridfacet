@@ -160,21 +160,21 @@
     </div>
     <div id="hint"></div>
     <canvas id="axisCompass" width="96" height="96" title="Hacia dónde apunta cada eje desde tu vista (X rojo, Y verde, Z azul). Clic en una letra: mirar desde ese eje"></canvas>
-    <button id="helpFloat" title="Ayuda y atajos (?)">?</button>
+    <button id="helpFloat" data-shortcut="help" title="Ayuda y atajos ({key})">?</button>
     <div id="hud">
       <div class="row" id="hudHead">
         <span id="fileName" title="Archivo del proyecto">Sin título</span>
-        <button id="hudToggle" title="Ocultar o mostrar el menú (H)">Ocultar menú</button>
+        <button id="hudToggle" data-shortcut="toggleHud" title="Ocultar o mostrar el menú ({key})">Ocultar menú</button>
       </div>
       <div id="hudBody">
         <section>
           <h4><span class="title">Archivo</span></h4>
           <div class="row">
             <button id="new" title="Empieza un proyecto en blanco">Nuevo</button>
-            <button id="open" title="Ctrl+O">Abrir</button>
-            <button id="save" title="Ctrl+S">Guardar</button>
+            <button id="open" data-shortcut="open" title="{key}">Abrir</button>
+            <button id="save" data-shortcut="save" title="{key}">Guardar</button>
             <button id="recover" title="Trae a la hoja el trabajo de las últimas sesiones (se guardan 3 copias automáticas)">Recuperar…</button>
-            <button id="saveAs" title="Ctrl+Alt+S">Guardar como…</button>
+            <button id="saveAs" data-shortcut="saveAs" title="{key}">Guardar como…</button>
             <input type="file" id="openFile" accept=".json,application/json" hidden />
           </div>
           <div class="row" id="recoverList" hidden></div>
@@ -384,9 +384,9 @@
           <div class="row" id="meshActions" hidden>
             <div class="meshGroup">
               <span class="groupTitle">Modos</span>
-            <button id="meshAdd" title="Añadir vértice: con el modo activo, un clic sobre una arista (según los «Puntos por arista» elegidos; Ctrl donde pulses) o dentro de una cara le pone un vértice nuevo, que queda elegido para moverlo. Alt+clic en una arista sigue funcionando. Atajo: tecla A">+ Vértice (A)</button>
-            <button id="meshSlide" title="Deslizar: con el modo activo, el vértice que arrastras (puesto en medio de un segmento) solo se mueve por ese segmento, sin deformar la pieza ni llegar a los vértices vecinos. Atajo: tecla S (con vértices elegidos)">Deslizar vértice (S)</button>
-            <button id="meshRemove" title="Quitar vértice: con el modo activo, un clic en un vértice lo quita. Las caras que lo usaban se quedan con uno menos (un triángulo desaparece); con el espejo activo quita también el de enfrente. Atajo: tecla D">− Vértice (D)</button>
+            <button id="meshAdd" data-shortcut="mesh:add" title="Añadir vértice: con el modo activo, un clic sobre una arista (según los «Puntos por arista» elegidos; Ctrl donde pulses) o dentro de una cara le pone un vértice nuevo, que queda elegido para moverlo. Alt+clic en una arista sigue funcionando. Atajo: tecla {key}">+ Vértice ({key})</button>
+            <button id="meshSlide" data-shortcut="mesh:slide" title="Deslizar: con el modo activo, el vértice que arrastras (puesto en medio de un segmento) solo se mueve por ese segmento, sin deformar la pieza ni llegar a los vértices vecinos. Atajo: tecla {key} (con vértices elegidos)">Deslizar vértice ({key})</button>
+            <button id="meshRemove" data-shortcut="mesh:remove" title="Quitar vértice: con el modo activo, un clic en un vértice lo quita. Las caras que lo usaban se quedan con uno menos (un triángulo desaparece); con el espejo activo quita también el de enfrente. Atajo: tecla {key}">− Vértice ({key})</button>
             <label title="Con la casilla marcada se ven y se pueden elegir todos los vértices, también los que quedan detrás de una cara. Sin marcar, solo los que dan a la cámara"><input type="checkbox" id="meshSeeBehind" autocomplete="off" checked /> Ver vértices de atrás</label>
             </div>
             <div class="meshGroup">
@@ -403,37 +403,37 @@
             </div>
             <div class="meshGroup">
               <span class="groupTitle">Transformar</span>
-            <button data-mesh="rotate" title="Gira los vértices elegidos alrededor de su centro moviendo el ratón (R). X/Y/Z fija el eje, clic confirma">Girar</button>
-            <button data-mesh="scale" title="Escala los vértices elegidos desde su centro moviendo el ratón (T). X/Y/Z escala solo en ese eje, clic confirma">Escalar</button>
+            <button data-mesh="rotate" data-shortcut="mesh:rotate" title="Gira los vértices elegidos alrededor de su centro moviendo el ratón ({key}). X/Y/Z fija el eje, clic confirma">Girar</button>
+            <button data-mesh="scale" data-shortcut="mesh:scale" title="Escala los vértices elegidos desde su centro moviendo el ratón ({key}). X/Y/Z escala solo en ese eje, clic confirma">Escalar</button>
             <button data-mesh="taper" title="Estrecha o ensancha los extremos de los vértices elegidos a lo largo de un eje (por defecto Y): mueve el ratón a los lados, clic confirma">Afinar</button>
             <button data-mesh="twist" title="Tuerce los vértices elegidos a lo largo de un eje (por defecto Y): cada altura gira un poco más. Mueve el ratón a los lados, clic confirma">Torcer</button>
             <button data-mesh="bend" title="Curva los vértices elegidos a lo largo de un eje (por defecto Y) hacia el eje siguiente (Y→Z, X→Y, Z→X): mueve el ratón a los lados, clic confirma">Curvar</button>
             </div>
             <div class="meshGroup">
               <span class="groupTitle">Caras</span>
-            <button data-mesh="face" title="Crea una cara con los vértices elegidos (tres o más, de la misma pieza). Atajo: tecla F">Crear cara (F)</button>
-            <button data-mesh="fillhole" title="Cierra con una cara el hueco (borde abierto) al que pertenezca algún vértice elegido: basta con elegir uno del contorno. Atajo: tecla K">Tapar hueco (K)</button>
-            <button data-mesh="push" title="Empuja o jala las caras cuyos vértices están todos elegidos a lo largo de su normal, sin torcerlas: mueve el ratón en la dirección de la cara, clic confirma, Esc cancela. Atajo: tecla N">Empujar cara (N)</button>
-            <button data-mesh="delface" title="Quita las caras cuyos vértices están todos elegidos: la pieza queda abierta. Atajo: tecla B">Borrar cara (B)</button>
+            <button data-mesh="face" data-shortcut="mesh:face" title="Crea una cara con los vértices elegidos (tres o más, de la misma pieza). Atajo: tecla {key}">Crear cara ({key})</button>
+            <button data-mesh="fillhole" data-shortcut="mesh:fillhole" title="Cierra con una cara el hueco (borde abierto) al que pertenezca algún vértice elegido: basta con elegir uno del contorno. Atajo: tecla {key}">Tapar hueco ({key})</button>
+            <button data-mesh="push" data-shortcut="mesh:push" title="Empuja o jala las caras cuyos vértices están todos elegidos a lo largo de su normal, sin torcerlas: mueve el ratón en la dirección de la cara, clic confirma, Esc cancela. Atajo: tecla {key}">Empujar cara ({key})</button>
+            <button data-mesh="delface" data-shortcut="mesh:delface" title="Quita las caras cuyos vértices están todos elegidos: la pieza queda abierta. Atajo: tecla {key}">Borrar cara ({key})</button>
             <button data-mesh="flip" title="Da la vuelta a las caras cuyos vértices están todos elegidos">Invertir cara</button>
             <label title="Cuánto crece la cara al usar «Cara desde segmento» o «Extruir cara» (en celdas; 1 = el ancho de un cubo). Después puedes mover los vértices nuevos para ajustarla"><input type="number" id="meshGrowAmount" min="0.05" step="0.05" value="0.5" style="width:56px" /> Cuánto crece</label>
             <button data-mesh="growedge" title="Con dos vértices elegidos, hace crecer una cara desde su segmento, perpendicular a él (hacia fuera si el segmento es una arista de la pieza); los dos vértices nuevos quedan elegidos para moverlos">Cara desde segmento</button>
-            <button data-mesh="tip" title="Punta (I): saca una copia de cada vértice elegido y la une al original con caras nuevas; el original se queda donde está y las copias quedan elegidas para jalarlas (con simetría, el espejo hace lo mismo)">Punta (I)</button>
-            <button data-mesh="extrude" title="Extruye las caras cuyos vértices están todos elegidos y deja elegidos los vértices de arriba para moverlos. Atajo: tecla M">Extruir cara (M)</button>
+            <button data-mesh="tip" data-shortcut="mesh:tip" title="Punta ({key}): saca una copia de cada vértice elegido y la une al original con caras nuevas; el original se queda donde está y las copias quedan elegidas para jalarlas (con simetría, el espejo hace lo mismo)">Punta ({key})</button>
+            <button data-mesh="extrude" data-shortcut="mesh:extrude" title="Extruye las caras cuyos vértices están todos elegidos y deja elegidos los vértices de arriba para moverlos. Atajo: tecla {key}">Extruir cara ({key})</button>
             </div>
             <div class="meshGroup">
               <span class="groupTitle">Segmentos</span>
-            <label title="Cuánto se corta la esquina en un chaflán, en celdas (medido sobre los segmentos vecinos; tiene que ser menor que ellos). Es el mismo tamaño que el de la herramienta Chaflán (J)"><input type="number" id="meshBevelSize" min="0.02" step="0.05" value="0.25" style="width:56px" /> Tamaño del chaflán</label>
+            <label data-shortcut="tool:bevel" title="Cuánto se corta la esquina en un chaflán, en celdas (medido sobre los segmentos vecinos; tiene que ser menor que ellos). Es el mismo tamaño que el de la herramienta Chaflán ({key})"><input type="number" id="meshBevelSize" min="0.02" step="0.05" value="0.25" style="width:56px" /> Tamaño del chaflán</label>
             <button data-mesh="bevel" title="Chaflán de la arista entre dos vértices elegidos: corta sus esquinas y deja una cara nueva entre las dos caras de la arista. Cada extremo tiene que tocar tres caras, como la esquina de un cubo">Chaflán</button>
             <button data-mesh="ring" title="Con los dos vértices de una arista elegidos, parte por la mitad todas las caras de cuatro lados que atraviesa en fila (la vuelta entera si cierra): pone un vértice nuevo en medio de cada arista y los deja elegidos. La forma no cambia">Corte en anillo</button>
-            <button data-mesh="connect" title="Con dos vértices elegidos de una misma cara (no vecinos, con el camino libre entre ellos), traza el segmento que los une: la cara se parte en dos. Con el espejo activo también parte la cara espejo. Atajo: tecla U">Trazar segmento (U)</button>
-            <button data-mesh="dissolve" title="Quita el segmento entre dos vértices elegidos: las dos caras que separa, si están en el mismo plano, pasan a ser una (lo contrario de Trazar segmento). No borra vértices. Atajo: tecla Q">Quitar segmento (Q)</button>
+            <button data-mesh="connect" data-shortcut="mesh:connect" title="Con dos vértices elegidos de una misma cara (no vecinos, con el camino libre entre ellos), traza el segmento que los une: la cara se parte en dos. Con el espejo activo también parte la cara espejo. Atajo: tecla {key}">Trazar segmento ({key})</button>
+            <button data-mesh="dissolve" data-shortcut="mesh:dissolve" title="Quita el segmento entre dos vértices elegidos: las dos caras que separa, si están en el mismo plano, pasan a ser una (lo contrario de Trazar segmento). No borra vértices. Atajo: tecla {key}">Quitar segmento ({key})</button>
             <button data-mesh="triangulate" title="Parte en triángulos las caras de cuatro o más lados cuyos vértices están todos elegidos: la forma no cambia, pero cada triángulo es plano y puedes mover sus vértices sin torcer nada. Es lo contrario de Quitar segmento (Q), que junta las caras otra vez">Triangular</button>
             </div>
             <div class="meshGroup">
               <span class="groupTitle">Ordenar</span>
-            <button data-mesh="straighten" title="Con tres o más vértices elegidos, deja rectos los de en medio sobre la línea que une el primero y el último que elegiste: los dos extremos no se mueven y cada otro vértice va al punto más cercano de esa línea. Atajo: tecla L">Alinear en línea (L)</button>
-            <button data-mesh="flatten" title="Aplana los vértices elegidos (tres o más, por ejemplo los de una cara chueca): cada uno va al punto más cercano del plano que mejor se ajusta a todos. Atajo: tecla P">Aplanar en plano (P)</button>
+            <button data-mesh="straighten" data-shortcut="mesh:straighten" title="Con tres o más vértices elegidos, deja rectos los de en medio sobre la línea que une el primero y el último que elegiste: los dos extremos no se mueven y cada otro vértice va al punto más cercano de esa línea. Atajo: tecla {key}">Alinear en línea ({key})</button>
+            <button data-mesh="flatten" data-shortcut="mesh:flatten" title="Aplana los vértices elegidos (tres o más, por ejemplo los de una cara chueca): cada uno va al punto más cercano del plano que mejor se ajusta a todos. Atajo: tecla {key}">Aplanar en plano ({key})</button>
             <button data-mesh="symmetrize" title="Con la simetría activa, deja exactamente iguales los dos lados: cada vértice se promedia con el espejo de su gemelo y los que están casi sobre el plano quedan sobre él. Actúa sobre las piezas elegidas (o todas). Los vértices que no tienen gemelo se marcan en rosa">Simetrizar</button>
             <label title="Las caras de cuatro o más vértices que se salgan de su plano se marcan en naranja. Con esta casilla, al soltar un vértice las caras que toque y queden torcidas se aplanan solas (como Aplanar, tecla P): el vértice puede asentarse un poco y mover a sus vecinos"><input type="checkbox" id="meshAutoFlat" autocomplete="off" /> Aplanar al soltar</label>
             </div>
@@ -466,24 +466,24 @@
           <div id="selActions" hidden>
             <div class="meshGroup">
               <span class="groupTitle">Elegidas</span>
-              <button data-sel="hide" title="Esconde las piezas elegidas para trabajar en lo que queda detrás (O)">Ocultar (O)</button>
-              <button data-sel="isolate" title="Oculta todo menos la selección (I)">Aislar (I)</button>
-              <button data-sel="connected" title="Suma a la selección las piezas que tocan a las elegidas por una cara (K)">Conectadas (K)</button>
+              <button data-sel="hide" data-shortcut="hideSelected" title="Esconde las piezas elegidas para trabajar en lo que queda detrás ({key})">Ocultar ({key})</button>
+              <button data-sel="isolate" data-shortcut="isolateSelected" title="Oculta todo menos la selección ({key})">Aislar ({key})</button>
+              <button data-sel="connected" data-shortcut="selectConnected" title="Suma a la selección las piezas que tocan a las elegidas por una cara ({key})">Conectadas ({key})</button>
               <button id="layerMove" title="Pasa las piezas elegidas a la capa activa" hidden>A la capa activa</button>
             </div>
             <div class="meshGroup">
               <span class="groupTitle">Grupo y copia</span>
-              <button data-sel="group" title="Une las piezas elegidas en un grupo (Ctrl+G)">Agrupar</button>
-              <button data-sel="ungroup" title="Deshace el grupo de las piezas elegidas (Ctrl+Alt+G)">Desagrupar</button>
-              <button data-sel="copy" title="Ctrl+C">Copiar</button>
-              <button data-sel="paste" title="Ctrl+V">Pegar</button>
+              <button data-sel="group" data-shortcut="group" title="Une las piezas elegidas en un grupo ({key})">Agrupar</button>
+              <button data-sel="ungroup" data-shortcut="ungroup" title="Deshace el grupo de las piezas elegidas ({key})">Desagrupar</button>
+              <button data-sel="copy" data-shortcut="copy" title="{key}">Copiar</button>
+              <button data-sel="paste" data-shortcut="paste" title="{key}">Pegar</button>
               <button data-sel="delete" title="Borra las piezas elegidas (Supr)">Borrar (Supr)</button>
             </div>
             <div class="meshGroup">
               <span class="groupTitle">Reflejar</span>
-              <button data-sel="mirror-x" title="Refleja la selección en X, sobre su propio centro (M)">Reflejar X (M)</button>
-              <button data-sel="mirror-z" title="Refleja la selección en Z, sobre su propio centro (N)">Reflejar Z (N)</button>
-              <button data-sel="mirror-y" title="Refleja la selección en Y, sobre su propio centro (U)">Reflejar Y (U)</button>
+              <button data-sel="mirror-x" data-shortcut="mirrorX" title="Refleja la selección en X, sobre su propio centro ({key})">Reflejar X ({key})</button>
+              <button data-sel="mirror-z" data-shortcut="mirrorZ" title="Refleja la selección en Z, sobre su propio centro ({key})">Reflejar Z ({key})</button>
+              <button data-sel="mirror-y" data-shortcut="mirrorY" title="Refleja la selección en Y, sobre su propio centro ({key})">Reflejar Y ({key})</button>
               <button data-sel="mirror-copy-x" title="Añade una copia reflejada de la selección respecto al plano de simetría X (el origen por defecto); la copia queda elegida">Reflejar y copiar X</button>
               <button data-sel="mirror-copy-z" title="Añade una copia reflejada de la selección respecto al plano de simetría Z (el origen por defecto); la copia queda elegida">Reflejar y copiar Z</button>
             </div>
@@ -624,15 +624,15 @@
         <section>
           <h4><span class="title">Vista</span></h4>
           <div class="row" id="views">
-            <button data-view="+x" title="Mirar desde la derecha (teclado numérico 3)">+X</button><button data-view="-x" title="Mirar desde la izquierda (Ctrl+3)">−X</button>
-            <button data-view="+y" title="Mirar desde arriba (teclado numérico 7)">+Y</button><button data-view="-y" title="Mirar desde abajo (Ctrl+7)">−Y</button>
-            <button data-view="+z" title="Mirar de frente (teclado numérico 1)">+Z</button><button data-view="-z" title="Mirar desde atrás (Ctrl+1)">−Z</button>
+            <button data-view="+x" data-shortcut="view:+x" title="Mirar desde la derecha ({key})">+X</button><button data-view="-x" data-shortcut="view:-x" title="Mirar desde la izquierda ({key})">−X</button>
+            <button data-view="+y" data-shortcut="view:+y" title="Mirar desde arriba ({key})">+Y</button><button data-view="-y" data-shortcut="view:-y" title="Mirar desde abajo ({key})">−Y</button>
+            <button data-view="+z" data-shortcut="view:+z" title="Mirar de frente ({key})">+Z</button><button data-view="-z" data-shortcut="view:-z" title="Mirar desde atrás ({key})">−Z</button>
           </div>
           <div class="row">
-            <label title="Sin perspectiva: las líneas paralelas se ven paralelas, ideal para modelar de frente, de lado y desde arriba (teclado numérico 5). Las vistas del teclado numérico la activan"><input type="checkbox" id="orthoToggle" /> Ortográfica</label>
+            <label data-shortcut="toggleOrtho" title="Sin perspectiva: las líneas paralelas se ven paralelas, ideal para modelar de frente, de lado y desde arriba ({key}). Las vistas del teclado numérico la activan"><input type="checkbox" id="orthoToggle" /> Ortográfica</label>
             <label title="Muestra u oculta la cuadrícula del suelo y las paredes"><input type="checkbox" id="gridToggle" checked /> Rejilla</label>
-            <button id="showHidden" hidden title="Alt+O">Mostrar ocultas</button>
-            <label title="Solo aristas y vértices, sin caras (W)"><input type="checkbox" id="wireToggle" /> Solo líneas</label>
+            <button id="showHidden" data-shortcut="showHidden" hidden title="{key}">Mostrar ocultas</button>
+            <label data-shortcut="toggleWire" title="Solo aristas y vértices, sin caras ({key})"><input type="checkbox" id="wireToggle" /> Solo líneas</label>
             <label title="Redondea el aspecto de las formas curvas (no cambia la geometría ni el GLB)"><input type="checkbox" id="smoothToggle" /> Suave</label>
           </div>
           <div class="row" id="sizeRow" title="Tamaño de la sala: celdas por lado">
@@ -694,7 +694,7 @@
             <button id="exportSprites">Exportar sprites</button>
           </div>
         </section>
-        <div class="row"><button id="helpOpen" title="Atajos y funciones (tecla ?)">Ayuda y atajos (?)</button></div>
+        <div class="row"><button id="helpOpen" data-shortcut="help" title="Atajos y funciones (tecla {key})">Ayuda y atajos ({key})</button></div>
       </div>
     </div>
     <div id="helpModal" hidden role="dialog" aria-modal="true" aria-label="Ayuda y atajos">
