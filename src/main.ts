@@ -2278,6 +2278,8 @@ meshActionsEl.querySelectorAll<HTMLButtonElement>('button[data-meshaxis]').forEa
 meshActionsEl.querySelectorAll<HTMLButtonElement>('button[data-mesh]').forEach((button) =>
   button.addEventListener('click', () => {
     button.blur();
+    // Con un arrastre, un giro o un recuadro en marcha, las acciones del panel no hacen nada.
+    if (meshTool.busy) return;
     const action = button.dataset.mesh;
     if (action === 'all') meshTool.selectAll();
     else if (action === 'merge') meshTool.mergeSelected();
@@ -3635,6 +3637,7 @@ helpModal.addEventListener('pointerdown', (e) => {
 
 /** Rehacer: con un corte o relleno a medias repone el punto quitado; si no, rehace el último bloque. */
 function redo(): void {
+  if (mode === 'mesh' && meshTool.busy) return;
   const tool = mode === 'cut' ? cutTool : mode === 'fill' ? fillTool : mode === 'outline' ? outlineTool : null;
   if (tool?.hasRedo) tool.redoPoint();
   else if (!redoAnimationStep()) model.redo();
@@ -4799,6 +4802,8 @@ function poseDragKey(e: KeyboardEvent): boolean {
 }
 
 function undo(): void {
+  // Con un arrastre o un giro de Malla a medias, la vista previa aún no está en el historial: deshacer desharía otro cambio.
+  if (mode === 'mesh' && meshTool.busy) return;
   if (undoAnimationStep()) return;
   model.undo();
   // Abrir un archivo cambió piezas y animación a la vez: se deshacen juntas.

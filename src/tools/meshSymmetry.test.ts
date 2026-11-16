@@ -330,3 +330,51 @@ describe('Biselar con simetría es todo o nada', () => {
     expect(isSymmetric(model.all())).toBe(true);
   });
 });
+
+describe('con un arrastre, un modal o un recuadro en marcha', () => {
+  const key = (name: string, ctrl = false, shift = false) => ({ key: name, ctrlKey: ctrl, metaKey: false, altKey: false, shiftKey: shift }) as KeyboardEvent;
+  /** Empieza un arrastre simulado de los vértices elegidos de la derecha, sin soltarlo. */
+  function startDrag(s: ReturnType<typeof setup>) {
+    s.choose((p) => p[0] > 0);
+    const inner = s.tool as unknown as { buildTargets: () => unknown[]; drag: unknown; preview: (d: Vec3) => void; pendingBefore: unknown };
+    inner.drag = { targets: inner.buildTargets(), anchor: [0, 0, 0], plane: null, grab: null, startX: 0, startY: 0, moved: true, delta: [0.1, 0, 0] };
+    inner.preview([0.1, 0, 0]);
+  }
+
+  it('Ctrl+Z, Ctrl+Y y Supr se ignoran durante un arrastre', () => {
+    const s = setup();
+    startDrag(s);
+    expect(s.tool.busy).toBe(true);
+    const during = s.model.all();
+    const depth = s.model.undoDepth;
+    for (const e of [key('z', true), key('y', true), key('z', true, true), key('Delete'), key('Backspace')]) {
+      expect(s.tool.handleKey(e)).toBe(true);
+    }
+    expect(s.model.all()).toEqual(during);
+    expect(s.model.undoDepth).toBe(depth);
+    expect(s.model.redoDepth).toBe(0);
+  });
+
+  it('R y T no empiezan un modal con el recuadro activo', () => {
+    const s = setup();
+    s.choose((p) => p[0] > 0);
+    (s.tool as unknown as { marquee: unknown }).marquee = { x: 0, y: 0, add: false };
+    expect(s.tool.busy).toBe(true);
+    s.tool.handleKey(key('r'));
+    s.tool.handleKey(key('t'));
+    expect((s.tool as unknown as { modal: unknown }).modal).toBeNull();
+  });
+
+  it('las acciones del panel no hacen nada con un arrastre en marcha', () => {
+    const s = setup();
+    startDrag(s);
+    const during = s.model.all();
+    const depth = s.model.undoDepth;
+    s.tool.deleteSelected();
+    s.tool.extrudeSelected();
+    s.tool.beginTransform('scale');
+    expect(s.model.all()).toEqual(during);
+    expect(s.model.undoDepth).toBe(depth);
+    expect((s.tool as unknown as { modal: unknown }).modal).toBeNull();
+  });
+});

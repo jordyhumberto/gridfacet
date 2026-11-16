@@ -363,7 +363,7 @@ Marcar cada tarea al fusionar su PR. Si un defecto `[leído]` no se reproduce, p
 | 2.2 Simetrizar conserva el id | hecha | rama fix/plan-revision | Reproducido. `symmetrizeAll` conserva el id con `sameId` y reindexa la elección por `piece.id` |
 | 2.3 Simetrizar y piezas que comparten vértice | hecha | rama fix/plan-revision | Reproducido. `symmetrize` junta las entradas con la misma `vertexKey` en un punto lógico, empareja puntos y aplica el resultado a todas las entradas |
 | 2.4 Bisel todo o nada | hecha | rama fix/plan-revision | Reproducido (cubo de 1, tamaño 0,6: 7 caras). `bevelSelected` prueba antes en una copia (`bevelParts`) y, si algún lado no cabe, no aplica nada y da el máximo (búsqueda binaria, redondeado hacia abajo a centésimas); si el espejo comparte un extremo lo dice |
-| 2.5 Teclas durante un arrastre | pendiente | | |
+| 2.5 Teclas durante un arrastre | hecha | rama fix/plan-revision | Reproducido. `MeshTool.busy` (arrastre, modal o recuadro): `handleKey` ignora Ctrl+Z/Ctrl+Y/Supr/Retroceso, R y T no arrancan con el recuadro, `change`, `beginTransform`, `symmetrizeAll` y `bevelSelected` no hacen nada, y `undo`/`redo` y los botones del panel de `main.ts` también se detienen |
 | 2.6 Paso de deshacer vacío | pendiente | | |
 | 2.7 Vértices del plano | pendiente | | |
 | 2.8 Pequeños de Malla | pendiente | | |

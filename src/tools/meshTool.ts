@@ -314,7 +314,8 @@ export class MeshTool {
     });
   }
 
-  get isDragging(): boolean {
+  /** Hay un arrastre, un giro/escala o un recuadro en marcha: mientras dure, deshacer, rehacer, borrar y las acciones del panel se ignoran. */
+  get busy(): boolean {
     return this.drag !== null || this.marquee !== null || this.modal !== null;
   }
 
@@ -495,6 +496,7 @@ export class MeshTool {
    * de su gemelo y los que están casi sobre un plano quedan sobre él. Un solo paso de deshacer.
    */
   symmetrizeAll(): void {
+    if (this.busy) return;
     const sym = this.host.symmetry();
     if (reflections(sym).length === 0) {
       this.host.status('Simetrizar: activa antes la simetría en algún eje (X, Y o Z)');
@@ -1127,7 +1129,9 @@ export class MeshTool {
       else if (key === 'enter') this.finishModal(true);
       return true;
     }
-    if (!this.drag && this.count > 0 && !e.ctrlKey && !e.metaKey && !e.altKey && (key === 'r' || key === 't')) {
+    // Con un arrastre o un recuadro en marcha, Ctrl+Z/Ctrl+Y y Supr no tocan el modelo: la vista previa todavía no está en el historial.
+    if (this.busy && (((e.ctrlKey || e.metaKey) && (key === 'z' || key === 'y')) || key === 'delete' || key === 'backspace')) return true;
+    if (!this.busy && this.count > 0 && !e.ctrlKey && !e.metaKey && !e.altKey && (key === 'r' || key === 't')) {
       this.beginTransform(key === 'r' ? 'rotate' : 'scale');
       return true;
     }
@@ -1215,7 +1219,7 @@ export class MeshTool {
 
   /** Empieza a girar (R) o escalar (T) los vértices elegidos alrededor de su centro; se maneja moviendo el ratón. */
   beginTransform(kind: TransformKind): void {
-    if (this.drag || this.modal) return;
+    if (this.busy) return;
     const targets = this.buildTargets();
     if (targets.length === 0) {
       this.host.status('Elige algún vértice para girarlo o escalarlo');
@@ -1624,6 +1628,7 @@ export class MeshTool {
 
   /** Bisela la arista entre dos vértices elegidos (con el espejo, también la suya); los cuatro vértices nuevos quedan elegidos para ajustarlos. */
   bevelSelected(): void {
+    if (this.busy) return;
     // Todo o nada: primero se prueba en una copia; si algún lado no cabe, no se toca nada (un solo lado biselado rompería la simetría).
     const targets = this.buildTargets();
     const attempt = (size: number) => targets.map((target) => this.bevelParts(target.original, target.parts, size));
@@ -2192,6 +2197,7 @@ export class MeshTool {
    * La operación devuelve la pieza nueva, `null` si no puede hacer nada con esa pieza (se queda tal cual) o `REMOVE` si la pieza desaparece.
    */
   private change(operation: (piece: Piece, keys: Set<string>, dirAt: (p: Vec3) => (v: Vec3) => Vec3, parts: Part[]) => Piece | { piece: Piece; select: Set<string> } | typeof REMOVE | null, after?: (position: Vec3, dirAt: (p: Vec3) => (v: Vec3) => Vec3) => Vec3): void {
+    if (this.busy) return;
     const targets = this.buildTargets();
     if (targets.length === 0) return;
     const before = cloneSelection(this.selection);
