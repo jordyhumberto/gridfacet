@@ -1,6 +1,7 @@
+import { vertexKey } from './key';
 import { makePiece, type Piece, type Vec3 } from './piece';
 import { remapTexture } from './texture';
-import { uniqueVertices, vertexKey } from './vertices';
+import { uniqueVertices } from './vertices';
 
 /** Ejes con simetría activa y posición del plano de espejo en cada uno. */
 export interface Symmetry {
@@ -55,13 +56,13 @@ export function reflectPiece(piece: Piece, reflection: Reflection): Piece {
 /** Clave geométrica de una pieza: sus vértices ordenados, para reconocer piezas iguales. */
 export function pieceKey(piece: Piece): string {
   const set = new Set<string>();
-  for (const face of piece.faces) for (const p of face) set.add(p.map((v) => Math.round(v * 1e5)).join(','));
+  for (const face of piece.faces) for (const p of face) set.add(vertexKey(p));
   return [...set].sort().join('|');
 }
 
 /** Los puntos dados más sus imágenes en espejo, sin repetir. */
 export function withSymmetryPoints(points: Vec3[], sym: Symmetry): Vec3[] {
-  const key = (p: Vec3) => p.map((v) => Math.round(v * 1e5)).join(',');
+  const key = vertexKey;
   const seen = new Set(points.map(key));
   const out = [...points];
   for (const reflection of reflections(sym)) {
@@ -120,7 +121,19 @@ export function symmetrize(pieces: Piece[], sym: Symmetry, tolerance = MIRROR_TO
   const result: Symmetrized = { moves: new Map(), fixed: 0, unpaired: new Set(), total: entries.length };
   if (mirrors.length === 0) return result;
 
-  const original = entries.map((entry) => entry.position);
+  // Dos piezas que tienen un vértice en el mismo sitio comparten un solo punto: si no, solo una se emparejaría con el gemelo del otro lado
+  // y la otra se quedaría sin moverse (se abriría una grieta entre las dos). Se empareja por puntos y el resultado vale para todas las entradas.
+  const points: { position: Vec3; members: number[] }[] = [];
+  const pointOf = new Map<string, number>();
+  entries.forEach((entry, index) => {
+    const at = pointOf.get(entry.key);
+    if (at === undefined) {
+      pointOf.set(entry.key, points.length);
+      points.push({ position: entry.position, members: [index] });
+    } else points[at].members.push(index);
+  });
+
+  const original = points.map((point) => point.position);
   let current = original;
   // Los gemelos se emparejan de uno en uno, de los más cercanos a los más lejanos: así dos vértices vecinos no se disputan el mismo gemelo.
   // Con las posiciones ya promediadas se repite hasta que nada se mueva.
@@ -161,7 +174,7 @@ export function symmetrize(pieces: Piece[], sym: Symmetry, tolerance = MIRROR_TO
     });
     const next: Vec3[] = [];
     let moved = 0;
-    entries.forEach((entry, index) => {
+    points.forEach((point, index) => {
       const here = current[index];
       const sum: Vec3 = [...here];
       let count = 1;
@@ -176,7 +189,7 @@ export function symmetrize(pieces: Piece[], sym: Symmetry, tolerance = MIRROR_TO
         for (let i = 0; i < 3; i++) sum[i] += back[i];
         count++;
       });
-      if (lonely && pass === 0) result.unpaired.add(`${entry.id}:${entry.key}`);
+      if (lonely && pass === 0) for (const member of point.members) result.unpaired.add(`${entries[member].id}:${entries[member].key}`);
       const average = sum.map((v) => v / count) as Vec3;
       if (Math.hypot(average[0] - here[0], average[1] - here[1], average[2] - here[2]) > 1e-7) moved++;
       next.push(average);
@@ -184,14 +197,17 @@ export function symmetrize(pieces: Piece[], sym: Symmetry, tolerance = MIRROR_TO
     current = next;
     if (moved === 0) break;
   }
-  entries.forEach((entry, index) => {
+  points.forEach((point, index) => {
     const to = current[index];
     const from = original[index];
     if (Math.hypot(to[0] - from[0], to[1] - from[1], to[2] - from[2]) < 1e-6) return;
-    let moves = result.moves.get(entry.id);
-    if (!moves) result.moves.set(entry.id, (moves = new Map()));
-    moves.set(entry.key, to);
-    result.fixed++;
+    for (const member of point.members) {
+      const entry = entries[member];
+      let moves = result.moves.get(entry.id);
+      if (!moves) result.moves.set(entry.id, (moves = new Map()));
+      moves.set(entry.key, to);
+      result.fixed++;
+    }
   });
   return result;
 }

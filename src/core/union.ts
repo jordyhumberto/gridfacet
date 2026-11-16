@@ -1,4 +1,5 @@
 import { faceColorOf, faceNormal, type Piece, type Vec3 } from './piece';
+import { boundsOf } from './transform';
 
 export interface SurfaceFace {
   face: Vec3[];
@@ -33,19 +34,7 @@ interface Box {
   max: Vec3;
 }
 
-function boxOf(piece: Piece): Box {
-  const min: Vec3 = [Infinity, Infinity, Infinity];
-  const max: Vec3 = [-Infinity, -Infinity, -Infinity];
-  for (const face of piece.faces) {
-    for (const p of face) {
-      for (let k = 0; k < 3; k++) {
-        min[k] = Math.min(min[k], p[k]);
-        max[k] = Math.max(max[k], p[k]);
-      }
-    }
-  }
-  return { min, max };
-}
+const boxOf = (piece: Piece): Box => boundsOf([piece])!;
 
 /** Las cajas se tocan o se cruzan; basta para descartar piezas lejanas. */
 function boxesTouch(a: Box, b: Box): boolean {

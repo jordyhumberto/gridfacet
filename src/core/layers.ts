@@ -99,7 +99,8 @@ export class Layers {
   load(data: { layers?: Partial<Layer>[]; active?: number } | undefined, pieces: Piece[] = []): void {
     const list: Layer[] = [];
     for (const raw of data?.layers ?? []) {
-      if (!Number.isInteger(raw.id) || (raw.id as number) < 1 || list.some((l) => l.id === raw.id)) continue;
+      // Una entrada nula o que no es un objeto se salta: antes lanzaba el error a mitad de abrir un proyecto.
+      if (!raw || typeof raw !== 'object' || !Number.isInteger(raw.id) || (raw.id as number) < 1 || list.some((l) => l.id === raw.id)) continue;
       list.push({ id: raw.id as number, name: typeof raw.name === 'string' && raw.name.trim() ? raw.name.trim().slice(0, 40) : `Capa ${raw.id}`, hidden: raw.hidden === true, locked: raw.locked === true });
     }
     if (!list.some((layer) => layer.id === BASE_LAYER)) list.unshift({ id: BASE_LAYER, name: 'Capa 1', hidden: false, locked: false });

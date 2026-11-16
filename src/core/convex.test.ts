@@ -1,10 +1,21 @@
 import { describe, expect, it } from 'vitest';
 import { CATALOG, buildPiece } from './catalog';
-import { isConvex, splitConvex, triangulateFace } from './convex';
+import { isClosed, isConvex, splitConvex, triangulateFace } from './convex';
+import { deleteFaces } from './vertices';
 import { buildExportMeshes } from './export';
 import { FACE_BEHIND, makePiece, type Piece, type Vec3 } from './piece';
 
 const cube = (x = 0) => buildPiece(CATALOG[0], x, 0, 0, 0, 0x336699);
+
+describe('isClosed', () => {
+  it('un cubo es cerrado y uno sin una cara no lo es ni cuenta como convexo', () => {
+    const open = deleteFaces(cube(), new Set([0]))!;
+    expect(isClosed(cube())).toBe(true);
+    expect(isClosed(open)).toBe(false);
+    expect(isConvex(open)).toBe(false);
+    expect(splitConvex([cube(), open]).free).toEqual([open]);
+  });
+});
 
 const area = (face: Vec3[], triangles: [number, number, number][]): number =>
   triangles.reduce((sum, [a, b, c]) => {

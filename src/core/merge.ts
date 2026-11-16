@@ -1,13 +1,13 @@
+import { vertexKey } from './key';
 import earcut from 'earcut';
 import { faceNormal, type Vec3 } from './piece';
 import type { SurfaceFace } from './union';
 
-const KEY = 1e6;
+/** Precisión con que se agrupan planos (normal y distancia al origen); no es la de los vértices (key.ts). */
 const PLANE_KEY = 1e5;
 const ON_EDGE = 1e-7;
 const MIN_AREA = 1e-9;
 
-const vertexKey = (p: Vec3): string => `${Math.round(p[0] * KEY)},${Math.round(p[1] * KEY)},${Math.round(p[2] * KEY)}`;
 
 interface Vertex {
   key: string;

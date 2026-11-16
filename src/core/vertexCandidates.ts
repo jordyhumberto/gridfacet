@@ -1,5 +1,7 @@
+import { vertexKey } from './key';
 import { intersectionPointsWith } from './intersections';
 import { faceNormal, type Piece, type Vec3 } from './piece';
+import { boundsOf } from './transform';
 
 export interface Edge {
   a: Vec3;
@@ -16,7 +18,7 @@ export interface CandidateOptions {
 const EPS = 1e-6;
 const MAX_POINTS = 8000;
 
-const keyOf = (p: Vec3): string => p.map((v) => Math.round(v * 1e5)).join(',');
+const keyOf = vertexKey;
 
 /** Aristas distintas de una pieza (cada una aparece en dos caras). */
 export function uniqueEdges(piece: Piece): Edge[] {
@@ -33,19 +35,7 @@ export function uniqueEdges(piece: Piece): Edge[] {
   return [...seen.values()];
 }
 
-function boxOf(piece: Piece): { min: Vec3; max: Vec3 } {
-  const min: Vec3 = [Infinity, Infinity, Infinity];
-  const max: Vec3 = [-Infinity, -Infinity, -Infinity];
-  for (const face of piece.faces) {
-    for (const p of face) {
-      for (let i = 0; i < 3; i++) {
-        min[i] = Math.min(min[i], p[i]);
-        max[i] = Math.max(max[i], p[i]);
-      }
-    }
-  }
-  return { min, max };
-}
+const boxOf = (piece: Piece): { min: Vec3; max: Vec3 } => boundsOf([piece])!;
 
 function overlap(a: Piece, b: Piece): boolean {
   const [x, y] = [boxOf(a), boxOf(b)];

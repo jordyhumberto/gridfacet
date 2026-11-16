@@ -31,22 +31,10 @@ export function moveChange(pieces: Piece[], dx: number, dy: number, dz: number):
 
 /** Centro del conjunto en X/Z, llevado a la malla de media celda para que el giro no desalinee las piezas. */
 export function rotationCenter(pieces: Piece[]): [number, number] {
-  let minX = Infinity;
-  let maxX = -Infinity;
-  let minZ = Infinity;
-  let maxZ = -Infinity;
-  for (const piece of pieces) {
-    for (const face of piece.faces) {
-      for (const p of face) {
-        minX = Math.min(minX, p[0]);
-        maxX = Math.max(maxX, p[0]);
-        minZ = Math.min(minZ, p[2]);
-        maxZ = Math.max(maxZ, p[2]);
-      }
-    }
-  }
+  const box = boundsOf(pieces);
   const snap = (v: number) => Math.round(v / STEP_XZ) * STEP_XZ;
-  return [snap((minX + maxX) / 2), snap((minZ + maxZ) / 2)];
+  if (!box) return [0, 0];
+  return [snap((box.min[0] + box.max[0]) / 2), snap((box.min[2] + box.max[2]) / 2)];
 }
 
 export function rotateChange(pieces: Piece[], quarterTurns: number): Change {
@@ -139,14 +127,10 @@ const AXIS_INDEX: Record<Axis, number> = { x: 0, y: 1, z: 2 };
 /** Centro del conjunto en un eje, llevado a una malla de media paso para que el espejo caiga sobre la rejilla de movimiento. */
 export function mirrorCenter(pieces: Piece[], axis: Axis): number {
   const i = AXIS_INDEX[axis];
-  let min = Infinity;
-  let max = -Infinity;
-  for (const piece of pieces) for (const face of piece.faces) for (const p of face) {
-    min = Math.min(min, p[i]);
-    max = Math.max(max, p[i]);
-  }
+  const box = boundsOf(pieces);
   const grid = (axis === 'y' ? STEP_Y : STEP_XZ) / 2;
-  return Math.round((min + max) / 2 / grid) * grid;
+  if (!box) return 0;
+  return Math.round((box.min[i] + box.max[i]) / 2 / grid) * grid;
 }
 
 /** Refleja la pieza respecto al plano `axis = center`; se invierte el orden de cada cara para que sus normales sigan hacia fuera. */

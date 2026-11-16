@@ -1,9 +1,10 @@
-import { FACE_DOUBLE, faceNormal, makePiece, type Piece, type Vec3 } from './piece';
+import { vertexKey } from './key';
+import { FACE_DOUBLE, faceNormal, keepGroup, makePiece, type Piece, type Vec3 } from './piece';
 import { remapTexture, type FaceTexture } from './texture';
 import { triangulateFace } from './convex';
+import { planeBasis } from './cut';
 
-/** Clave de un vértice por su posición: los de varias caras que coinciden son el mismo vértice de la pieza. */
-export const vertexKey = (p: Vec3): string => p.map((v) => Math.round(v * 1e5)).join(',');
+export { vertexKey };
 
 /** Los vértices distintos de la pieza (uno por posición). */
 export function uniqueVertices(piece: Piece): Vec3[] {
@@ -13,6 +14,33 @@ export function uniqueVertices(piece: Piece): Vec3[] {
 }
 
 const same = (a: Vec3, b: Vec3): boolean => vertexKey(a) === vertexKey(b);
+
+/**
+ * Las caras con una sola posición por vértice: todas las esquinas con la misma clave comparten exactamente el mismo punto (el primero que aparece).
+ * Así dos esquinas que el editor trata como una no se van separando poco a poco con cada edición. Devuelve las mismas caras si ya era así.
+ */
+export function canonFaces(faces: Vec3[][]): Vec3[][] {
+  const first = new Map<string, Vec3>();
+  let changed = false;
+  const out = faces.map((face) =>
+    face.map((p) => {
+      const key = vertexKey(p);
+      const known = first.get(key);
+      if (!known) {
+        first.set(key, p);
+        return p;
+      }
+      if (known !== p && (known[0] !== p[0] || known[1] !== p[1] || known[2] !== p[2])) changed = true;
+      return known;
+    }),
+  );
+  return changed ? out : faces;
+}
+
+/** La pieza con sus vértices canónicos (ver `canonFaces`), con el mismo id; la misma pieza si ya lo estaba. */
+export function canonPiece(piece: Piece): Piece {
+  return canonFaces(piece.faces) === piece.faces ? piece : (rebuild(piece, (face) => face, true) ?? piece);
+}
 
 /**
  * Rehace la pieza con otras caras. `mapFace` devuelve la cara nueva o null para quitarla; el color de cada cara sigue a la suya
@@ -37,10 +65,7 @@ function rebuild(piece: Piece, mapFace: (face: Vec3[], index: number) => Vec3[] 
     textures.push(texture ? (moved ? remapTexture(texture, face, next, (p) => p) : texture) : null);
   });
   if (faces.length === 0) return null;
-  const result = makePiece(faces, piece.color, colors, piece.faceTextures ? textures : undefined, flags);
-  if (piece.group !== undefined) result.group = piece.group;
-  if (piece.groupName) result.groupName = piece.groupName;
-  if (piece.layer !== undefined) result.layer = piece.layer;
+  const result = keepGroup(makePiece(canonFaces(faces), piece.color, colors, piece.faceTextures ? textures : undefined, flags), piece);
   if (keepId) result.id = piece.id;
   return result;
 }
@@ -67,10 +92,72 @@ export function cleanRepeats(piece: Piece): Piece {
   return rebuild(piece, (face) => face, true) ?? piece;
 }
 
-/** Quita de la cara los vértices consecutivos que quedaron en el mismo sitio. */
+/** Área mínima (doble, la longitud de la normal de Newell) para que una cara cuente como superficie. */
+const MIN_SURFACE = 1e-12;
+
+/**
+ * Quita de la cara los vértices consecutivos que quedaron en el mismo sitio. Una cara con menos de tres vértices distintos o sin área
+ * (como [c, B, c, D], que sale de fundir dos esquinas opuestas de un cuadrilátero) no es superficie: se devuelve vacía.
+ */
 function dedupe(face: Vec3[]): Vec3[] {
   const ring = face.filter((p, i) => !same(p, face[(i + 1) % face.length]));
-  return ring.length >= 3 ? ring : [];
+  if (ring.length < 3 || new Set(ring.map(vertexKey)).size < 3) return [];
+  const n = faceNormal(ring);
+  return Math.hypot(n[0], n[1], n[2]) > MIN_SURFACE ? ring : [];
+}
+
+/** Grupos de vértices (uno por posición) a menos de `tolerance` unos de otros, encadenados; solo los de `only` si se da. Cada grupo con más de uno. */
+function nearGroups(piece: Piece, tolerance: number, only?: ReadonlySet<string>): Vec3[][] {
+  const points = uniqueVertices(piece).filter((p) => !only || only.has(vertexKey(p)));
+  const parent = points.map((_, i) => i);
+  const find = (i: number): number => (parent[i] === i ? i : (parent[i] = find(parent[i])));
+  const cell = (p: Vec3): number[] => p.map((v) => Math.floor(v / tolerance));
+  const grid = new Map<string, number[]>();
+  points.forEach((p, i) => {
+    const k = cell(p).join(',');
+    const list = grid.get(k);
+    if (list) list.push(i);
+    else grid.set(k, [i]);
+  });
+  points.forEach((p, i) => {
+    const [cx, cy, cz] = cell(p);
+    for (let dx = -1; dx <= 1; dx++)
+      for (let dy = -1; dy <= 1; dy++)
+        for (let dz = -1; dz <= 1; dz++)
+          for (const j of grid.get(`${cx + dx},${cy + dy},${cz + dz}`) ?? []) {
+            if (j <= i) continue;
+            const q = points[j];
+            if (Math.hypot(p[0] - q[0], p[1] - q[1], p[2] - q[2]) <= tolerance) parent[find(i)] = find(j);
+          }
+  });
+  const groups = new Map<number, Vec3[]>();
+  points.forEach((p, i) => groups.set(find(i), [...(groups.get(find(i)) ?? []), p]));
+  return [...groups.values()].filter((group) => group.length > 1);
+}
+
+/** Cuántos vértices de la pieza se soldarían con `weldVertices` (los que están a menos de `tolerance` de otro, sin contar uno por grupo). */
+export function nearVertexCount(piece: Piece, tolerance: number, only?: ReadonlySet<string>): number {
+  return nearGroups(piece, tolerance, only).reduce((sum, group) => sum + group.length - 1, 0);
+}
+
+/**
+ * Suelda los vértices que están a menos de `tolerance` unos de otros: cada grupo pasa a su punto medio y las caras que se quedan sin superficie
+ * desaparecen. Con `only` solo cuentan esos vértices. Devuelve la pieza (con el mismo id) y cuántos vértices se soldaron;
+ * la misma pieza y 0 si no había nada que soldar o si soldar la dejaría sin caras.
+ */
+export function weldVertices(piece: Piece, tolerance: number, only?: ReadonlySet<string>): { piece: Piece; welded: number } {
+  if (!(tolerance > 0)) return { piece, welded: 0 };
+  const groups = nearGroups(piece, tolerance, only);
+  if (groups.length === 0) return { piece, welded: 0 };
+  const target = new Map<string, Vec3>();
+  let welded = 0;
+  for (const group of groups) {
+    const centre = [0, 1, 2].map((k) => group.reduce((sum, p) => sum + p[k], 0) / group.length) as Vec3;
+    for (const p of group) target.set(vertexKey(p), centre);
+    welded += group.length - 1;
+  }
+  const result = rebuild(piece, (face) => dedupe(face.map((p) => target.get(vertexKey(p)) ?? p)), true);
+  return result ? { piece: result, welded } : { piece, welded: 0 };
 }
 
 /** Junta los vértices elegidos en uno solo, en su centro. Las caras que se quedan sin superficie desaparecen. */
@@ -178,10 +265,7 @@ function replaceFaces(piece: Piece, replacements: ReadonlyMap<number, Vec3[][]>)
       textures.push(texture ? (replaced ? remapTexture(texture, original, next, (p) => p) : texture) : null);
     }
   });
-  const result = makePiece(faces, piece.color, colors, piece.faceTextures ? textures : undefined, flags);
-  if (piece.group !== undefined) result.group = piece.group;
-  if (piece.groupName) result.groupName = piece.groupName;
-  if (piece.layer !== undefined) result.layer = piece.layer;
+  const result = keepGroup(makePiece(faces, piece.color, colors, piece.faceTextures ? textures : undefined, flags), piece);
   return result;
 }
 
@@ -257,11 +341,7 @@ function splitRing(face: Vec3[], ia: number, ib: number): Vec3[][] | null {
   if (length < 1e-12) return null;
   const unit: Vec3 = [n[0] / length, n[1] / length, n[2] / length];
   // Base 2D del plano de la cara, para comprobar el trayecto con geometría plana.
-  const seed: Vec3 = Math.abs(unit[1]) < 0.9 ? [0, 1, 0] : [1, 0, 0];
-  const ux: Vec3 = [seed[1] * unit[2] - seed[2] * unit[1], seed[2] * unit[0] - seed[0] * unit[2], seed[0] * unit[1] - seed[1] * unit[0]];
-  const ul = Math.hypot(...ux);
-  const axisX: Vec3 = [ux[0] / ul, ux[1] / ul, ux[2] / ul];
-  const axisY: Vec3 = [unit[1] * axisX[2] - unit[2] * axisX[1], unit[2] * axisX[0] - unit[0] * axisX[2], unit[0] * axisX[1] - unit[1] * axisX[0]];
+  const { u: axisX, v: axisY } = planeBasis(unit);
   const flat = face.map((p) => [p[0] * axisX[0] + p[1] * axisX[1] + p[2] * axisX[2], p[0] * axisY[0] + p[1] * axisY[1] + p[2] * axisY[2]] as [number, number]);
   const a = flat[ia];
   const b = flat[ib];
@@ -570,10 +650,7 @@ function ringAround(points: Vec3[]): Vec3[] {
 
 /** Copia de `source` con otras caras, colores y texturas, conservando grupo, nombre de grupo y capa. */
 function withFaces(source: Piece, faces: Vec3[][], colors: number[], textures: (FaceTexture | null)[], flags: number[]): Piece {
-  const result = makePiece(faces, source.color, colors, source.faceTextures ? textures : undefined, flags);
-  if (source.group !== undefined) result.group = source.group;
-  if (source.groupName) result.groupName = source.groupName;
-  if (source.layer !== undefined) result.layer = source.layer;
+  const result = keepGroup(makePiece(faces, source.color, colors, source.faceTextures ? textures : undefined, flags), source);
   return result;
 }
 
@@ -743,10 +820,7 @@ export function setFaceFlags(piece: Piece, indices: ReadonlySet<number>, flag: n
     return on ? current | flag : current & ~flag;
   });
   if (flags.every((f, i) => f === (piece.faceFlags?.[i] ?? 0))) return null;
-  const result = makePiece(piece.faces, piece.color, piece.faceColors, piece.faceTextures, flags);
-  if (piece.group !== undefined) result.group = piece.group;
-  if (piece.groupName) result.groupName = piece.groupName;
-  if (piece.layer !== undefined) result.layer = piece.layer;
+  const result = keepGroup(makePiece(piece.faces, piece.color, piece.faceColors, piece.faceTextures, flags), piece);
   return result;
 }
 
@@ -935,10 +1009,26 @@ export function fillHoles(piece: Piece, keys: ReadonlySet<string> | null): { pie
   return { piece: result, filled: loops.length };
 }
 
-/** Los segmentos de la pieza (aristas de sus caras, sin repetir) como pares de claves de vértice. */
-export function pieceEdges(piece: Piece): [Vec3, Vec3][] {
-  const seen = new Set<string>();
-  const out: [Vec3, Vec3][] = [];
+/** Un segmento de la pieza con las caras que lo usan. */
+export interface Segment {
+  a: Vec3;
+  b: Vec3;
+  faces: Vec3[][];
+}
+
+/** Una arista compartida por exactamente dos caras. */
+export interface PieceEdge extends Segment {
+  faces: [Vec3[], Vec3[]];
+}
+
+/**
+ * Los segmentos de la pieza (aristas de sus caras, sin repetir ni degenerados), cada uno con las caras que lo usan.
+ * Con `sharedOnly` solo quedan los que comparten exactamente dos caras (los de un borde abierto no cuentan).
+ */
+export function pieceEdges(piece: Piece, sharedOnly: true): PieceEdge[];
+export function pieceEdges(piece: Piece, sharedOnly?: boolean): Segment[];
+export function pieceEdges(piece: Piece, sharedOnly = false): Segment[] {
+  const seen = new Map<string, Segment>();
   for (const face of piece.faces) {
     face.forEach((p, i) => {
       const q = face[(i + 1) % face.length];
@@ -946,12 +1036,13 @@ export function pieceEdges(piece: Piece): [Vec3, Vec3][] {
       const b = vertexKey(q);
       if (a === b) return;
       const id = a < b ? `${a}|${b}` : `${b}|${a}`;
-      if (seen.has(id)) return;
-      seen.add(id);
-      out.push([p, q]);
+      const entry = seen.get(id);
+      if (entry) entry.faces.push(face);
+      else seen.set(id, { a: p, b: q, faces: [face] });
     });
   }
-  return out;
+  const all = [...seen.values()];
+  return sharedOnly ? all.filter((e) => e.faces.length === 2) : all;
 }
 
 /**
@@ -961,7 +1052,7 @@ export function pieceEdges(piece: Piece): [Vec3, Vec3][] {
 export function edgeLoop(piece: Piece, from: Vec3, to: Vec3, maxTurn = 30): Set<string> {
   const position = new Map<string, Vec3>();
   const neighbours = new Map<string, Set<string>>();
-  for (const [p, q] of pieceEdges(piece)) {
+  for (const { a: p, b: q } of pieceEdges(piece)) {
     const a = vertexKey(p);
     const b = vertexKey(q);
     position.set(a, p);
@@ -1202,4 +1293,58 @@ export function ringCut(piece: Piece, from: Vec3, to: Vec3): { piece: Piece; cre
     } else push(i, face, next);
   });
   return { piece: withFaces(piece, faces, colors, textures, flags), created: new Set([...midpoints.values()].map(vertexKey)), cut: cutFaces.size };
+}
+
+/** La dirección «hacia fuera» en un vértice: la media de las normales de las caras que lo usan; sin caras con normal clara, la vertical. */
+export function vertexNormal(piece: Piece, p: Vec3): Vec3 {
+  const key = vertexKey(p);
+  const sum: Vec3 = [0, 0, 0];
+  for (const face of piece.faces) {
+    if (!face.some((q) => vertexKey(q) === key)) continue;
+    const n = faceNormal(face);
+    const length = Math.hypot(...n) || 1;
+    for (let i = 0; i < 3; i++) sum[i] += n[i] / length;
+  }
+  const length = Math.hypot(...sum);
+  return length < 1e-6 ? [0, 1, 0] : [sum[0] / length, sum[1] / length, sum[2] / length];
+}
+
+/**
+ * «Punta»: saca una copia de cada vértice elegido y la une al vértice original con caras nuevas; el original se queda donde está y la pieza
+ * no se deforma. `tip` es la distancia hacia fuera (a lo largo de `vertexNormal`) o una función que dice dónde cae la copia de cada vértice
+ * (así quien llama puede poner las del espejo como reflejo exacto de las elegidas). Cada segmento que sale de un vértice elegido recibe una
+ * cara: un triángulo si solo un extremo está elegido, un cuadrilátero si lo están los dos. Las caras nuevas se ven por los dos lados.
+ * Devuelve la pieza, las claves de las copias (para moverlas) y cuántas caras se añadieron; null si no hay nada que sacar.
+ */
+export function tipVertices(piece: Piece, keys: ReadonlySet<string>, tip: number | ((p: Vec3) => Vec3)): { piece: Piece; keys: Set<string>; faces: number } | null {
+  if (typeof tip === 'number' && Math.abs(tip) < 1e-9) return null;
+  const chosen = uniqueVertices(piece).filter((p) => keys.has(vertexKey(p)));
+  if (chosen.length === 0) return null;
+  const tips = new Map<string, Vec3>();
+  for (const p of chosen) {
+    let to: Vec3;
+    if (typeof tip === 'number') {
+      const dir = vertexNormal(piece, p);
+      to = [p[0] + dir[0] * tip, p[1] + dir[1] * tip, p[2] + dir[2] * tip];
+    } else to = tip(p);
+    // Una copia que cae sobre su propio vértice no es una punta.
+    if (vertexKey(to) !== vertexKey(p)) tips.set(vertexKey(p), to);
+  }
+  const added: Vec3[][] = [];
+  for (const edge of pieceEdges(piece)) {
+    const ta = tips.get(vertexKey(edge.a));
+    const tb = tips.get(vertexKey(edge.b));
+    if (ta && tb) added.push([edge.a, edge.b, tb, ta]);
+    else if (ta) added.push([edge.a, edge.b, ta]);
+    else if (tb) added.push([edge.a, edge.b, tb]);
+  }
+  if (added.length === 0) return null;
+  const result = withFaces(
+    piece,
+    [...piece.faces, ...added],
+    [...piece.faces.map((_, i) => piece.faceColors?.[i] ?? piece.color), ...added.map(() => piece.color)],
+    [...(piece.faceTextures ?? piece.faces.map(() => null)), ...added.map(() => null)],
+    [...piece.faces.map((_, i) => piece.faceFlags?.[i] ?? 0), ...added.map(() => FACE_DOUBLE)],
+  );
+  return { piece: result, keys: new Set([...tips.values()].map(vertexKey)), faces: added.length };
 }

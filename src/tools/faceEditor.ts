@@ -14,6 +14,8 @@ export interface FaceEditorHost {
   stillThere(piece: Piece): boolean;
   /** Dibuja una textura provisional en la vista 3D sin tocar el modelo. */
   preview(piece: Piece, faceIndex: number, texture: FaceTexture): void;
+  /** Quita la textura provisional: la vista 3D vuelve a mostrar lo que hay en el modelo para esa pieza. */
+  revert(piece: Piece): void;
   /** Pasa la textura al modelo como un cambio y devuelve la pieza nueva. */
   commit(piece: Piece, faceIndex: number, texture: FaceTexture): Piece;
 }
@@ -79,10 +81,17 @@ export class FaceEditor {
   }
 
   close(): void {
-    this.stroke = null;
+    this.abandonStroke();
     this.selection = null;
     this.root.hidden = true;
     this.piece = null;
+  }
+
+  /** Suelta el trazo en curso sin aplicarlo y, si ya se había visto en la vista 3D, la deja como estaba. */
+  private abandonStroke(): void {
+    const stroke = this.stroke;
+    this.stroke = null;
+    if (stroke?.changed && this.piece) this.host.revert(this.piece);
   }
 
   private outline(): void {
@@ -185,6 +194,11 @@ export class FaceEditor {
   private paint({ x, y }: { x: number; y: number }): void {
     const stroke = this.stroke;
     if (!stroke || !this.piece) return;
+    // Un deshacer en mitad del trazo pudo quitar la pieza: no se sigue pintando sobre algo que ya no está.
+    if (!this.host.stillThere(this.piece)) {
+      this.close();
+      return;
+    }
     const tool = this.host.tool();
     if (tool === 'select') {
       stroke.state.start ??= { x, y };
@@ -244,6 +258,12 @@ export class FaceEditor {
     }
     if (!stroke?.changed || !this.piece) {
       this.draw(this.texture);
+      return;
+    }
+    // Si la pieza ya no está (un deshacer a mitad del trazo), aplicar el trazo la duplicaría: se descarta.
+    if (!this.host.stillThere(this.piece)) {
+      this.stroke = stroke;
+      this.close();
       return;
     }
     this.piece = this.host.commit(this.piece, this.faceIndex, stroke.texture);

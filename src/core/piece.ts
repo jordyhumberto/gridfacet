@@ -36,6 +36,10 @@ export const hasExportFlags = (piece: { faceFlags?: number[] }): boolean => !!pi
 
 let nextGroup = 1;
 export const newGroupId = (): number => nextGroup++;
+/** Deja el contador de grupos por encima del mayor presente en `pieces`, para que un grupo nuevo no se funda con uno cargado. */
+export function reserveGroupIds(pieces: readonly { group?: number }[]): void {
+  for (const piece of pieces) if (piece.group !== undefined && piece.group >= nextGroup) nextGroup = Math.floor(piece.group) + 1;
+}
 
 /** Copia de `piece` con otro grupo (o sin grupo si `group` es undefined) y un id nuevo. */
 export function withGroup(piece: Piece, group: number | undefined, groupName?: string): Piece {
@@ -69,9 +73,9 @@ export function faceColorOf(piece: Piece, index: number): number {
   return piece.faceColors?.[index] ?? piece.color;
 }
 
-/** Guarda los colores por cara solo si alguno difiere del de la pieza. */
-function normalizeFaceColors(color: number, faceColors: number[] | undefined): number[] | undefined {
-  return faceColors && faceColors.some((c) => c !== color) ? faceColors : undefined;
+/** Guarda los colores por cara solo si alguno difiere del de la pieza y hay uno por cada cara. */
+function normalizeFaceColors(color: number, faceColors: number[] | undefined, faceCount: number): number[] | undefined {
+  return faceColors && faceColors.length === faceCount && faceColors.some((c) => c !== color) ? faceColors : undefined;
 }
 
 export interface Plane {
@@ -80,13 +84,14 @@ export interface Plane {
 }
 
 const EPS = 1e-9;
+/** Distancia bajo la que dos puntos de un contorno se funden al recortar (no es la clave de vértice de key.ts: aquí se mide una distancia, con más precisión para no deformar el recorte). */
 const WELD = 1e-7;
 
 let nextId = 1;
 
 export function makePiece(faces: Vec3[][], color: number, faceColors?: number[], faceTextures?: (FaceTexture | null | undefined)[], faceFlags?: (number | undefined)[]): Piece {
   const piece: Piece = { id: nextId++, faces, color };
-  const painted = normalizeFaceColors(color, faceColors);
+  const painted = normalizeFaceColors(color, faceColors, faces.length);
   if (painted) piece.faceColors = painted;
   const textures = normalizeTextures(faceTextures);
   if (textures && textures.length === faces.length) piece.faceTextures = textures;

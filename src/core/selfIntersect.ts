@@ -1,7 +1,8 @@
+import { vertexKey } from './key';
 import { triangulateFace } from './convex';
 import type { Piece, Vec3 } from './piece';
 
-const key = (p: Vec3): string => p.map((v) => Math.round(v * 1e5)).join(',');
+const key = vertexKey;
 
 const EPS = 1e-6;
 /** Grosor mínimo: dos superficies paralelas, de frente una a otra y más cerca que esto, cuentan como pegadas (el cuerpo se ha quedado en una lámina). */
@@ -83,12 +84,18 @@ export function collapses(piece: Piece): boolean {
   const tris = trianglesOf(piece);
   const faceCount = new Map<string, number>();
   for (const face of piece.faces) for (const k of new Set(face.map(key))) faceCount.set(k, (faceCount.get(k) ?? 0) + 1);
+  // Recorrido por barrido: con los triángulos ordenados por su mínimo en X, cada uno solo se compara con los que empiezan antes de que él acabe
+  // (más el grosor), en vez de con todos los demás. Es el mismo resultado que comparar todos con todos, pero con mallas de miles de caras
+  // se saltan casi todas las parejas.
+  tris.sort((p, q) => p.min[0] - q.min[0]);
   for (let i = 0; i < tris.length; i++) {
+    const a = tris[i];
+    const reach = a.max[0] + THIN;
     for (let j = i + 1; j < tris.length; j++) {
-      const a = tris[i];
       const b = tris[j];
+      if (b.min[0] > reach) break;
       if (a.face === b.face) continue;
-      if ([0, 1, 2].some((k) => a.max[k] < b.min[k] - THIN || b.max[k] < a.min[k] - THIN)) continue;
+      if (a.max[1] < b.min[1] - THIN || b.max[1] < a.min[1] - THIN || a.max[2] < b.min[2] - THIN || b.max[2] < a.min[2] - THIN) continue;
       if (coplanar(a, b) || pressed(a, b)) {
         // Comparten un vértice que solo tocan dos caras: es una aleta (un punto de arista sacado fuera), no un cuerpo aplastado. Aplastar de verdad es poner partes lejanas una sobre otra.
         if (a.p.some((p) => b.p.some((q) => key(p) === key(q) && (faceCount.get(key(p)) ?? 0) <= 2))) continue;

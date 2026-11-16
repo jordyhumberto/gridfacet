@@ -1,4 +1,5 @@
 import type { Piece, Vec3 } from './piece';
+import { boundsOf } from './transform';
 
 /** Cómo está un grupo en un momento: desplazamiento, giro (grados, en X, Y, Z) y escala por eje. */
 export interface Pose {
@@ -86,20 +87,9 @@ export function pruneTracks(animation: Animation, pieces: Piece[]): Animation {
 
 /** El centro de la caja de las piezas de un grupo: alrededor de él giran y escalan. */
 export function groupCentre(pieces: Piece[]): Vec3 {
-  const min: Vec3 = [Infinity, Infinity, Infinity];
-  const max: Vec3 = [-Infinity, -Infinity, -Infinity];
-  for (const piece of pieces) {
-    for (const face of piece.faces) {
-      for (const p of face) {
-        for (let k = 0; k < 3; k++) {
-          min[k] = Math.min(min[k], p[k]);
-          max[k] = Math.max(max[k], p[k]);
-        }
-      }
-    }
-  }
-  if (!Number.isFinite(min[0])) return [0, 0, 0];
-  return [(min[0] + max[0]) / 2, (min[1] + max[1]) / 2, (min[2] + max[2]) / 2];
+  const box = boundsOf(pieces);
+  if (!box || !Number.isFinite(box.min[0])) return [0, 0, 0];
+  return [(box.min[0] + box.max[0]) / 2, (box.min[1] + box.max[1]) / 2, (box.min[2] + box.max[2]) / 2];
 }
 
 const finite3 = (v: unknown): v is Vec3 => Array.isArray(v) && v.length === 3 && v.every((n) => typeof n === 'number' && Number.isFinite(n));

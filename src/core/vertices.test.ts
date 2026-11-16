@@ -4,7 +4,7 @@ import { isConvex } from './convex';
 import { collapses } from './selfIntersect';
 import { floodFill, textureOfFace, withFaceTexture } from './pixels';
 import { FACE_DOUBLE, FACE_UNLIT, faceNormal, makePiece, volume, type Vec3 } from './piece';import { sampleTexture, pointOf, uvOf } from './texture';
-import { addMirrorPairOnFace, connectVertices, dissolveEdge, slideSegment, straightenVertices, flattenVertices, fitPlane, faceWarp, warpedFaces, flattenWarped, WARP_TOLERANCE, extrudeEdge, finFaces, flagFins, splitFacesAtCenter, addFace, deleteFaces, deleteVertices, extrudeFaces, facesWithin, flipFaces, mergeVertices, moveVertices, placeVertices, rotateAbout, scaleAbout, setFaceFlags, splitEdge, addVertexOnFace, taperPoint, twistPoint, bendPoint, uniqueVertices, vertexKey } from './vertices';
+import { addMirrorPairOnFace, connectVertices, dissolveEdge, slideSegment, straightenVertices, flattenVertices, fitPlane, faceWarp, warpedFaces, flattenWarped, WARP_TOLERANCE, extrudeEdge, tipVertices, finFaces, flagFins, splitFacesAtCenter, addFace, deleteFaces, deleteVertices, extrudeFaces, facesWithin, flipFaces, mergeVertices, moveVertices, placeVertices, rotateAbout, scaleAbout, setFaceFlags, splitEdge, addVertexOnFace, taperPoint, twistPoint, bendPoint, uniqueVertices, vertexKey } from './vertices';
 
 const cube = () => buildPiece(CATALOG[0], 0, 0, 0, 0, 0x336699);
 const topCorner = (piece = cube()): Vec3 => {
@@ -895,5 +895,130 @@ describe('corte en anillo', () => {
     const { ringCut } = await import('./vertices');
     const c = cube();
     expect(ringCut(c, [100, 100, 100], [101, 100, 100])).toBeNull();
+  });
+});
+
+describe('vértices canónicos', () => {
+  /** Cubo cuya esquina compartida difiere un pelo entre dos caras (misma clave, distinto valor). */
+  const drifted = () => {
+    const c = cube();
+    const a = c.faces[0][0];
+    const b = c.faces.slice(1).flat().find((p) => vertexKey(p) === vertexKey(a))!;
+    expect(b).toBeDefined();
+    const faces = c.faces.map((face) => face.map((p) => (p === b ? ([p[0] + 2e-6, p[1], p[2]] as Vec3) : p)));
+    return { piece: makePiece(faces, c.color), key: vertexKey(a) };
+  };
+  const copies = (faces: Vec3[][], key: string) => faces.flat().filter((p) => vertexKey(p) === key);
+
+  it('tras rebuild, las esquinas con la misma clave tienen valores idénticos', () => {
+    const { piece, key } = drifted();
+    expect(new Set(copies(piece.faces, key).map((p) => p.join(','))).size).toBe(2);
+    const moved = moveVertices(piece, new Set(['no-existe']), [0, 0, 0])!;
+    expect(new Set(copies(moved.faces, key).map((p) => p.join(','))).size).toBe(1);
+  });
+
+  it('canonPiece junta las esquinas y conserva el id; si ya estaban juntas devuelve la misma pieza', async () => {
+    const { canonPiece } = await import('./vertices');
+    const { piece, key } = drifted();
+    const fixed = canonPiece(piece);
+    expect(fixed.id).toBe(piece.id);
+    expect(new Set(copies(fixed.faces, key).map((p) => p.join(','))).size).toBe(1);
+    expect(canonPiece(fixed)).toBe(fixed);
+  });
+});
+
+describe('mergeVertices con esquinas opuestas', () => {
+  it('fundir dos esquinas opuestas de un cuadrilátero quita la cara sin superficie', () => {
+    const quad: Vec3[] = [[0, 0, 0], [1, 0, 0], [1, 0, 1], [0, 0, 1]];
+    const tri: Vec3[] = [[5, 0, 0], [6, 0, 0], [5, 0, 1]];
+    const piece = makePiece([quad, tri], 0x336699);
+    const merged = mergeVertices(piece, new Set([vertexKey(quad[0]), vertexKey(quad[2])]))!;
+    expect(merged.faces).toHaveLength(1);
+    expect(merged.faces[0]).toEqual(tri);
+  });
+});
+
+describe('weldVertices', () => {
+  /** Dos cuadrados contiguos con un hueco de 1 mm entre sus bordes: parecen soldados y no lo están. */
+  const gap = 0.001;
+  const left: Vec3[] = [[0, 0, 0], [1, 0, 0], [1, 1, 0], [0, 1, 0]];
+  const right: Vec3[] = [[1 + gap, 0, 0], [2, 0, 0], [2, 1, 0], [1 + gap, 1, 0]];
+  const pair = () => makePiece([left, right], 0x336699, [0xff0000, 0x00ff00], undefined, [FACE_DOUBLE, 0]);
+
+  it('suelda los vértices a menos de la distancia, en su punto medio', async () => {
+    const { weldVertices } = await import('./vertices');
+    const result = weldVertices(pair(), 0.002);
+    expect(result.welded).toBe(2);
+    expect(uniqueVertices(result.piece)).toHaveLength(6);
+    const joined = uniqueVertices(result.piece).filter((p) => Math.abs(p[0] - (1 + gap / 2)) < 1e-9);
+    expect(joined).toHaveLength(2);
+  });
+
+  it('no suelda los vértices lejanos y devuelve la misma pieza', async () => {
+    const { weldVertices } = await import('./vertices');
+    const piece = pair();
+    const result = weldVertices(piece, 0.0005);
+    expect(result.welded).toBe(0);
+    expect(result.piece).toBe(piece);
+  });
+
+  it('quita las caras que se quedan sin superficie y conserva colores y propiedades por cara', async () => {
+    const { weldVertices } = await import('./vertices');
+    const sliver: Vec3[] = [[5, 0, 0], [5 + gap, 0, 0], [5, 0, 1]];
+    const piece = makePiece([left, sliver, right], 0x336699, [0xff0000, 0x0000ff, 0x00ff00], undefined, [FACE_DOUBLE, FACE_UNLIT, 0]);
+    const result = weldVertices(piece, 0.002).piece;
+    expect(result.faces).toHaveLength(2);
+    expect(result.faceColors).toEqual([0xff0000, 0x00ff00]);
+    expect(result.faceFlags).toEqual([FACE_DOUBLE, 0]);
+    expect(result.id).toBe(piece.id);
+  });
+
+  it('solo suelda entre los vértices permitidos', async () => {
+    const { weldVertices } = await import('./vertices');
+    const only = new Set([vertexKey([1, 0, 0]), vertexKey([1 + gap, 0, 0])]);
+    const result = weldVertices(pair(), 0.002, only);
+    expect(result.welded).toBe(1);
+    expect(uniqueVertices(result.piece)).toHaveLength(7);
+  });
+
+  it('nearVertexCount cuenta los vértices que se soldarían sin tocar nada', async () => {
+    const { nearVertexCount } = await import('./vertices');
+    expect(nearVertexCount(pair(), 0.002)).toBe(2);
+    expect(nearVertexCount(pair(), 0.0005)).toBe(0);
+  });
+});
+
+describe('tipVertices (Punta)', () => {
+  it('deja el vértice original donde estaba y saca una copia unida a él con caras nuevas', () => {
+    const cube = buildPiece(CATALOG[0], 0, 0, 0, 0, 0x336699);
+    const corner = uniqueVertices(cube).reduce((a, b) => (b[0] + b[1] + b[2] > a[0] + a[1] + a[2] ? b : a));
+    const result = tipVertices(cube, new Set([vertexKey(corner)]), 0.5)!;
+    expect(result).not.toBeNull();
+    // Las caras del cubo siguen igual y se suman tres (una por cada arista que sale de la esquina).
+    expect(result.piece.faces.slice(0, cube.faces.length)).toEqual(cube.faces);
+    expect(result.faces).toBe(3);
+    expect(result.piece.faces.length).toBe(cube.faces.length + 3);
+    // La esquina original sigue ahí y hay una copia nueva, a 0,5 de ella.
+    const keys = uniqueVertices(result.piece).map(vertexKey);
+    expect(keys).toContain(vertexKey(corner));
+    expect(result.keys.size).toBe(1);
+    const tip = uniqueVertices(result.piece).find((p) => result.keys.has(vertexKey(p)))!;
+    expect(Math.hypot(tip[0] - corner[0], tip[1] - corner[1], tip[2] - corner[2])).toBeCloseTo(0.5, 5);
+    // Las caras nuevas se ven por los dos lados.
+    for (let i = cube.faces.length; i < result.piece.faces.length; i++) expect((result.piece.faceFlags?.[i] ?? 0) & FACE_DOUBLE).toBe(FACE_DOUBLE);
+  });
+
+  it('con dos vértices unidos por una arista forma un cuadrilátero entre ellos', () => {
+    const cube = buildPiece(CATALOG[0], 0, 0, 0, 0, 0x336699);
+    const [a, b] = uniqueVertices(cube).filter((p) => p[1] === Math.max(...uniqueVertices(cube).map((q) => q[1])) && p[2] === Math.max(...uniqueVertices(cube).map((q) => q[2])));
+    const result = tipVertices(cube, new Set([vertexKey(a), vertexKey(b)]), 0.5)!;
+    expect(result.keys.size).toBe(2);
+    expect(result.piece.faces.some((f) => f.length === 4 && f.some((p) => result.keys.has(vertexKey(p))) && f.some((p) => vertexKey(p) === vertexKey(a)) && f.some((p) => vertexKey(p) === vertexKey(b)))).toBe(true);
+  });
+
+  it('devuelve null sin vértices elegidos o con distancia cero', () => {
+    const cube = buildPiece(CATALOG[0], 0, 0, 0, 0, 0x336699);
+    expect(tipVertices(cube, new Set(), 0.5)).toBeNull();
+    expect(tipVertices(cube, new Set([vertexKey(uniqueVertices(cube)[0])]), 0)).toBeNull();
   });
 });

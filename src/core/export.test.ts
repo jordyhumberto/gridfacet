@@ -1,10 +1,41 @@
 import { describe, expect, it } from 'vitest';
 import { CATALOG, buildPiece } from './catalog';
 import { buildExportMeshes } from './export';
+import { deleteFaces } from './vertices';
+import type { Piece } from './piece';
 
 const cubeAt = (x: number, color = 0xff0000) => buildPiece(CATALOG[0], x, 0, 0, 0, color);
 
+/** Cubo de lado 1 sin la tapa de arriba (la cara que mira a +Y). */
+function openBox(): Piece {
+  const box = cubeAt(0);
+  const top = box.faces.findIndex((face) => face.every((p) => p[1] === Math.max(...box.faces.flat().map((q) => q[1]))));
+  return deleteFaces(box, new Set([top]))!;
+}
+
 describe('buildExportMeshes', () => {
+  it('una pieza abierta no se come lo que se apoya sobre ella al unir', () => {
+    const box = openBox();
+    expect(box.faces).toHaveLength(5);
+    // Un cubo pequeño encima del borde de la caja sin tapa.
+    const lid = buildPiece(CATALOG[0], 0, 1, 0, 0, 0x00ff00);
+    const meshes = buildExportMeshes([box, lid], 'merged');
+    const triangles = meshes.reduce((sum, m) => sum + m.indices.length / 3, 0);
+    // La caja abierta conserva sus 5 caras (10 triángulos) y el cubo de arriba sus 12.
+    expect(triangles).toBeGreaterThanOrEqual(20);
+    const green = meshes.find((m) => m.color === 0x00ff00);
+    expect(green).toBeDefined();
+    expect(green!.indices.length / 3).toBeGreaterThanOrEqual(10);
+  });
+
+  it('un cubo dentro de una pieza abierta tampoco desaparece', () => {
+    const box = openBox();
+    const inner = { ...buildPiece(CATALOG[0], 0, 0, 0, 0, 0x00ff00) };
+    // Mismo hueco que la caja: el cubo está dentro de su prisma «infinito» hacia arriba.
+    const meshes = buildExportMeshes([box, inner], 'merged');
+    expect(meshes.some((m) => m.color === 0x00ff00 && m.indices.length > 0)).toBe(true);
+  });
+
   it('suelda los vértices: un cubo tiene 8 vértices y 12 triángulos', () => {
     const [mesh] = buildExportMeshes([cubeAt(0)], 'perPiece');
     expect(mesh.positions.length / 3).toBe(8);

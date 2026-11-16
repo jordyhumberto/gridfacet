@@ -1,4 +1,6 @@
 import { panStep, type PanState } from './core/pan';
+import { MODE_INFO, GUIDE, setupHelp } from './ui/help';
+import { ctrlBeatsField, escLeavesTool, isTextField, meshIgnoresKey, toolForKey, toolKey, undoRedoKey, verticalMoveKey, type KeyMode } from './core/shortcuts';
 import * as THREE from 'three';
 import { axisAllowed, lockLabel, planeNormal, type AxisLock } from './core/axisLock';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
@@ -15,20 +17,16 @@ import { STEP_XZ, STEP_Y, mirrorChange, mirrorCopyChange, moveChange, rotateChan
 import { alignChange, distributeChange, groundChange, partsOf, resizeLongestChange } from './core/arrange';
 import { searchCommands, type Command } from './core/commands';
 import { parseHexColors, parsePalettes, toHexText, upsertPalette, type Palette } from './core/palettes';
-import { parseProjectFull, serializeProject } from './core/project';
-import { defaultReference, nextReferenceId, withPlane, type RefImage, type RefPlane } from './core/references';
-import { ReferenceLayer, loadReferenceFile } from './render/references';
-import { groupCentre, emptyAnimation, pruneTracks, removeKey, resize as resizeAnimation, sampleTrack, setKey, trackOf, MAX_FPS, MAX_FRAMES, type Animation, type Pose } from './core/animation';
-import { AnimationPlayer } from './render/animationPlayer';
-import { canPickOpen, canPickSave, PICKER_HELP, PickerUnresponsive, pickOpen, pickSave, writeHandle, type FileHandle } from './fileAccess';
+import { serializeProject } from './core/project';
+import { createFiles } from './ui/files';
+import { createReferencesPanel } from './ui/referencesPanel';
+import { emptyAnimation, pruneTracks } from './core/animation';
+import { createAnimationPanel } from './ui/animationPanel';
 import { downloadBlob, exportGlb } from './render/glb';
-import { framesToPngs, framesToSheet, renderSprites } from './render/sprites';
-import { TextureLayer, atlasToPng } from './render/textures';
-import { buildObj } from './core/obj';
+import { TextureLayer } from './render/textures';
 import type { BrushOptions, PixelEdit, Rect } from './core/pixels';
 import { copyRegion, editRegion, paintCell, pasteRegion, pixelClipboard, rectBetween, texelAt, textureOfFace, visibleColor, withFaceTexture } from './core/pixels';
 import { pointOf, type FaceTexture } from './core/texture';
-import { spriteFileName, type SpriteCamera } from './core/sprites';
 import { PieceBatches } from './render/batches';
 import { createPieceObject, disposeObject, isWireframeView, setHighlight, setSmoothShading, setWireframeView } from './render/meshes';
 import { ModelScene } from './scene';
@@ -43,7 +41,7 @@ import { connectedPieces, sizeOf } from './core/connected';
 import { bevelChange, edgeBetween, nearestEdge, type PieceEdge } from './core/bevel';
 import { buildShape, MAX_RINGS, MAX_SIDES, MIN_RINGS, MIN_SIDES, SECTIONS, SHAPES, type ShapeKind, type ShapeSpec, type SphereSection } from './core/shapes';
 import { facesAt, paintChange, type FaceRef } from './core/paint';
-import { FACE_BEHIND, FACE_DOUBLE, FACE_UNLIT, faceColorOf, faceNormal, newGroupId, withGroup, withLayer } from './core/piece';
+import { FACE_BEHIND, FACE_DOUBLE, FACE_UNLIT, faceColorOf, faceNormal, newGroupId, reserveGroupIds, withGroup, withLayer } from './core/piece';
 import { VertexTool } from './tools/vertexTool';
 import { FaceEditor } from './tools/faceEditor';
 import { AXIS_COLORS, MeshTool } from './tools/meshTool';
@@ -159,39 +157,37 @@ const outlineTool = new OutlineTool(scene3d, model, () => outlineSink, (normal) 
 const fillTool = new FillTool(scene3d, model, () => color, (message) => (statusEl.textContent = message), expand);
 const cutTool = new CutTool(scene3d, model, selection, (message) => (statusEl.textContent = message), () => symmetry);
 
-// Nombre del archivo abierto o guardado; el punto avisa de cambios sin guardar.
-const fileNameEl = document.getElementById('fileName')!;
-let fileName = 'Sin título';
-let dirty = false;
-
-/** Copia automática de la escena en el navegador: si se cierra o recarga la página sin guardar, se recupera al volver. */
-const AUTOSAVE_KEY = 'gridfacet.autosave';
-let autosaveTimer: number | undefined;
-function scheduleAutosave(): void {
-  window.clearTimeout(autosaveTimer);
-  autosaveTimer = window.setTimeout(() => {
-    try {
-      try {
-        localStorage.setItem(AUTOSAVE_KEY, serializeProject(model.all(), model.points(), gridSize, layers.toJSON(), pruneTracks(animation, model.all()), references));
-      } catch {
-        // Con imágenes la copia puede no caber: se guarda sin ellas antes que perder el modelo.
-        localStorage.setItem(AUTOSAVE_KEY, serializeProject(model.all(), model.points(), gridSize, layers.toJSON(), pruneTracks(animation, model.all())));
-      }
-    } catch {
-      // Sin espacio o sin acceso al almacenamiento: no se copia, pero el trabajo sigue.
-    }
-  }, 800);
-}
-function syncFileName(): void {
-  const label = `${dirty ? '● ' : ''}${fileName}`;
-  fileNameEl.textContent = label;
-  document.title = `${label} · Gridfacet`;
-}
-syncFileName();
+const files = createFiles({
+  model,
+  statusEl,
+  renderer,
+  serialize: (withReferences) => serializeProject(model.all(), model.points(), gridSize, layers.toJSON(), pruneTracks(animationPanel.animation, model.all()), withReferences ? referencesPanel.references : undefined),
+  layerName: (id) => layers.get(id)?.name ?? `Capa_${id}`,
+  animation: () => animationPanel.animation,
+  visiblePieces: () => model.all().filter((piece) => !hidden.has(piece.id)),
+  loadProject: (project) => {
+    const { pieces: loaded, marks, gridSize: savedSize, layers: savedLayers, animation: savedAnimation, references: savedReferences } = project;
+    if (savedSize !== undefined) setGridSize(savedSize);
+    if (mode === 'cut') cutTool.cancel();
+    // Las piezas abiertas traen su capa: las nuevas no deben tomar la activa de antes.
+    model.activeLayer = 1;
+    selection.clear();
+    animationPanel.stop();
+    // Los grupos del proyecto abierto quedan reservados: uno nuevo no debe fundirse con ellos.
+    reserveGroupIds(loaded);
+    model.apply({ added: loaded, removed: model.all(), marksAdded: marks, marksRemoved: model.points() });
+    model.clearHistory();
+    animationPanel.load(savedAnimation ?? emptyAnimation());
+    layers.load(savedLayers, loaded);
+    applyLayerState();
+    referencesPanel.set(savedReferences);
+  },
+});
+files.syncFileName();
 
 // El modelo manda; la escena 3D solo refleja sus cambios.
 // Las piezas sin elegir se dibujan fundidas por zonas; solo las elegidas son objetos propios (para resaltarlas y arrastrarlas).
-model.onChange = ({ added, removed, marksAdded, marksRemoved }) => {
+model.subscribe(({ added, removed, marksAdded, marksRemoved }) => {
   for (const piece of removed) {
     batches.remove(piece.id);
     textureLayer.remove(piece.id);
@@ -208,9 +204,9 @@ model.onChange = ({ added, removed, marksAdded, marksRemoved }) => {
   if (toHide.length > 0) hidePieces(toHide);
   setEraseHover(undefined);
   if (marksAdded?.length || marksRemoved?.length) refreshMarks();
-  dirty = true;
-  scheduleAutosave();
-  syncFileName();
+  files.markDirty();
+  files.scheduleAutosave();
+  files.syncFileName();
   // Una pieza que vuelve con el mismo id (vértices movidos) sigue elegida y se resalta de nuevo.
   const returned = new Set(added.map((piece) => piece.id));
   selection.remove(removed.map((piece) => piece.id).filter((id) => !returned.has(id)));
@@ -228,9 +224,9 @@ model.onChange = ({ added, removed, marksAdded, marksRemoved }) => {
   refreshLayers();
   syncTriangles();
   if (mode === 'fill' && added.length > 0) useColor(color);
-};
+});
 
-selection.onChange = () => {
+selection.subscribe(() => {
   for (const [id, object] of objects) {
     if (selection.has(id)) continue;
     scene3d.remove(object);
@@ -253,7 +249,7 @@ selection.onChange = () => {
   syncInspector();
   syncGroupName();
   layerMoveEl.hidden = selection.size === 0;
-};
+});
 
 if (import.meta.env.DEV) {
   const dev = window as unknown as Record<string, unknown>;
@@ -293,7 +289,7 @@ if (import.meta.env.DEV) {
   };
 }
 
-type Mode = 'place' | 'cut' | 'select' | 'erase' | 'grow' | 'sink' | 'fill' | 'outline' | 'vertex' | 'paint' | 'shape' | 'bevel' | 'face' | 'mesh';
+type Mode = KeyMode;
 let mode: Mode = 'place';
 let selected = 0;
 let rotation = 0;
@@ -335,7 +331,7 @@ function pieceIdOf(hit: THREE.Intersection | undefined): number | undefined {
 function updateCursor(overPiece: boolean): void {
   const canvas = renderer.domElement;
   if (drag) canvas.style.cursor = 'grabbing';
-  else if (mode === 'cut' || mode === 'fill' || mode === 'vertex') canvas.style.cursor = 'crosshair';
+  else if (mode === 'cut' || mode === 'fill' || mode === 'vertex' || mode === 'outline') canvas.style.cursor = 'crosshair';
   else if (growDrag) canvas.style.cursor = 'grabbing';
   else if (mode === 'select') canvas.style.cursor = overPiece ? 'grab' : 'default';
   else if (mode === 'erase' || mode === 'grow' || mode === 'sink' || mode === 'paint' || mode === 'shape' || mode === 'bevel' || mode === 'face') canvas.style.cursor = overPiece ? 'pointer' : 'default';
@@ -939,9 +935,15 @@ function applyLayerState(): void {
     if (layer.locked) selection.remove(ids);
   }
 }
+/** Un cambio de capas (crear, renombrar, ocultar, bloquear, quitar) cuenta como cambio sin guardar; elegir la capa activa no. */
+function markLayersEdited(): void {
+  files.markDirty();
+  files.syncFileName();
+}
 function toggleLayerHidden(id: number): void {
   const layer = layers.get(id);
   if (!layer) return;
+  markLayersEdited();
   layers.setHidden(id, !layer.hidden);
   if (layer.hidden) applyLayerState();
   else showHidden(idsOfLayer(id).filter((pid) => hidden.has(pid)));
@@ -949,19 +951,24 @@ function toggleLayerHidden(id: number): void {
 function toggleLayerLocked(id: number): void {
   const layer = layers.get(id);
   if (!layer) return;
+  markLayersEdited();
   layers.setLocked(id, !layer.locked);
   applyLayerState();
 }
 function removeLayer(id: number): void {
   const layer = layers.get(id);
   if (!layer || id === 1) return;
-  // Sus piezas pasan a la primera capa.
-  const ids = idsOfLayer(id);
-  for (const piece of model.all()) if (layerOf(piece) === id) delete piece.layer;
+  // Sus piezas pasan a la primera capa, como un cambio más del modelo (se puede deshacer y marca «sin guardar»).
+  const moved = model.all().filter((piece) => layerOf(piece) === id);
   const wasHidden = layer.hidden;
   layers.remove(id);
   model.activeLayer = layers.active;
-  if (wasHidden) showHidden(ids.filter((pid) => hidden.has(pid)));
+  if (moved.length > 0) {
+    const added = moved.map((piece) => withLayer(piece, 1));
+    model.apply({ added, removed: moved });
+    if (wasHidden) showHidden(added.map((piece) => piece.id).filter((pid) => hidden.has(pid)));
+  }
+  markLayersEdited();
   applyLayerState();
 }
 /** Pasa las piezas elegidas a la capa activa. */
@@ -990,7 +997,10 @@ function refreshLayers(): void {
     name.addEventListener('click', () => layers.setActive(layer.id));
     name.addEventListener('dblclick', () => {
       const next = window.prompt('Nombre de la capa', layer.name);
-      if (next !== null) layers.rename(layer.id, next);
+      if (next !== null) {
+        layers.rename(layer.id, next);
+        markLayersEdited();
+      }
     });
     const eye = document.createElement('button');
     eye.className = `tool${layer.hidden ? ' on' : ''}`;
@@ -1018,9 +1028,12 @@ function refreshLayers(): void {
 layers.onChange = () => {
   model.activeLayer = layers.active;
   refreshLayers();
-  scheduleAutosave();
+  files.scheduleAutosave();
 };
-document.getElementById('layerAdd')!.addEventListener('click', () => layers.add());
+document.getElementById('layerAdd')!.addEventListener('click', () => {
+  layers.add();
+  markLayersEdited();
+});
 layerMoveEl.addEventListener('click', moveSelectionToActiveLayer);
 refreshLayers();
 function hideSelected(): void {
@@ -1271,7 +1284,7 @@ function mirrorCopySelected(axis: 'x' | 'z'): void {
 
 const selActionsEl = document.getElementById('selActions')!;
 function syncSelectionActions(): void {
-  selActionsEl.hidden = mode === 'cut' || mode === 'fill' || mode === 'vertex' || mode === 'mesh' || (selection.size === 0 && clipboard.length === 0);
+  selActionsEl.hidden = mode === 'cut' || mode === 'fill' || mode === 'outline' || mode === 'vertex' || mode === 'mesh' || (selection.size === 0 && clipboard.length === 0);
   for (const button of selActionsEl.querySelectorAll<HTMLButtonElement>('button')) {
     button.disabled = button.dataset.sel === 'paste' ? clipboard.length === 0 : selection.size === 0;
   }
@@ -1381,6 +1394,8 @@ function finishMarquee(commit: boolean, event?: PointerEvent): void {
   const inside: number[] = [];
   const center = new THREE.Vector3();
   for (const piece of model.all()) {
+    // Como Ctrl+A: lo que está oculto (también por su capa) no se elige.
+    if (hidden.has(piece.id)) continue;
     center.set(0, 0, 0);
     let count = 0;
     for (const face of piece.faces) for (const p of face) {
@@ -1637,7 +1652,7 @@ function excavateSelected(): void {
   statusEl.textContent = `Excavado: ${change.added.length} pieza(s) resultantes`;
 }
 
-/** Une las piezas elegidas en una sola si su unión es convexa. */
+/** Une las piezas elegidas en una sola: un cuerpo limpio si su unión es convexa; si no, las junta tal cual con todas sus caras. */
 function mergeSelected(): void {
   const pieces = selectedPieces();
   const hull = mergeChange(pieces);
@@ -1924,11 +1939,7 @@ function syncPixelSelection(): void {
   pixelSelectionBox.geometry = new THREE.BufferGeometry().setFromPoints(corners.map((p) => new THREE.Vector3(p[0], p[1], p[2])));
   pixelSelectionBox.visible = true;
 }
-const modelChangedForSelection = model.onChange;
-model.onChange = (change) => {
-  modelChangedForSelection?.(change);
-  syncPixelSelection();
-};
+model.subscribe(() => syncPixelSelection());
 
 /** Voltear, girar, contorno y tono: sobre la selección (o toda la cara) del editor plano si está abierto y, si no, de la vista 3D. */
 function applyPixelEdit(edit: PixelEdit): void {
@@ -2071,6 +2082,10 @@ const faceEditor = new FaceEditor(document.getElementById('faceEditor')!, docume
   pickColor: (c) => setColor(c),
   stillThere: (piece) => model.all().some((p) => p.id === piece.id),
   preview: (piece, faceIndex, texture) => textureLayer.preview(piece, faceIndex, texture),
+  revert: (piece) => {
+    const current = model.get(piece.id);
+    if (current && !hidden.has(current.id)) textureLayer.add(current);
+  },
   commit: (piece, faceIndex, texture) => {
     const next = withFaceTexture(piece, faceIndex, texture);
     model.apply({ added: [next], removed: [piece] });
@@ -2157,6 +2172,10 @@ const meshTool = new MeshTool({
   isHidden: (piece) => hidden.has(piece.id) || layers.isHidden(piece),
   symmetry: () => symmetry,
   status: (message) => (statusEl.textContent = message),
+  // Un clic que Malla se queda no llega al resto: el «pulsar» pendiente del lienzo quedaría viejo y el siguiente soltar lo tomaría por un clic.
+  consumed: () => {
+    down = null;
+  },
   onSelectionChange: () => syncMeshActions(),
 });
 model.onHistory = (kind) => meshTool.historyMoved(kind);
@@ -2176,7 +2195,7 @@ magnetEl.addEventListener('change', () => {
 });
 if (import.meta.env.DEV) (window as unknown as Record<string, unknown>).__mesh = meshTool;
 /** Cuántos vértices (de una misma pieza) pide cada acción de Malla para poder usarse; «face» pide al menos una cara con todos sus vértices elegidos. */
-const NEEDS: Record<string, number | 'face'> = { merge: 2, ring: 2, bevel: 2, face: 3, fillhole: 1, delface: 'face', triangulate: 'face', push: 'face', flip: 'face', extrude: 'face', connect: 2, dissolve: 2, growedge: 2, straighten: 3, flatten: 3, taper: 2, twist: 2, bend: 2 };
+const NEEDS: Record<string, number | 'face'> = { weld: 0, merge: 2, ring: 2, bevel: 2, face: 3, fillhole: 1, delface: 'face', triangulate: 'face', push: 'face', flip: 'face', extrude: 'face', connect: 2, dissolve: 2, growedge: 2, tip: 1, straighten: 3, flatten: 3, taper: 2, twist: 2, bend: 2 };
 function syncMeshActions(): void {
   meshActionsEl.hidden = mode !== 'mesh';
   const count = meshTool.count;
@@ -2251,6 +2270,21 @@ meshBevelSizeEl.addEventListener('input', () => {
     meshPref.set('bevel', String(value));
   }
 });
+const meshWeldDistanceEl = document.getElementById('meshWeldDistance') as HTMLInputElement;
+{
+  const saved = Number(meshPref.get('weld'));
+  if (saved > 0 && saved <= 1) {
+    meshWeldDistanceEl.value = String(saved);
+    meshTool.weldDistance = saved;
+  }
+}
+meshWeldDistanceEl.addEventListener('input', () => {
+  const value = Number(meshWeldDistanceEl.value);
+  if (value > 0 && value <= 1) {
+    meshTool.weldDistance = value;
+    meshPref.set('weld', String(value));
+  }
+});
 const meshSeeBehindEl = document.getElementById('meshSeeBehind') as HTMLInputElement;
 // La casilla arranca con lo último que se eligió y la herramienta con ella (si no, se veían los vértices al revés).
 meshSeeBehindEl.checked = meshPref.get('seeBehind') !== '0';
@@ -2274,11 +2308,14 @@ meshActionsEl.querySelectorAll<HTMLButtonElement>('button[data-meshaxis]').forEa
 meshActionsEl.querySelectorAll<HTMLButtonElement>('button[data-mesh]').forEach((button) =>
   button.addEventListener('click', () => {
     button.blur();
+    // Con un arrastre, un giro o un recuadro en marcha, las acciones del panel no hacen nada.
+    if (meshTool.busy) return;
     const action = button.dataset.mesh;
     if (action === 'all') meshTool.selectAll();
     else if (action === 'merge') meshTool.mergeSelected();
     else if (action === 'delete') meshTool.deleteSelected();
     else if (action === 'snap') meshTool.snapToGrid();
+    else if (action === 'weld') meshTool.weldNearby();
     else if (action === 'rotate') meshTool.beginTransform('rotate');
     else if (action === 'scale') meshTool.beginTransform('scale');
     else if (action === 'taper') meshTool.beginTransform('taper');
@@ -2290,6 +2327,7 @@ meshActionsEl.querySelectorAll<HTMLButtonElement>('button[data-mesh]').forEach((
     else if (action === 'flip') meshTool.flipSelected();
     else if (action === 'triangulate') meshTool.triangulateSelected();
     else if (action === 'extrude') meshTool.extrudeSelected();
+    else if (action === 'tip') meshTool.tipSelected();
     else if (action === 'push') meshTool.beginTransform('push');
     else if (action === 'growedge') meshTool.growFaceFromEdge();
     else if (action === 'connect') meshTool.connectSelected();
@@ -2920,69 +2958,29 @@ const pieceButtons = CATALOG.map((def, i) => {
   piecesEl.appendChild(button);
   return button;
 });
-const cutButton = document.createElement('button');
-cutButton.textContent = 'C Cortar';
-cutButton.addEventListener('click', () => setMode(mode === 'cut' ? 'place' : 'cut'));
-toolsEl.appendChild(cutButton);
-const selectButton = document.createElement('button');
-selectButton.textContent = 'S Elegir';
-selectButton.addEventListener('click', () => setMode(mode === 'select' ? 'place' : 'select'));
-toolsEl.appendChild(selectButton);
-const eraseButton = document.createElement('button');
-eraseButton.textContent = 'B Borrar';
-eraseButton.title = 'Clic en una pieza la borra';
-eraseButton.addEventListener('click', () => setMode(mode === 'erase' ? 'place' : 'erase'));
-toolsEl.appendChild(eraseButton);
-const fillButton = document.createElement('button');
-fillButton.textContent = 'L Rellenar';
-fillButton.title = 'Marca puntos y se llena el volumen que encierran';
-fillButton.addEventListener('click', () => setMode(mode === 'fill' ? 'place' : 'fill'));
-toolsEl.appendChild(fillButton);
-const outlineButton = document.createElement('button');
-outlineButton.textContent = 'Figura';
-outlineButton.title = 'Marca los puntos de una figura sobre una superficie y haz crecer o hundir solo esa figura';
-outlineButton.addEventListener('click', () => setMode(mode === 'outline' ? 'place' : 'outline'));
-toolsEl.appendChild(outlineButton);
-const vertexButton = document.createElement('button');
-vertexButton.textContent = 'V Vértice';
-vertexButton.title = 'Añade un vértice de referencia a la pieza elegida';
-vertexButton.addEventListener('click', () => setMode(mode === 'vertex' ? 'place' : 'vertex'));
-toolsEl.appendChild(vertexButton);
-const meshButton = document.createElement('button');
-meshButton.textContent = 'E Malla';
-meshButton.title = 'Elige y mueve los vértices de las piezas: estira, tuerce y modela formas libres';
-meshButton.addEventListener('click', () => setMode(mode === 'mesh' ? 'place' : 'mesh'));
-toolsEl.appendChild(meshButton);
-const bevelButton = document.createElement('button');
-bevelButton.textContent = 'J Chaflán';
-bevelButton.title = 'Corta una arista en chaflán';
-bevelButton.addEventListener('click', () => setMode(mode === 'bevel' ? 'place' : 'bevel'));
-toolsEl.appendChild(bevelButton);
-const faceButton = document.createElement('button');
-faceButton.textContent = 'F Cara';
-faceButton.title = 'Extruye, cava o divide a partir de una cara';
-faceButton.addEventListener('click', () => setMode(mode === 'face' ? 'place' : 'face'));
-toolsEl.appendChild(faceButton);
-const shapeButton = document.createElement('button');
-shapeButton.textContent = 'T Forma';
-shapeButton.title = 'Esfera, cilindro, cono o cápsula con medidas y lados a elegir';
-shapeButton.addEventListener('click', () => setMode(mode === 'shape' ? 'place' : 'shape'));
-toolsEl.appendChild(shapeButton);
-const paintButton = document.createElement('button');
-paintButton.textContent = 'P Pintar';
-paintButton.title = 'Pinta una cara con el color elegido';
-paintButton.addEventListener('click', () => setMode(mode === 'paint' ? 'place' : 'paint'));
-toolsEl.appendChild(paintButton);
-const growButton = document.createElement('button');
-growButton.textContent = 'G Crecer';
-growButton.title = 'Clic en una cara la hace crecer; arrastrar elige cuánto';
-growButton.addEventListener('click', () => setMode(mode === 'grow' ? 'place' : 'grow'));
-toolsEl.appendChild(growButton);
-const sinkButton = document.createElement('button');
-sinkButton.textContent = 'D Hundir';
-sinkButton.title = 'Lo contrario de crecer: clic en una cara la hunde hacia dentro; arrastrar elige cuánto';
-sinkButton.addEventListener('click', () => setMode(mode === 'sink' ? 'place' : 'sink'));
-toolsEl.appendChild(sinkButton);
+/** Botón de una herramienta: la tecla sale de la tabla de atajos, así el texto no puede contradecir al teclado. */
+function toolButton(tool: KeyMode, label: string, title?: string): HTMLButtonElement {
+  const button = document.createElement('button');
+  const key = toolKey(tool);
+  button.textContent = key ? `${key.toUpperCase()} ${label}` : label;
+  if (title) button.title = title;
+  button.addEventListener('click', () => setMode(mode === tool ? 'place' : tool));
+  toolsEl.appendChild(button);
+  return button;
+}
+const cutButton = toolButton('cut', 'Cortar');
+const selectButton = toolButton('select', 'Elegir');
+const eraseButton = toolButton('erase', 'Borrar', 'Clic en una pieza la borra');
+const fillButton = toolButton('fill', 'Rellenar', 'Marca puntos y se llena el volumen que encierran');
+const outlineButton = toolButton('outline', 'Figura', 'Marca los puntos de una figura sobre una superficie y haz crecer o hundir solo esa figura');
+const vertexButton = toolButton('vertex', 'Vértice', 'Añade un vértice de referencia a la pieza elegida');
+const meshButton = toolButton('mesh', 'Malla', 'Elige y mueve los vértices de las piezas: estira, tuerce y modela formas libres');
+const bevelButton = toolButton('bevel', 'Chaflán', 'Corta una arista en chaflán');
+const faceButton = toolButton('face', 'Cara', 'Extruye, cava o divide a partir de una cara');
+const shapeButton = toolButton('shape', 'Forma', 'Esfera, cilindro, cono o cápsula con medidas y lados a elegir');
+const paintButton = toolButton('paint', 'Pintar', 'Pinta una cara con el color elegido');
+const growButton = toolButton('grow', 'Crecer', 'Clic en una cara la hace crecer; arrastrar elige cuánto');
+const sinkButton = toolButton('sink', 'Hundir', 'Lo contrario de crecer: clic en una cara la hunde hacia dentro; arrastrar elige cuánto');
 
 const cutActionsEl = document.getElementById('cutActions')!;
 function syncCutActions(): void {
@@ -3261,239 +3259,11 @@ document.getElementById('cutActiveLayer')!.addEventListener('change', (e) => {
   cutTool.activeLayerOnly = (e.target as HTMLInputElement).checked;
 });
 
-const openFileEl = document.getElementById('openFile') as HTMLInputElement;
-
-/** Archivo del sistema vinculado al proyecto: Guardar escribe ahí sin volver a preguntar. */
-let fileHandle: FileHandle | null = null;
-
-const errorText = (error: unknown): string => (error instanceof Error ? error.message : 'error desconocido');
-
-/** Un fallo al guardar o abrir se muestra en un aviso: la línea de estado es pequeña y pasa desapercibida. */
-function fileProblem(message: string): void {
-  statusEl.textContent = message;
-  window.alert(message);
-}
-
-/** Guardar escribe sobre el archivo actual; "Guardar como" (o un proyecto nuevo) abre el diálogo para elegir carpeta y nombre. */
-async function saveProject(asNew = false): Promise<void> {
-  const pieces = model.all();
-  // Si esto falla (texturas o referencias dañadas, por ejemplo) no debe quedar mudo: antes la promesa fallaba sin avisar y parecía que Guardar no hacía nada.
-  let data: string;
-  try {
-    data = serializeProject(pieces, model.points(), gridSize, layers.toJSON(), pruneTracks(animation, pieces), references);
-  } catch (error) {
-    fileProblem(`No se pudo preparar el proyecto para guardarlo: ${errorText(error)}`);
-    return;
-  }
-  const suggested = fileName === 'Sin título' ? 'gridfacet-proyecto.json' : fileName.replace(/(\.json)?$/i, '.json');
-  let name = suggested;
-  try {
-    if (canPickSave()) {
-      let handle = asNew ? null : fileHandle;
-      if (!handle) {
-        statusEl.textContent = 'Abriendo el selector de archivos…';
-        try {
-          handle = await pickSave(suggested, 'Proyecto de Gridfacet', 'application/json', '.json');
-        } catch (error) {
-          // No se guarda nada a escondidas: se explica por qué no salió el diálogo y cómo arreglarlo.
-          fileProblem(error instanceof PickerUnresponsive ? `No se guardó. ${PICKER_HELP}` : `No se pudo guardar: ${errorText(error)}`);
-          return;
-        }
-        if (!handle) {
-          statusEl.textContent = 'Guardado cancelado';
-          return;
-        }
-      }
-      try {
-        await writeHandle(handle, data);
-        // Algunos navegadores dan por bueno el guardado y dejan el archivo vacío: se comprueba leyéndolo de vuelta.
-        if ((await handle.getFile()).size === 0 && data.length > 0) throw new Error('el archivo quedó vacío');
-        fileHandle = handle;
-        name = handle.name;
-      } catch (error) {
-        // Algunos navegadores (o paneles integrados) crean el archivo pero no dejan escribir en él: queda vacío. Se guarda como descarga normal.
-        fileHandle = null;
-        downloadBlob(data, suggested, 'application/json');
-        fileProblem(`No se pudo escribir en ${handle.name} (${errorText(error)}); se descargó ${suggested} en su lugar`);
-        fileName = suggested;
-        dirty = false;
-        syncFileName();
-        return;
-      }
-    } else {
-      // Sin selector del sistema el archivo se descarga: «Guardar como» pide el nombre y va a la carpeta de descargas del navegador.
-      let target = suggested;
-      if (asNew) {
-        const typed = window.prompt('Nombre del archivo', suggested);
-        if (!typed) return;
-        target = typed.replace(/(\.json)?$/i, '.json');
-      }
-      downloadBlob(data, target, 'application/json');
-      name = target;
-    }
-  } catch (error) {
-    fileProblem(`No se pudo guardar: ${errorText(error)}`);
-    return;
-  }
-  fileName = name;
-  dirty = false;
-  syncFileName();
-  statusEl.textContent = `Guardado ${name} (${pieces.length} piezas)`;
-}
-
-/** Abrir reemplaza la escena como un cambio más, así que se puede deshacer. */
-async function openProject(file: File, handle: FileHandle | null = null): Promise<void> {
-  try {
-    const project = parseProjectFull(await file.text());
-    replaceProject(project, file.name, handle);
-    statusEl.textContent = `Abierto ${file.name} (${project.pieces.length} piezas). Ctrl+Z para volver atrás`;
-  } catch (error) {
-    fileProblem(error instanceof Error ? `No se pudo abrir: ${error.message}` : 'No se pudo abrir el archivo');
-  }
-}
-
-/** Empieza de cero: lienzo en blanco sin piezas, capas, animación ni referencias, y sin archivo vinculado. Se puede deshacer. */
-function newProject(): void {
-  if (dirty && !window.confirm('Hay cambios sin guardar. ¿Empezar un proyecto nuevo de todas formas? (Ctrl+Z lo recupera)')) return;
-  replaceProject({ pieces: [], marks: [], references: [] }, 'Sin título', null);
-  statusEl.textContent = 'Proyecto nuevo en blanco';
-}
-
-/** Cambia toda la escena por la de un proyecto como un solo cambio (se puede deshacer) y lo deja vinculado al archivo `name`. */
-function replaceProject(project: ReturnType<typeof parseProjectFull>, name: string, handle: FileHandle | null): void {
-  const { pieces: loaded, marks, gridSize: savedSize, layers: savedLayers, animation: savedAnimation, references: savedReferences } = project;
-  if (savedSize !== undefined) setGridSize(savedSize);
-  if (mode === 'cut') cutTool.cancel();
-  // Las piezas abiertas traen su capa: las nuevas no deben tomar la activa de antes.
-  model.activeLayer = 1;
-  selection.clear();
-  stopAnimationView();
-  const previousAnimation = animation;
-  model.apply({ added: loaded, removed: model.all(), marksAdded: marks, marksRemoved: model.points() });
-  setAnimation(savedAnimation ?? emptyAnimation());
-  // Abrir reemplaza también la animación: si se deshace lo de abrir, vuelve la de antes.
-  if (animation !== previousAnimation) animationUndo.push({ before: previousAnimation, after: animation, depth: model.undoDepth - 1, serial: model.serial, withModel: true });
-  animationRedo = [];
-  layers.load(savedLayers, loaded);
-  applyLayerState();
-  setReferences(savedReferences);
-  fileHandle = handle;
-  fileName = name;
-  dirty = false;
-  syncFileName();
-}
-
-/** Con el selector del sistema se conserva el archivo para poder guardar encima; si no, se usa el campo de archivo clásico. */
-async function requestOpen(): Promise<void> {
-  if (!canPickOpen()) {
-    openFileEl.click();
-    return;
-  }
-  try {
-    const handle = await pickOpen('Proyecto de Gridfacet', 'application/json', '.json');
-    if (handle) await openProject(await handle.getFile(), handle);
-  } catch (error) {
-    if (error instanceof PickerUnresponsive) {
-      fileProblem(`No se abrió nada. ${PICKER_HELP}`);
-      return;
-    }
-    fileProblem(`No se pudo abrir: ${errorText(error)}`);
-  }
-}
-
-document.getElementById('new')!.addEventListener('click', () => newProject());
-document.getElementById('save')!.addEventListener('click', () => void saveProject(false));
-document.getElementById('saveAs')!.addEventListener('click', () => void saveProject(true));
-document.getElementById('open')!.addEventListener('click', () => void requestOpen());
-openFileEl.addEventListener('change', () => {
-  const file = openFileEl.files?.[0];
-  openFileEl.value = '';
-  if (file) void openProject(file);
-});
-
-document.getElementById('export')!.addEventListener('click', async () => {
-  const pieces = model.all();
-  if (pieces.length === 0) {
-    statusEl.textContent = 'No hay piezas que exportar';
-    return;
-  }
-  const exportMode = (document.getElementById('exportMode') as HTMLSelectElement).value as ExportMode;
-  const suggested = fileName === 'Sin título' ? 'gridfacet.glb' : fileName.replace(/\.json$/i, '') + '.glb';
-  try {
-    // El selector de archivos se pide primero: necesita el gesto del usuario, que se pierde si antes se tarda en generar el modelo.
-    const handle = canPickSave() ? await pickSave(suggested, 'Modelo GLB', 'model/gltf-binary', '.glb') : null;
-    if (canPickSave() && !handle) return;
-    const data = await exportGlb(pieces, exportMode, (id) => layers.get(id)?.name ?? `Capa_${id}`, pruneTracks(animation, pieces));
-    let saved = suggested;
-    if (handle) {
-      await writeHandle(handle, data);
-      saved = handle.name;
-    } else {
-      downloadBlob(data, suggested, 'model/gltf-binary');
-    }
-    statusEl.textContent = `Exportado ${saved} (${pieces.length} piezas)`;
-  } catch (error) {
-    statusEl.textContent = `No se pudo exportar: ${errorText(error)}`;
-  }
-});
-
-/** OBJ con texturas: baja el .obj, el .mtl y, si hay píxeles pintados, el PNG del atlas (tres descargas que deben quedar juntas). */
-document.getElementById('exportObj')!.addEventListener('click', async () => {
-  const pieces = model.all();
-  if (pieces.length === 0) {
-    statusEl.textContent = 'No hay piezas que exportar';
-    return;
-  }
-  const base = (fileName === 'Sin título' ? 'gridfacet' : fileName.replace(/\.json$/i, '')).replace(/[\/:*?"<>|\s]+/g, '_');
-  try {
-    const { obj, mtl, atlas } = buildObj(pieces, base);
-    downloadBlob(obj, `${base}.obj`, 'text/plain');
-    downloadBlob(mtl, `${base}.mtl`, 'text/plain');
-    if (atlas) downloadBlob(await atlasToPng(atlas), `${base}-texture.png`, 'image/png');
-    statusEl.textContent = `Exportado ${base}.obj, .mtl${atlas ? ' y el PNG de texturas' : ''}: guárdalos en la misma carpeta`;
-  } catch (error) {
-    statusEl.textContent = `No se pudo exportar el OBJ: ${errorText(error)}`;
-  }
-});
-
-/** Sprites de píxel art: cada vista se dibuja con cámara ortográfica directo al tamaño pedido. */
-document.getElementById('exportSprites')!.addEventListener('click', async () => {
-  const pieces = model.all().filter((piece) => !hidden.has(piece.id));
-  if (pieces.length === 0) {
-    statusEl.textContent = 'No hay piezas visibles que exportar';
-    return;
-  }
-  const read = (id: string): string => (document.getElementById(id) as HTMLSelectElement).value;
-  const size = Number(read('spriteSize'));
-  const views = Number(read('spriteViews'));
-  const sheet = (document.getElementById('spriteSheet') as HTMLInputElement).checked;
-  const project = fileName === 'Sin título' ? 'gridfacet' : fileName;
-  try {
-    const frames = renderSprites(renderer, pieces, {
-      size,
-      views,
-      camera: read('spriteCamera') as SpriteCamera,
-      shading: read('spriteShading') as 'flat' | 'shaded',
-      outline: (document.getElementById('spriteOutline') as HTMLInputElement).checked,
-      outlineColor: 0x000000,
-    });
-    if (sheet && frames.length > 1) {
-      const { blob, cols, rows } = await framesToSheet(frames);
-      downloadBlob(blob, spriteFileName(project, size, 0).replace('-view0', `-sheet-${cols}x${rows}`), 'image/png');
-    } else {
-      (await framesToPngs(frames)).forEach((blob, i) => downloadBlob(blob, spriteFileName(project, size, i + 1), 'image/png'));
-    }
-    statusEl.textContent = `Exportado ${frames.length === 1 || !sheet ? `${frames.length} PNG` : 'hoja de sprites'} de ${size} px`;
-  } catch (error) {
-    statusEl.textContent = `No se pudo exportar los sprites: ${errorText(error)}`;
-  }
-});
-
 if (import.meta.env.DEV) {
   // Utilidad de verificación: exporta y vuelve a cargar el GLB para inspeccionarlo.
   (window as unknown as { __glbCheck: unknown }).__glbCheck = async (exportMode: ExportMode) => {
     const { GLTFLoader } = await import('three/addons/loaders/GLTFLoader.js');
-    const buffer = await exportGlb(model.all(), exportMode, undefined, animation);
+    const buffer = await exportGlb(model.all(), exportMode, undefined, pruneTracks(animationPanel.animation, model.all()));
     const gltf = await new GLTFLoader().parseAsync(buffer, '');
     const meshes: { name: string; triangles: number; color: string }[] = [];
     gltf.scene.traverse((o) => {
@@ -3518,135 +3288,19 @@ function toggleHud(): void {
 }
 hudToggle.addEventListener('click', toggleHud);
 
-const helpModal = document.getElementById('helpModal')!;
-let setHelp = (open: boolean): void => {
-  helpModal.hidden = !open;
-};
-document.getElementById('helpOpen')!.addEventListener('click', () => setHelp(true));
-document.getElementById('helpClose')!.addEventListener('click', () => setHelp(false));
-
-// Buscador de la ayuda: filtra la ayuda escrita y lista los atajos de cada herramienta que coinciden (por ejemplo "rotar").
-const helpSearchEl = document.getElementById('helpSearch') as HTMLInputElement;
-const helpResultsEl = document.getElementById('helpResults')!;
-const helpBodyEl = document.getElementById('helpBody')!;
-const plain = (text: string): string => text.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
-const SYNONYMS: string[][] = [
-  ['rot', 'gir', 'giro', 'tumb', 'volte'],
-  ['mov', 'desplaz', 'trasl'],
-  ['borr', 'elimin', 'quit', 'supr'],
-  ['cort', 'tajo'],
-  ['copi', 'duplic', 'peg'],
-  ['ocult', 'escond', 'ojo'],
-  ['bloque', 'candado'],
-  ['capa', 'piso'],
-  ['escal', 'tamano', 'tamaño', 'agrand'],
-  ['color', 'pint'],
-  ['deshac', 'undo', 'rehac', 'redo'],
-];
-function searchHelp(): void {
-  const words = plain(helpSearchEl.value).split(/\s+/).filter(Boolean);
-  // Palabras que significan lo mismo: buscar "rotar" también encuentra "girar" o "tumbar".
-  const alike = (word: string): string[] => [word, ...(SYNONYMS.find((group) => group.some((w) => word.startsWith(w) || (word.length >= 3 && w.startsWith(word))))?.filter((w) => w !== word) ?? [])];
-  const matches = (text: string): boolean => {
-    const haystack = plain(text);
-    // Cada palabra debe empezar una palabra del texto: así "gir" encuentra "girar" pero no "elegir".
-    return words.every((word) => alike(word).some((option) => new RegExp(`(^|[^a-z0-9])${option.replace(/[^a-z0-9]/g, '')}`).test(haystack)));
-  };
-  // La ayuda escrita: se esconden las entradas que no coinciden y los títulos que se quedan vacíos.
-  let shown = 0;
-  for (const dl of helpBodyEl.querySelectorAll('dl')) {
-    let any = false;
-    for (const dt of dl.querySelectorAll('dt')) {
-      const dd = dt.nextElementSibling as HTMLElement | null;
-      const ok = words.length === 0 || matches(`${dt.textContent} ${dd?.textContent ?? ''}`);
-      dt.hidden = !ok;
-      if (dd) dd.hidden = !ok;
-      any = any || ok;
-      if (ok) shown++;
-    }
-    dl.hidden = !any;
-    (dl.previousElementSibling as HTMLElement | null)?.toggleAttribute('hidden', !any);
-  }
-  // Los atajos de cada herramienta (la barra de ayuda de abajo): los repetidos entre herramientas se juntan.
-  helpResultsEl.replaceChildren();
-  helpResultsEl.hidden = words.length === 0;
-  if (words.length === 0) return;
-  const seen = new Map<string, { keys: string; text: string; modes: string[] }>();
-  for (const [name, entries] of Object.entries(GUIDE) as [Mode, [string, string][]][]) {
-    for (const [keys, text] of entries) {
-      if (!matches(`${keys} ${text} ${MODE_INFO[name].name}`)) continue;
-      const entry = seen.get(`${keys}|${text}`) ?? { keys, text, modes: [] };
-      entry.modes.push(MODE_INFO[name].name);
-      seen.set(`${keys}|${text}`, entry);
-    }
-  }
-  if (seen.size > 0) {
-    const title = document.createElement('h3');
-    title.textContent = 'Atajos por herramienta';
-    const list = document.createElement('div');
-    list.className = 'hrow';
-    for (const { keys, text, modes } of seen.values()) {
-      const k = document.createElement('b');
-      k.textContent = keys;
-      const t = document.createElement('span');
-      t.textContent = text;
-      const where = document.createElement('small');
-      where.className = 'hmode';
-      where.textContent = modes.length > 4 ? ` · en varias herramientas` : ` · ${modes.join(', ')}`;
-      t.append(where);
-      list.append(k, t);
-    }
-    helpResultsEl.append(title, list);
-  }
-  if (seen.size === 0 && shown === 0) {
-    const none = document.createElement('div');
-    none.id = 'helpNone';
-    none.textContent = 'No hay nada con esa palabra. Prueba con otra (por ejemplo: girar, borrar, copiar).';
-    helpResultsEl.append(none);
-  }
-}
-helpSearchEl.addEventListener('input', searchHelp);
-const openHelp = setHelp;
-setHelp = (open: boolean): void => {
-  openHelp(open);
-  if (open) {
-    helpSearchEl.value = '';
-    searchHelp();
-    helpSearchEl.focus();
-  } else {
-    // El campo oculto no debe conservar el foco: se comería los atajos siguientes.
-    helpSearchEl.blur();
-  }
-};
-helpModal.addEventListener('pointerdown', (e) => {
-  if (e.target === helpModal) setHelp(false);
-});
-
 /** Rehacer: con un corte o relleno a medias repone el punto quitado; si no, rehace el último bloque. */
 function redo(): void {
+  if (mode === 'mesh' && meshTool.busy) return;
   const tool = mode === 'cut' ? cutTool : mode === 'fill' ? fillTool : mode === 'outline' ? outlineTool : null;
   if (tool?.hasRedo) tool.redoPoint();
-  else if (!redoAnimationStep()) model.redo();
+  else if (!animationPanel.redo()) model.redo();
 }
+
+const help = setupHelp();
+const setHelp = help.setHelp;
 
 // Barra de ayuda contextual: dice qué se puede hacer ahora y cambia con el modo, la fase y la selección.
 const hintEl = document.getElementById('hint')!;
-const MODE_INFO: Record<Mode, { name: string; color: string }> = {
-  place: { name: 'Colocar', color: '#3b6fd4' },
-  select: { name: 'Elegir', color: '#6cc3ee' },
-  erase: { name: 'Borrar', color: '#ff5a5a' },
-  cut: { name: 'Cortar', color: '#ff9a3d' },
-  fill: { name: 'Rellenar', color: '#45d19a' },
-  outline: { name: 'Figura', color: '#b58cff' },
-  vertex: { name: 'Vértice', color: '#ffd34d' },
-  grow: { name: 'Crecer', color: '#b58cff' },
-  sink: { name: 'Hundir', color: '#ff6b8b' },
-  paint: { name: 'Pintar', color: '#ff7ad1' },
-  shape: { name: 'Forma', color: '#7ad1ff' },
-  bevel: { name: 'Chaflán', color: '#ffb36b' },
-  face: { name: 'Cara', color: '#8ce08c' },
-  mesh: { name: 'Malla', color: '#ffd34d' },
-};
 
 // Paleta de comandos (Ctrl+K): busca cualquier acción por nombre y la ejecuta.
 const hasSelection = (): boolean => selection.size > 0;
@@ -3711,11 +3365,11 @@ const commands: Command[] = [
     },
   },
   { name: 'Nueva capa', keywords: 'capas', run: () => layers.add() },
-  { name: 'Recuperar el trabajo anterior', keywords: 'copia automatica restaurar sesion anterior', run: recoverPrevious },
-  { name: 'Nuevo proyecto', keywords: 'nuevo en blanco lienzo vacio', run: newProject },
-  { name: 'Guardar', shortcut: 'Ctrl+S', run: () => void saveProject(false) },
-  { name: 'Guardar como…', shortcut: 'Ctrl+Alt+S', run: () => void saveProject(true) },
-  { name: 'Abrir…', shortcut: 'Ctrl+O', run: () => void requestOpen() },
+  { name: 'Recuperar el trabajo anterior', keywords: 'copia automatica restaurar sesion anterior', run: files.toggleRecoverList },
+  { name: 'Nuevo proyecto', keywords: 'nuevo en blanco lienzo vacio', run: files.newProject },
+  { name: 'Guardar', shortcut: 'Ctrl+S', run: () => void files.saveProject(false) },
+  { name: 'Guardar como…', shortcut: 'Ctrl+Alt+S', run: () => void files.saveProject(true) },
+  { name: 'Abrir…', shortcut: 'Ctrl+O', run: () => void files.requestOpen() },
   { name: 'Exportar GLB', keywords: 'modelo 3d gltf descargar', run: () => document.getElementById('export')!.click() },
   { name: 'Exportar OBJ', keywords: 'modelo 3d wavefront mtl atlas descargar', run: () => document.getElementById('exportObj')!.click() },
   { name: 'Exportar sprites', keywords: 'png vistas hoja spritesheet isometrico descargar', run: () => document.getElementById('exportSprites')!.click() },
@@ -3840,177 +3494,6 @@ function hintText(): string {
   }
 }
 
-/** Guía completa de cada herramienta: todo lo que se puede hacer con ratón y teclado estando en ella. */
-const VIEW_GUIDE: [string, string][] = [
-  ['Arrastrar en vacío', 'orbitar la vista'],
-  ['Rueda', 'acercar / alejar'],
-  ['Flechas', 'mover la cámara (Ctrl: más rápido)'],
-  ['X / Y / Z', 'simetría en ese eje'],
-  ['W', 'alambre'],
-  ['H', 'ocultar el menú'],
-  ['Ctrl+Z / Ctrl+Y', 'deshacer / rehacer'],
-];
-const GUIDE: Record<Mode, [string, string][]> = {
-  place: [
-    ['Clic', 'colocar la pieza elegida (la lámina crece desde la cara apuntada)'],
-    ['En pendientes', 'sobre el techo de rampas o una cara inclinada la pieza se asienta (vertical, con la base cortada a la rampa) o se apoya perpendicular; se elige en el panel'],
-    ['Tamaño ¾ · ½ · ¼', 'la pieza sigue al cursor dentro de la cara, en pasos de un cuarto de su tamaño, y se imanta a las aristas de las piezas cercanas y a la rejilla'],
-    ['Ctrl+clic', 'borrar la pieza apuntada'],
-    ['R', 'rotar la pieza 90°'],
-    ['1 – 9', 'elegir pieza del catálogo'],
-    ['S · B · C · L', 'elegir · borrar · cortar · rellenar'],
-    ['V · G · D · P', 'vértice · crecer · hundir · pintar'],
-    ['T · J · F', 'forma · chaflán · cara'],
-    ...VIEW_GUIDE,
-  ],
-  select: [
-    ['Clic', 'elegir una pieza (o su grupo entero)'],
-    ['Ctrl+clic', 'sumar o quitar una pieza de la selección'],
-    ['Ctrl+arrastrar', 'desde un hueco: recuadro que suma lo de dentro'],
-    ['Ctrl+A · K · Esc', 'elegir todo · sumar conectadas · quitar selección'],
-    ['Arrastrar pieza', 'mover la selección (Alt: en vertical · Ctrl: paso doble · Esc cancela). Los botones «Mover en» limitan el movimiento a X, Y o Z'],
-    ['Flechas', 'mover un cuarto de celda (Ctrl: media celda)'],
-    ['E / Q · Re Pág / Av Pág', 'subir / bajar un cuarto de celda (Ctrl: media celda)'],
-    ['R · Alt+R', 'girar 90° · girar al revés'],
-    ['Alt + flechas', 'tumbar 90°: la parte de arriba va hacia la flecha (según la cámara); dos veces la deja de cabeza'],
-    ['M · N · U', 'espejo en X · Z · Y'],
-    ['Ctrl+G · Ctrl+Alt+G', 'agrupar · desagrupar'],
-    ['Ctrl+C · V · D', 'copiar · pegar · duplicar'],
-    ['Supr', 'borrar la selección'],
-    ['O · Alt+O · I', 'ocultar · mostrar ocultas · aislar'],
-    ['Panel “Selección”', 'fusionar, excavar, repetir; centro, tamaño y giro exactos'],
-    ...VIEW_GUIDE.slice(0, 1),
-  ],
-  erase: [
-    ['Clic', 'borrar la pieza marcada en rojo (también los puntos de referencia)'],
-    ['Esc', 'volver a Colocar'],
-    ...VIEW_GUIDE,
-  ],
-  cut: [
-    ['Clic', 'marcar un punto de la región (se pega a vértices, a la rejilla y a los vértices virtuales de las aristas prolongadas, los puntos morados)'],
-    ['Ctrl+clic', 'sobre una cara: cortar con el plano de esa cara'],
-    ['Clic en el primer punto / Enter', 'cerrar la región · con la región cerrada, Enter corta'],
-    ['Ctrl+Enter', 'cerrar y cortar de una vez (sin revisar el lado)'],
-    ['F', 'cambiar el lado que se borra (el rojo)'],
-    ['Ctrl+Z / Ctrl+Y', 'quitar / reponer el último punto'],
-    ['Esc', 'cancelar el corte'],
-    ['Con selección', 'solo se cortan las piezas elegidas'],
-    ...VIEW_GUIDE.slice(0, 2),
-  ],
-  fill: [
-    ['Clic', 'marcar un punto (4 o más, no todos en un mismo plano); se pega también a los vértices virtuales (puntos morados donde se cruzan aristas prolongadas)'],
-    ['Clic en el primer punto / Enter', 'crear la pieza que los une'],
-    ['Ctrl+Z / Ctrl+Y', 'quitar / reponer el último punto'],
-    ['Esc', 'cancelar'],
-    ...VIEW_GUIDE.slice(0, 2),
-  ],
-  outline: [
-    ['Clic', 'marcar un punto de la figura (3 o más, en una misma cara); se pega a vértices, aristas prolongadas y vértices virtuales'],
-    ['Clic en el primer punto / Enter', 'hacer crecer o hundir solo esa figura, en perpendicular a la cara'],
-    ['Crecer / Hundir (panel)', 'elige el sentido; la vista previa es morada al crecer y roja al hundir'],
-    ['Panel “Cuánto”', '¼, ½, ¾, 1 celda, valor exacto o Auto'],
-    ['Ctrl+Z / Ctrl+Y', 'quitar / reponer el último punto'],
-    ['Esc', 'cancelar'],
-    ...VIEW_GUIDE.slice(0, 2),
-  ],
-  vertex: [
-    ['Clic', 'crear un punto de referencia en el punto amarillo (no se exporta)'],
-    ['Alt', 'puntos libres sobre la arista'],
-    ['+ / − puntos', 'densidad de puntos sobre cada arista (panel)'],
-    ['B', 'borrar puntos de referencia'],
-    ['Esc', 'volver a Colocar'],
-    ...VIEW_GUIDE.slice(0, 2),
-  ],
-  mesh: [
-    ['Clic en un vértice', 'elegirlo (Shift: sumar a los elegidos)'],
-    ['Arrastrar un vértice', 'moverlo con imán a ¼ de celda; Ctrl lo suelta'],
-    ['Mover en: Libre · X · Y · Z', 'botones del panel (o teclas X / Y / Z, que en Malla no cambian la simetría): limitan el movimiento a un eje y se mantienen hasta que los cambies; R, T y las deformaciones empiezan con ese eje'],
-    ['Ctrl+arrastrar en vacío', 'recuadro: elige todos los vértices dentro, también los de detrás'],
-    ['Flechas', 'mover la cámara (Ctrl: más rápido); los vértices se mueven solo con el ratón'],
-    ['Supr', 'quitar los vértices elegidos'],
-    ['Teclado numérico', '1 frente · 3 derecha · 7 arriba (con Ctrl, la opuesta) · 5 alterna vista ortográfica o con perspectiva'],
-    ['Panel (deformar)', 'Afinar, Torcer o Curvar los vértices elegidos a lo largo de un eje (Y por defecto): mueve el ratón a los lados, X/Y/Z cambia el eje, clic confirma'],
-    ['R / T', 'girar / escalar los vértices elegidos alrededor de su centro: mueve el ratón, X/Y/Z fija el eje, clic confirma, Esc cancela (Ctrl: sin imán)'],
-    ['Shift+clic en una cara', 'elegir todos sus vértices (se suman a los elegidos)'],
-    ['Doble cara · Sin sombra · Al fondo', 'casillas del panel: afectan a las caras cuyos vértices están todos elegidos'],
-    ['A', 'enciende y apaga el modo añadir vértice (lo mismo que el botón «+ Vértice»; en Malla sustituye a la A que oculta esta ayuda)'],
-    ['U', 'trazar segmento: con dos vértices elegidos de una misma cara traza el segmento entre ellos y parte la cara (lo mismo que el botón; con vértices elegidos sustituye a la U que refleja piezas en Y)'],
-    ['F', 'crear cara con los vértices elegidos (tres o más; con tres, un triángulo), lo mismo que el botón; con vértices elegidos sustituye a la F que abre el modo Cara'],
-    ['B', 'borrar cara: quita las caras cuyos vértices están todos elegidos (la pieza queda abierta); Supr quita los vértices; con vértices elegidos sustituye a la B que abre el modo Borrar'],
-    ['S', 'deslizar: enciende y apaga el modo (botón «Deslizar vértice»); con él, el vértice que arrastras y que está en medio de un segmento solo se mueve por ese segmento, sin deformar la pieza; con vértices elegidos sustituye a la S que abre el modo Elegir'],
-    ['Q', 'quitar segmento: con los dos vértices de un segmento que separa dos caras del mismo plano, las junta en una (lo contrario de Trazar segmento; con vértices elegidos sustituye a la Q que baja las piezas)'],
-    ['L', 'alinear en línea: con tres o más vértices elegidos, deja rectos los de en medio sobre la línea que une el primero y el último que elegiste (los extremos no se mueven; con vértices elegidos sustituye a la L que rellena)'],
-    ['Clic en un segmento', 'elige sus dos vértices (sustituye la elección anterior); doble clic en el mismo segmento sigue en línea recta por todos los segmentos que continúan. Con varias piezas a la vista, elige primero una pieza con un clic en su cara. Shift+clic en una cara elige sus vértices'],
-    ['N', 'empujar cara: con todos los vértices de una o más caras elegidos, mueve el ratón en la dirección de la cara para empujarla o jalarla sin torcerla; clic confirma, Esc cancela'],
-    ['Triangular (botón)', 'parte en triángulos las caras de cuatro o más lados cuyos vértices están todos elegidos; la forma no cambia. Para juntar triángulos otra vez: Quitar segmento (Q)'],
-    ['Biselar arista (botón)', 'con los dos vértices de una arista elegidos, corta sus esquinas y deja una cara nueva entre las dos caras de la arista; el tamaño se pone en «Tamaño del bisel». Cada extremo tiene que tocar tres caras'],
-    ['Corte en anillo (botón)', 'con los dos vértices de una arista elegidos, parte por la mitad la fila de caras de cuatro lados que atraviesa (la vuelta entera si cierra) y deja elegidos los vértices nuevos para moverlos o escalarlos juntos'],
-    ['K', 'tapar hueco: con un vértice elegido del borde abierto de una pieza, cierra ese contorno con una cara que mira hacia el mismo lado que sus vecinas'],
-    ['P', 'aplanar en plano: lleva los vértices elegidos (tres o más, por ejemplo los de una cara chueca) al plano que mejor se ajusta a todos; con vértices elegidos sustituye a la P que abre el modo Pintar'],
-    ['Simetrizar (botón)', 'con la simetría activa, deja exactamente iguales los dos lados de las piezas elegidas (o de todas): promedia cada vértice con el espejo de su gemelo y pega al plano los que están casi sobre él. Los vértices sin gemelo se ven en rosa'],
-    ['D', 'quitar vértice: enciende y apaga el modo (botón «− Vértice»); con él, un clic en un vértice lo quita (con el espejo activo, también el de enfrente). En Malla sustituye a la D que hunde las piezas'],
-    ['Ver vértices de atrás (casilla)', 'marcada se ven y se pueden elegir todos los vértices; sin marcar, solo los que dan a la cámara'],
-    ['+ Vértice (panel)', 'activa el modo añadir: clic en una arista (en cuartos; Ctrl: donde pulses) o dentro de una cara le pone un vértice nuevo, que queda elegido para moverlo. Arrastrar sigue girando la cámara'],
-    ['Alt+clic en una arista', 'ponerle un vértice nuevo sin activar el modo (en cuartos; Ctrl: donde hagas clic)'],
-    ['Panel', 'Elegir todos · Fusionar vértices (junta los elegidos en uno) · Borrar vértices · Vértices a la rejilla'],
-    ['Panel (caras)', 'Crear cara con tres o más vértices · Borrar / Invertir / Extruir las caras cuyos vértices están todos elegidos'],
-    ['Clic en una pieza', 'elegirla: solo se muestran sus vértices; en vacío suelta todo'],
-    ['Simetría', 'con sus casillas X / Y / Z activas (en el panel Simetría; en Malla las teclas X / Y / Z fijan el eje de movimiento) el movimiento se refleja en las piezas espejo'],
-    ['Malla libre', 'una pieza con un vértice hundido deja de ser convexa: se puede mover, extruir y pintar, pero no cortar, restar ni unir'],
-    ['Esc', 'volver a Colocar'],
-    ...VIEW_GUIDE.slice(0, 2),
-  ],
-  grow: [
-    ['Clic', 'hacer crecer la cara apuntada la cantidad elegida en el panel'],
-    ['Ctrl+clic', 'invierte “Toda la cara conectada” solo para ese clic'],
-    ['Arrastrar', 'elegir otra distancia al momento'],
-    ['Esc', 'cancelar el arrastre / volver'],
-    ['Panel “Cuánto”', '¼, ½, ¾, 1 celda, valor exacto o Auto'],
-    ...VIEW_GUIDE.slice(0, 2),
-  ],
-  sink: [
-    ['Clic', 'hundir la cara apuntada la cantidad elegida en el panel (la parte roja es lo que se quita)'],
-    ['Ctrl+clic', 'invierte “Toda la cara conectada” solo para ese clic'],
-    ['Arrastrar', 'elegir otra distancia al momento (hacia dentro)'],
-    ['Esc', 'cancelar el arrastre / volver'],
-    ['Panel “Cuánto”', '¼, ½, ¾, 1 celda, valor exacto o Auto'],
-    ...VIEW_GUIDE.slice(0, 2),
-  ],
-  paint: [
-    ['Clic', 'pintar la cara apuntada'],
-    ['Ctrl+clic', 'pintar toda la pieza'],
-    ['Alt+clic', 'tomar el color de la cara (cuentagotas)'],
-    ['Casilla “Píxeles”', 'pinta píxeles sueltos en vez de la cara entera: arrastra con lápiz, borrador o relleno (Alt toma el color del píxel); un trazo es un solo paso de deshacer'],
-    ['Doble clic / Plano', 'con “Píxeles” abre la cara en plano, ampliada, para pintarla de frente con las mismas herramientas (Esc cierra)'],
-    ['Texturas', 'se conservan al mover, girar, espejar, cortar, hundir y guardar; al crecer una cara, la de arriba del cuerpo nuevo hereda sus píxeles; las caras nuevas de un corte nacen sin pintar'],
-    ['Colores', 'selector junto a “Piezas” y los últimos 10 usados'],
-    ['Esc', 'volver a Colocar'],
-    ...VIEW_GUIDE.slice(0, 2),
-  ],
-  shape: [
-    ['Clic', 'apoyar la forma sobre lo que apuntas'],
-    ['Panel', 'medidas, lados y, en la esfera, anillos y detalle (Bajo · Medio · Alto)'],
-    ['Sección', 'esfera completa, hemisferio, casquete (altura del corte), gajo (ángulo) u octante'],
-    ['Girar° X · Y · Z', 'giro propio de la forma antes de colocarla'],
-    ['R', 'girar 90° la forma sobre su eje (dónde queda el gajo)'],
-    ['Cara plana contra la superficie', 'la sección se apoya por su corte en la cara que apuntas, sea suelo, pared o techo'],
-    ['Esc', 'volver a Colocar'],
-    ...VIEW_GUIDE.slice(0, 2),
-  ],
-  bevel: [
-    ['Clic', 'cortar la arista marcada en amarillo en chaflán'],
-    ['Panel', 'tamaño del chaflán'],
-    ['Esc', 'volver a Colocar'],
-    ...VIEW_GUIDE.slice(0, 2),
-  ],
-  face: [
-    ['Clic', 'elegir la cara y abrir sus acciones en el panel'],
-    ['Extruir', 'distancia positiva: sale un cuerpo · negativa: cava; “Punta” estrecha el extremo'],
-    ['Dividir', 'parte la pieza en dos paralelamente a la cara'],
-    ['Esc', 'volver a Colocar'],
-    ...VIEW_GUIDE.slice(0, 2),
-  ],
-};
 
 const HINT_KEY = 'gridfacet.hintHidden';
 let hintHidden = false;
@@ -4080,7 +3563,9 @@ setInterval(updateHint, 120);
 const COLLAPSE_KEY = 'gridfacet.collapsed';
 let collapsed: string[] = [];
 try {
-  collapsed = JSON.parse(localStorage.getItem(COLLAPSE_KEY) ?? '[]');
+  const saved: unknown = JSON.parse(localStorage.getItem(COLLAPSE_KEY) ?? '[]');
+  // Lo guardado puede estar dañado o ser de otra versión: solo vale una lista de textos.
+  collapsed = Array.isArray(saved) ? saved.filter((name): name is string => typeof name === 'string') : [];
 } catch {
   collapsed = [];
 }
@@ -4106,12 +3591,19 @@ const sizeInput = document.getElementById('gridSize') as HTMLInputElement;
 const sizeLabel = document.getElementById('sizeLabel')!;
 function setGridSize(requested: number): void {
   const even = Math.round(requested / 2) * 2;
+  const before = gridSize;
   gridSize = Math.min(MAX_GRID_SIZE, Math.max(MIN_GRID_SIZE, Number.isFinite(even) ? even : gridSize));
   buildRoom();
   if (typeof syncSymmetry === 'function') syncSymmetry();
   sizeInput.value = String(gridSize);
   sizeLabel.textContent = `${gridSize} × ${gridSize} × ${gridSize} celdas (${gridSize * 3} placas de alto)`;
   const outside = model.all().filter((piece) => piece.faces.some((face) => face.some((p) => Math.abs(p[0]) > gridSize / 2 || Math.abs(p[2]) > gridSize / 2 || p[1] > gridSize))).length;
+  // Cambiar el tamaño de la sala se guarda con el proyecto: cuenta como cambio sin guardar (al abrir un archivo se limpia después).
+  if (gridSize !== before) {
+    files.markDirty();
+    files.syncFileName();
+    files.scheduleAutosave();
+  }
   statusEl.textContent = outside > 0 ? `Malla de ${gridSize}: ${outside} pieza(s) quedan fuera; se conservan` : `Malla de ${gridSize} × ${gridSize} × ${gridSize}`;
 }
 sizeInput.addEventListener('change', () => setGridSize(Number(sizeInput.value)));
@@ -4185,7 +3677,7 @@ function setSmooth(on: boolean): void {
     disposeObject(object);
   }
   objects.clear();
-  selection.onChange();
+  selection.notify();
   refreshGhost();
   const box = document.getElementById('smoothToggle') as HTMLInputElement;
   box.checked = on;
@@ -4202,7 +3694,7 @@ function setWireframe(on: boolean): void {
     disposeObject(object);
   }
   objects.clear();
-  selection.onChange();
+  selection.notify();
   const box = document.getElementById('wireToggle') as HTMLInputElement;
   box.checked = on;
   box.blur();
@@ -4253,24 +3745,25 @@ window.addEventListener('keydown', (e) => {
     // Deshacer y rehacer siguen disponibles; lo demás espera a que se cierre el editor.
     if (!(e.ctrlKey || e.metaKey)) return;
   }
-  if (!helpModal.hidden) {
+  if (help.isOpen()) {
     // Con el foco en el buscador, "?" es una letra más.
-    if (e.key === 'Escape' || (e.key === '?' && e.target !== helpSearchEl)) setHelp(false);
+    if (e.key === 'Escape' || (e.key === '?' && !help.isSearch(e.target))) setHelp(false);
     return;
   }
-  if (e.key === '?' || e.key === 'F1') {
+  const key = e.key.toLowerCase();
+  const typing = isTextField(e.target as { tagName?: string; type?: string } | null);
+  // «?» dentro de un campo de texto es un signo más; F1 abre la ayuda desde cualquier sitio.
+  if ((e.key === '?' && !typing) || e.key === 'F1') {
     e.preventDefault();
     setHelp(true);
     return;
   }
-  // Con el foco en un selector las teclas le pertenecen a él.
-  if (e.target instanceof HTMLSelectElement || e.target instanceof HTMLTextAreaElement) return;
-  if (e.target instanceof HTMLInputElement && (e.target.type === 'number' || e.target.type === 'text' || e.target.type === 'search')) return;
-  if (poseDragKey(e)) {
+  // Con el foco en un campo las teclas le pertenecen a él, salvo Ctrl+S, Ctrl+O y Ctrl+K (si no, el navegador abre «Guardar página»).
+  if (typing && !((e.ctrlKey || e.metaKey) && ctrlBeatsField(key))) return;
+  if (animationPanel.poseKey(e)) {
     e.preventDefault();
     return;
   }
-  const key = e.key.toLowerCase();
   // Teclado numérico, como en Blender: 1 frente, 3 derecha, 7 arriba (con Ctrl, la opuesta) y 5 alterna ortográfica/perspectiva.
   if (e.code.startsWith('Numpad') && !e.altKey && !e.shiftKey) {
     const numpad = e.code.slice(6);
@@ -4292,6 +3785,8 @@ window.addEventListener('keydown', (e) => {
     e.preventDefault();
     return;
   }
+  // En Malla, lo que la herramienta no toma no actúa sobre las piezas (reflejar, ocultar, aislar) ni cambia de herramienta con vértices elegidos.
+  if (mode === 'mesh' && !e.ctrlKey && !e.metaKey && !e.altKey && meshIgnoresKey(key, meshTool.count)) return;
   if ((e.ctrlKey || e.metaKey) && key === 'enter' && mode === 'cut') {
     e.preventDefault();
     cutTool.applyNow();
@@ -4304,7 +3799,11 @@ window.addEventListener('keydown', (e) => {
   }
   if ((e.ctrlKey || e.metaKey) && key === 'z') {
     e.preventDefault();
-    // Con una herramienta a medias, Ctrl+Z retrocede un punto en vez de deshacer el último bloque.
+    // Ctrl+Mayús+Z rehace; con una herramienta a medias, Ctrl+Z retrocede un punto en vez de deshacer el último bloque.
+    if (undoRedoKey(key, e.shiftKey) === 'redo') {
+      redo();
+      return;
+    }
     const tool = mode === 'cut' ? cutTool : mode === 'fill' ? fillTool : mode === 'outline' ? outlineTool : null;
     if (tool?.hasPoints) {
       tool.undoPoint();
@@ -4315,12 +3814,12 @@ window.addEventListener('keydown', (e) => {
   }
   if ((e.ctrlKey || e.metaKey) && key === 's') {
     e.preventDefault();
-    void saveProject(e.altKey);
+    void files.saveProject(e.altKey);
     return;
   }
   if ((e.ctrlKey || e.metaKey) && key === 'o') {
     e.preventDefault();
-    void requestOpen();
+    void files.requestOpen();
     return;
   }
   if ((e.ctrlKey || e.metaKey) && key === 'y') {
@@ -4375,14 +3874,14 @@ window.addEventListener('keydown', (e) => {
   }
 
   // Sin selección (o cortando, o en Malla) las flechas desplazan la cámara en pantalla; con selección mueven las piezas.
-  if (key in PAN_KEYS && (mode === 'cut' || mode === 'fill' || mode === 'vertex' || mode === 'mesh' || selection.size === 0)) {
+  if (key in PAN_KEYS && (mode === 'cut' || mode === 'fill' || mode === 'outline' || mode === 'vertex' || mode === 'mesh' || selection.size === 0)) {
     e.preventDefault();
     panKeys.add(key);
     panFast = fast;
     return;
   }
 
-  if (mode !== 'cut' && mode !== 'fill' && mode !== 'vertex' && mode !== 'mesh' && selection.size > 0) {
+  if (mode !== 'cut' && mode !== 'fill' && mode !== 'outline' && mode !== 'vertex' && mode !== 'mesh' && selection.size > 0) {
     // Ctrl duplica el paso: de un cuarto a media celda.
     const stepXZ = fast ? 2 * STEP_XZ : STEP_XZ;
     const stepY = fast ? 2 * STEP_Y : STEP_Y;
@@ -4410,35 +3909,25 @@ window.addEventListener('keydown', (e) => {
       moveSelectionBy(dir[0] * stepXZ, 0, dir[1] * stepXZ);
       return;
     }
-    if (key === 'pageup' || key === 'e') {
-      moveSelectionBy(0, stepY, 0);
-      return;
-    }
-    if (key === 'pagedown' || key === 'q') {
-      moveSelectionBy(0, -stepY, 0);
+    // E y Q no mueven piezas: E entra en Malla y Q es de sus acciones.
+    const vertical = verticalMoveKey(key);
+    if (vertical !== 0) {
+      moveSelectionBy(0, vertical * stepY, 0);
       return;
     }
   }
 
   const n = Number(e.key);
   if (n >= 1 && n <= Math.min(9, CATALOG.length)) selectPiece(n - 1);
-  if (key === 'c') setMode(mode === 'cut' ? 'place' : 'cut');
-  if (key === 's') setMode(mode === 'select' ? 'place' : 'select');
-  if (key === 'b') setMode(mode === 'erase' ? 'place' : 'erase');
-  if (key === 'g') setMode(mode === 'grow' ? 'place' : 'grow');
-  if (key === 'd') setMode(mode === 'sink' ? 'place' : 'sink');
-  if (key === 'p') setMode(mode === 'paint' ? 'place' : 'paint');
+  // Las teclas que encienden o apagan una herramienta salen de la tabla de atajos (core/shortcuts.ts).
+  const toggled = toolForKey(key, mode);
+  if (toggled) setMode(mode === toggled ? 'place' : toggled);
   if (key === 'o') {
-    if (e.altKey) showHidden();
+    // Alt+O muestra solo las piezas ocultas una a una: las de capas ocultas siguen ocultas (se muestran con el botón «Mostrar ocultas» o el ojo de la capa).
+    if (e.altKey) showHidden([...hidden].filter((id) => { const piece = model.get(id); return !piece || !layers.isHidden(piece); }));
     else hideSelected();
   }
   if (key === 'i') isolateSelected();
-  if (key === 't') setMode(mode === 'shape' ? 'place' : 'shape');
-  if (key === 'j') setMode(mode === 'bevel' ? 'place' : 'bevel');
-  if (key === 'l') setMode(mode === 'fill' ? 'place' : 'fill');
-  if (key === 'f' && mode !== 'cut') setMode(mode === 'face' ? 'place' : 'face');
-  if (key === 'v') setMode(mode === 'vertex' ? 'place' : 'vertex');
-  if (key === 'e') setMode(mode === 'mesh' ? 'place' : 'mesh');
   if (key === 'h') toggleHud();
   if (key === 'a') setHintHidden(!hintHidden);
   if (key === 'w') setWireframe(!isWireframeView());
@@ -4449,7 +3938,9 @@ window.addEventListener('keydown', (e) => {
     if (key === 'u') mirrorSelected('y');
     if (key === 'k') selectConnected();
   }
-  if (key === 'delete' || key === 'backspace') deleteSelected();
+  // En Malla Supr y Retroceso son de los vértices (MeshTool los toma), nunca borran piezas; Retroceso tampoco en Cortar, Rellenar y Figura.
+  if (key === 'delete' && mode !== 'mesh') deleteSelected();
+  if (key === 'backspace' && mode !== 'mesh' && mode !== 'cut' && mode !== 'fill' && mode !== 'outline') deleteSelected();
   if (mode === 'cut') {
     if (key === 'enter') {
       e.preventDefault();
@@ -4457,7 +3948,7 @@ window.addEventListener('keydown', (e) => {
     }
     if (key === 'f') cutTool.flip();
     if (key === 'escape') cutTool.cancel();
-  } else if (mode === 'vertex' || mode === 'mesh' || mode === 'paint' || mode === 'erase' || mode === 'shape' || mode === 'bevel' || mode === 'face') {
+  } else if (escLeavesTool(mode)) {
     if (key === 'escape') setMode('place');
     if (key === 'r' && mode === 'shape') turnShape();
   } else if (mode === 'fill') {
@@ -4482,529 +3973,47 @@ window.addEventListener('keydown', (e) => {
   }
 });
 
-// Animación: claves de pose (mover, girar, escalar) por grupo de piezas. Se ve en un reproductor aparte que sustituye a las piezas
-// mientras dura la vista previa; cualquier edición del modelo la termina.
-let animation: Animation = emptyAnimation();
-let animFrame = 0;
-let animPlaying = false;
-let animClock = 0;
-const animPlayer = new AnimationPlayer(scene3d, {
-  hide: (ids) => {
-    for (const id of ids) {
-      batches.remove(id);
-      textureLayer.remove(id);
-      const object = objects.get(id);
-      if (object) object.visible = false;
-    }
-  },
-  show: (ids) => {
-    for (const id of ids) {
-      const piece = model.get(id);
-      if (!piece) continue;
-      if (!hidden.has(id) && !selection.has(id)) batches.add(piece);
-      if (!hidden.has(id)) textureLayer.add(piece);
-      const object = objects.get(id);
-      if (object) object.visible = true;
-    }
+// Animación: claves de pose por grupo de piezas (el panel vive en ui/animationPanel.ts).
+const animationPanel = createAnimationPanel({
+  scene3d,
+  renderer,
+  camera,
+  controls,
+  model,
+  selection,
+  objects,
+  batches,
+  textureLayer,
+  hidden,
+  layers,
+  statusEl,
+  selectedPieces,
+  touched: () => {
+    files.markDirty();
+    files.scheduleAutosave();
+    files.syncFileName();
   },
 });
-const animEl = <T extends HTMLElement>(id: string): T => document.getElementById(id) as T;
-const animSlider = animEl<HTMLInputElement>('animFrame');
-const animPlayButton = animEl<HTMLButtonElement>('animPlay');
-const animStopButton = animEl<HTMLButtonElement>('animStop');
-const animFramesInput = animEl<HTMLInputElement>('animFrames');
-const animFpsInput = animEl<HTMLInputElement>('animFps');
-const animPoseInputs = [...document.querySelectorAll<HTMLInputElement>('input[data-anim]')];
-const animPoseInput = (name: string): HTMLInputElement => animPoseInputs.find((el) => el.dataset.anim === name)!;
-
-/** El grupo que se está animando: el del primer grupo entre las piezas elegidas. */
-function animGroup(): { id: number; name: string } | null {
-  const piece = selectedPieces().find((p) => p.group !== undefined);
-  return piece ? { id: piece.group!, name: piece.groupName ?? `Grupo ${piece.group}` } : null;
-}
-
-function visibleForAnimation(): Piece[] {
-  return model.all().filter((piece) => !hidden.has(piece.id) && !layers.isHidden(piece));
-}
-
-function touchAnimation(): void {
-  dirty = true;
-  scheduleAutosave();
-  syncFileName();
-}
-
-/** Vuelve a las piezas reales (termina la vista previa de la animación). */
-function stopAnimationView(): void {
-  animPlaying = false;
-  animPlayer.stop();
-  animStopButton.hidden = true;
-  animPlayButton.textContent = '▶ Reproducir';
-}
-
-function showAnimationFrame(frame = animFrame): void {
-  if (animation.tracks.length === 0) {
-    animPlayer.stop();
-    animStopButton.hidden = true;
-  } else {
-    animPlayer.show(visibleForAnimation(), animation, frame);
-    animStopButton.hidden = false;
-  }
-}
-
-function refreshAnimationPanel(): void {
-  animSlider.max = String(animation.frames - 1);
-  animSlider.value = String(animFrame);
-  animEl('animFrameLabel').textContent = `${animFrame + 1} / ${animation.frames}`;
-  animFramesInput.value = String(animation.frames);
-  animFpsInput.value = String(animation.fps);
-  const group = animGroup();
-  const track = group ? trackOf(animation, group.id) : undefined;
-  animEl('animGroup').textContent = group
-    ? `Grupo: ${group.name}`
-    : 'Elige un grupo de piezas para animarlo (Ctrl+G agrupa las piezas elegidas)';
-  for (const id of ['animPose', 'animPoseRot', 'animPoseScale', 'animKeyRow', 'animMouseRow']) animEl(id).hidden = !group;
-  if (group) {
-    const pose = sampleTrack(track, animFrame);
-    const set = (name: string, value: number): void => {
-      const input = animPoseInput(name);
-      if (document.activeElement !== input) input.value = String(+value.toFixed(3));
-    };
-    set('px', pose.pos[0]); set('py', pose.pos[1]); set('pz', pose.pos[2]);
-    set('rx', pose.rot[0]); set('ry', pose.rot[1]); set('rz', pose.rot[2]);
-    set('s', pose.scale[0]);
-  }
-  animEl('animKeys').textContent = track
-    ? `Claves: ${track.keys.map((k) => (k.frame === animFrame ? `[${k.frame + 1}]` : String(k.frame + 1))).join(', ')}`
-    : group ? 'Sin claves: pon una en este fotograma' : '';
-}
-
-function setAnimation(next: Animation): void {
-  animation = next;
-  animFrame = Math.min(animFrame, animation.frames - 1);
-  refreshAnimationPanel();
-}
-
-/**
- * Historial de la animación, entrelazado con el del modelo: cada paso recuerda cuántos cambios del modelo había (`depth`) y así
- * Ctrl+Z deshace en el orden en que se hicieron las cosas, sean piezas o claves.
- */
-interface AnimationStep {
-  before: Animation;
-  after: Animation;
-  depth: number;
-  /** En un paso deshecho, el contador del modelo en ese momento: si cambia, ya no se puede rehacer. */
-  serial: number;
-  /** El paso va pegado al cambio del modelo siguiente (abrir un archivo): un solo Ctrl+Z o Ctrl+Y deshace o rehace los dos. */
-  withModel?: boolean;
-}
-const animationUndo: AnimationStep[] = [];
-let animationRedo: AnimationStep[] = [];
-
-function applyAnimation(next: Animation): void {
-  animation = next;
-  animFrame = Math.min(animFrame, animation.frames - 1);
-  touchAnimation();
-  showAnimationFrame();
-  refreshAnimationPanel();
-}
-
-/** Cambia la animación como un paso que se puede deshacer. */
-function editAnimation(next: Animation): void {
-  if (next === animation) return;
-  animationUndo.push({ before: animation, after: next, depth: model.undoDepth, serial: model.serial });
-  animationRedo = [];
-  applyAnimation(next);
-}
-
-/** Deshace un paso de animación si fue lo último que se hizo; devuelve false si toca deshacer el modelo. */
-function undoAnimationStep(): boolean {
-  const step = animationUndo[animationUndo.length - 1];
-  if (!step || step.depth !== model.undoDepth) return false;
-  animationUndo.pop();
-  // Lo deshecho solo se puede rehacer mientras no haya un cambio nuevo en el modelo: se anota con el contador de ahora.
-  animationRedo.push({ ...step, serial: model.serial });
-  applyAnimation(step.before);
-  statusEl.textContent = 'Animación: cambio deshecho';
-  return true;
-}
-
-function redoAnimationStep(): boolean {
-  animationRedo = animationRedo.filter((step) => step.serial === model.serial);
-  const step = animationRedo[animationRedo.length - 1];
-  if (!step || step.depth !== model.undoDepth) return false;
-  animationRedo.pop();
-  animationUndo.push(step);
-  if (step.withModel) model.redo();
-  applyAnimation(step.after);
-  statusEl.textContent = 'Animación: cambio rehecho';
-  return true;
-}
-
-/**
- * Posar con el ratón: mover, girar o escalar el grupo elegido en el fotograma actual moviendo el ratón sin pulsar.
- * Clic o Intro confirman (y ponen la clave), Esc o clic derecho cancelan, X/Y/Z fijan el eje y Ctrl quita el imán.
- */
-const POSE_MOVE_STEP = 0.25;
-const POSE_ROTATE_STEP = 5;
-const POSE_SCALE_STEP = 0.05;
-let poseDrag: {
-  kind: 'move' | 'rotate' | 'scale';
-  group: number;
-  start: Pose;
-  /** Dónde está el centro del grupo ahora (con el desplazamiento de la pose). */
-  pivot: THREE.Vector3;
-  axis: number | null;
-  /** Se fija con el primer movimiento del ratón. */
-  reference: { x: number; y: number; angle: number; distance: number; point: THREE.Vector3 | null } | null;
-  last: { x: number; y: number; free: boolean } | null;
-  result: Animation | null;
-} | null = null;
-
-function beginPoseDrag(kind: 'move' | 'rotate' | 'scale'): void {
-  const group = animGroup();
-  if (!group || poseDrag) return;
-  const members = model.all().filter((p) => p.group === group.id);
-  const start = sampleTrack(trackOf(animation, group.id), animFrame);
-  const centre = groupCentre(members);
-  poseDrag = {
-    kind,
-    group: group.id,
-    start,
-    pivot: new THREE.Vector3(centre[0] + start.pos[0], centre[1] + start.pos[1], centre[2] + start.pos[2]),
-    axis: null,
-    reference: null,
-    last: null,
-    result: null,
-  };
-  controls.enabled = false;
-  statusEl.textContent = `${{ move: 'Mover', rotate: 'Girar', scale: 'Escalar' }[kind]} el grupo: mueve el ratón${kind === 'scale' ? '' : ' · X/Y/Z fija el eje'} · Ctrl sin imán · clic o Intro confirma · Esc cancela`;
-}
-
-function updatePoseDrag(): void {
-  const drag = poseDrag;
-  if (!drag || !drag.last) return;
-  const { x, y, free } = drag.last;
-  const rect = renderer.domElement.getBoundingClientRect();
-  const projected = drag.pivot.clone().project(camera);
-  const cx = rect.left + ((projected.x + 1) / 2) * rect.width;
-  const cy = rect.top + ((1 - projected.y) / 2) * rect.height;
-  const forward = camera.getWorldDirection(new THREE.Vector3());
-  const onPlane = (): THREE.Vector3 | null => {
-    const ray = new THREE.Raycaster();
-    ray.setFromCamera(new THREE.Vector2(((x - rect.left) / rect.width) * 2 - 1, -((y - rect.top) / rect.height) * 2 + 1), camera);
-    return ray.ray.intersectPlane(new THREE.Plane().setFromNormalAndCoplanarPoint(forward, drag.pivot), new THREE.Vector3());
-  };
-  if (!drag.reference) {
-    drag.reference = { x, y, angle: Math.atan2(y - cy, x - cx), distance: Math.max(Math.hypot(x - cx, y - cy), 8), point: drag.kind === 'move' ? onPlane() : null };
-    return;
-  }
-  const ref = drag.reference;
-  const pose: Pose = { pos: [...drag.start.pos], rot: [...drag.start.rot], scale: [...drag.start.scale] };
-  let label = '';
-  if (drag.kind === 'move') {
-    const point = onPlane();
-    if (!point || !ref.point) return;
-    const delta = [point.x - ref.point.x, point.y - ref.point.y, point.z - ref.point.z];
-    for (let k = 0; k < 3; k++) {
-      if (drag.axis !== null && drag.axis !== k) continue;
-      let value = drag.start.pos[k] + delta[k];
-      if (!free) value = Math.round(value / POSE_MOVE_STEP) * POSE_MOVE_STEP;
-      pose.pos[k] = value;
-    }
-    label = `Mover ${pose.pos.map((v) => +v.toFixed(2)).join(', ')}`;
-  } else if (drag.kind === 'rotate') {
-    // Eje: el elegido, o el del mundo más parecido a la dirección de la cámara; el giro suma al ángulo de ese eje.
-    const abs = [Math.abs(forward.x), Math.abs(forward.y), Math.abs(forward.z)];
-    const axis = drag.axis ?? abs.indexOf(Math.max(...abs));
-    const towardsViewer = [forward.x, forward.y, forward.z][axis] < 0;
-    let degrees = ((Math.atan2(y - cy, x - cx) - ref.angle) * 180) / Math.PI * (towardsViewer ? -1 : 1);
-    degrees = ((degrees + 540) % 360) - 180;
-    if (!free) degrees = Math.round(degrees / POSE_ROTATE_STEP) * POSE_ROTATE_STEP;
-    pose.rot[axis] = drag.start.rot[axis] + degrees;
-    label = `Girar ${'XYZ'[axis]} ${Math.round(pose.rot[axis])}°`;
-  } else {
-    let factor = Math.max(Math.hypot(x - cx, y - cy), 8) / ref.distance;
-    if (!free) factor = Math.round(factor / POSE_SCALE_STEP) * POSE_SCALE_STEP;
-    const scale = Math.max(drag.start.scale[0] * factor, 0.05);
-    pose.scale = [scale, scale, scale];
-    label = `Escalar ×${scale.toFixed(2)}`;
-  }
-  drag.result = setKey(animation, drag.group, animFrame, pose);
-  animPlayer.show(visibleForAnimation(), drag.result, animFrame);
-  animStopButton.hidden = false;
-  statusEl.textContent = label;
-}
-
-function finishPoseDrag(commit: boolean): void {
-  const drag = poseDrag;
-  if (!drag) return;
-  poseDrag = null;
-  controls.enabled = true;
-  if (commit && drag.result) editAnimation(drag.result);
-  else {
-    showAnimationFrame();
-    refreshAnimationPanel();
-  }
-  statusEl.textContent = commit && drag.result ? 'Clave puesta' : 'Cancelado';
-}
-
-for (const button of document.querySelectorAll<HTMLButtonElement>('button[data-animpose]')) {
-  button.addEventListener('click', () => {
-    button.blur();
-    animPlaying = false;
-    animPlayButton.textContent = '▶ Reproducir';
-    beginPoseDrag(button.dataset.animpose as 'move' | 'rotate' | 'scale');
-  });
-}
-renderer.domElement.addEventListener('pointermove', (e) => {
-  if (!poseDrag) return;
-  poseDrag.last = { x: e.clientX, y: e.clientY, free: e.ctrlKey || e.metaKey };
-  updatePoseDrag();
-});
-window.addEventListener(
-  'pointerdown',
-  (e) => {
-    if (!poseDrag || e.target !== renderer.domElement) return;
-    e.stopImmediatePropagation();
-    e.preventDefault();
-    if (e.button === 0) finishPoseDrag(true);
-    else if (e.button === 2) finishPoseDrag(false);
-  },
-  { capture: true },
-);
-/** Teclas durante el posado con el ratón; devuelve true si se usó la tecla. */
-function poseDragKey(e: KeyboardEvent): boolean {
-  if (!poseDrag) return false;
-  const key = e.key.toLowerCase();
-  if (key === 'x' || key === 'y' || key === 'z') {
-    const axis = 'xyz'.indexOf(key);
-    poseDrag.axis = poseDrag.axis === axis ? null : axis;
-    updatePoseDrag();
-  } else if (key === 'escape') finishPoseDrag(false);
-  else if (key === 'enter') finishPoseDrag(true);
-  return true;
-}
 
 function undo(): void {
-  if (undoAnimationStep()) return;
-  model.undo();
-  // Abrir un archivo cambió piezas y animación a la vez: se deshacen juntas.
-  const step = animationUndo[animationUndo.length - 1];
-  if (step?.withModel && step.depth === model.undoDepth) undoAnimationStep();
+  // Con un arrastre o un giro de Malla a medias, la vista previa aún no está en el historial: deshacer desharía otro cambio.
+  if (mode === 'mesh' && meshTool.busy) return;
+  animationPanel.undo();
 }
 
-function poseFromInputs(): Pose {
-  const n = (name: string, fallback: number): number => {
-    const v = Number(animPoseInput(name).value);
-    return Number.isFinite(v) ? v : fallback;
-  };
-  const scale = Math.max(n('s', 1), 0.05);
-  return { pos: [n('px', 0), n('py', 0), n('pz', 0)], rot: [n('rx', 0), n('ry', 0), n('rz', 0)], scale: [scale, scale, scale] };
-}
-
-function writeKey(): void {
-  const group = animGroup();
-  if (!group) return;
-  editAnimation(setKey(animation, group.id, animFrame, poseFromInputs()));
-}
-
-animSlider.addEventListener('input', () => {
-  animPlaying = false;
-  animPlayButton.textContent = '▶ Reproducir';
-  animFrame = Number(animSlider.value);
-  showAnimationFrame();
-  refreshAnimationPanel();
-});
-animPlayButton.addEventListener('click', () => {
-  animPlayButton.blur();
-  if (animation.tracks.length === 0) {
-    statusEl.textContent = 'Todavía no hay claves: elige un grupo, ponle una pose en un fotograma y otra en otro';
-    return;
-  }
-  animPlaying = !animPlaying;
-  animClock = animFrame;
-  animPlayButton.textContent = animPlaying ? '⏸ Pausa' : '▶ Reproducir';
-  showAnimationFrame();
-});
-animStopButton.addEventListener('click', () => {
-  stopAnimationView();
-  refreshAnimationPanel();
-});
-animEl('animSetKey').addEventListener('click', writeKey);
-animEl('animRemoveKey').addEventListener('click', () => {
-  const group = animGroup();
-  if (!group) return;
-  editAnimation(removeKey(animation, group.id, animFrame));
-});
-for (const input of animPoseInputs) input.addEventListener('change', writeKey);
-for (const input of [animFramesInput, animFpsInput]) {
-  input.addEventListener('change', () => {
-    editAnimation(resizeAnimation(animation, Math.min(Number(animFramesInput.value) || 24, MAX_FRAMES), Math.min(Number(animFpsInput.value) || 12, MAX_FPS)));
-  });
-}
-// Cualquier cambio del modelo termina la vista previa; al elegir otro grupo se muestran sus claves.
-const modelChanged = model.onChange;
-model.onChange = (change) => {
-  if (animPlayer.active) stopAnimationView();
-  modelChanged(change);
-  animation = pruneTracks(animation, model.all());
-  refreshAnimationPanel();
-};
-const selectionChanged = selection.onChange;
-selection.onChange = () => {
-  selectionChanged();
-  refreshAnimationPanel();
-};
-refreshAnimationPanel();
-
-// Imágenes de referencia: se ven al fondo de la escena, se guardan con el proyecto y no cuentan como piezas.
-let references: RefImage[] = [];
-const referenceLayer = new ReferenceLayer();
-scene3d.add(referenceLayer.group);
-const refListEl = document.getElementById('refList')!;
-const refFileEl = document.getElementById('refFile') as HTMLInputElement;
-
-/** Cambia las imágenes (al abrir un proyecto o tras editar una) y redibuja lista y escena. */
-function setReferences(next: RefImage[], changed = false): void {
-  references = next;
-  referenceLayer.set(references);
-  renderReferenceList();
-  if (changed) {
-    dirty = true;
-    syncFileName();
-    scheduleAutosave();
-  }
-}
-
-function updateReference(id: number, change: Partial<RefImage> | ((r: RefImage) => RefImage)): void {
-  setReferences(references.map((r) => (r.id === id ? (typeof change === 'function' ? change(r) : { ...r, ...change }) : r)), true);
-}
-
-const PLANE_LABELS: Record<RefPlane, string> = { front: 'De frente', side: 'De lado', top: 'Desde arriba' };
-
-function renderReferenceList(): void {
-  refListEl.replaceChildren();
-  for (const image of references) {
-    const row = document.createElement('div');
-    row.className = 'refItem';
-    const head = document.createElement('div');
-    head.className = 'row';
-    const visible = document.createElement('input');
-    visible.type = 'checkbox';
-    visible.checked = image.visible;
-    visible.title = 'Mostrar u ocultar la imagen';
-    visible.addEventListener('change', () => updateReference(image.id, { visible: visible.checked }));
-    const name = document.createElement('strong');
-    name.textContent = image.name;
-    name.title = image.name;
-    const plane = document.createElement('select');
-    plane.title = 'Hacia dónde mira la imagen';
-    for (const key of Object.keys(PLANE_LABELS) as RefPlane[]) plane.add(new Option(PLANE_LABELS[key], key, false, key === image.plane));
-    plane.addEventListener('change', () => updateReference(image.id, (r) => withPlane(r, plane.value as RefPlane, gridSize)));
-    const remove = document.createElement('button');
-    remove.textContent = '✕';
-    remove.title = 'Quitar la imagen del proyecto';
-    remove.addEventListener('click', () => setReferences(references.filter((r) => r.id !== image.id), true));
-    head.append(visible, name, plane, remove);
-    const numbers = document.createElement('div');
-    numbers.className = 'row';
-    const field = (label: string, title: string, key: 'u' | 'v' | 'depth' | 'width', step: number, min?: number): HTMLLabelElement => {
-      const wrap = document.createElement('label');
-      wrap.title = title;
-      wrap.append(`${label} `);
-      const input = document.createElement('input');
-      input.type = 'number';
-      input.step = String(step);
-      if (min !== undefined) input.min = String(min);
-      input.value = String(+image[key].toFixed(2));
-      input.style.width = '4.2em';
-      input.addEventListener('change', () => {
-        const value = Number(input.value);
-        if (Number.isFinite(value) && (min === undefined || value >= min)) updateReference(image.id, { [key]: value });
-        else input.value = String(+image[key].toFixed(2));
-      });
-      wrap.append(input);
-      return wrap;
-    };
-    numbers.append(
-      field('Ancho', 'Ancho de la imagen en celdas', 'width', 1, 0.5),
-      field('↔', 'Posición horizontal del centro de la imagen', 'u', 0.5),
-      field('↕', 'Posición vertical del centro de la imagen', 'v', 0.5),
-      field('Fondo', 'Distancia hacia delante (+) o hacia atrás (−) del plano de la imagen', 'depth', 0.5),
-    );
-    const opacity = document.createElement('div');
-    opacity.className = 'row';
-    const slider = document.createElement('input');
-    slider.type = 'range';
-    slider.min = '5';
-    slider.max = '100';
-    slider.value = String(Math.round(image.opacity * 100));
-    slider.title = 'Opacidad de la imagen';
-    slider.addEventListener('input', () => {
-      references = references.map((r) => (r.id === image.id ? { ...r, opacity: Number(slider.value) / 100 } : r));
-      referenceLayer.set(references);
-    });
-    slider.addEventListener('change', () => updateReference(image.id, { opacity: Number(slider.value) / 100 }));
-    opacity.append('Opacidad ', slider);
-    row.append(head, numbers, opacity);
-    refListEl.append(row);
-  }
-}
-
-document.getElementById('refAdd')!.addEventListener('click', () => refFileEl.click());
-refFileEl.addEventListener('change', async () => {
-  const file = refFileEl.files?.[0];
-  refFileEl.value = '';
-  if (!file) return;
-  try {
-    const { data, aspect, name } = await loadReferenceFile(file);
-    setReferences([...references, defaultReference(nextReferenceId(references), name, data, aspect, gridSize)], true);
-    statusEl.textContent = `Imagen de referencia puesta al fondo: ${name}`;
-  } catch {
-    statusEl.textContent = 'No se pudo abrir la imagen';
-  }
+// Imágenes de referencia (ui/referencesPanel.ts).
+const referencesPanel = createReferencesPanel({
+  scene3d,
+  statusEl,
+  gridSize: () => gridSize,
+  changed: () => {
+    files.markDirty();
+    files.syncFileName();
+    files.scheduleAutosave();
+  },
 });
 
-/** El trabajo de la sesión anterior, guardado aparte al abrir la página para poder recuperarlo sin que se cuele en la hoja nueva. */
-const PREVIOUS_KEY = 'gridfacet.previous';
-
-/**
- * Al abrir la página se empieza en una hoja en blanco: la última copia automática ya no se mete sola en la escena (se confundía con el
- * trabajo de ahora). Se aparta y se puede traer con el comando «Recuperar el trabajo anterior».
- */
-function stashPreviousSession(): void {
-  try {
-    const text = localStorage.getItem(AUTOSAVE_KEY);
-    if (!text) return;
-    const { pieces } = parseProjectFull(text);
-    if (pieces.length === 0) return;
-    localStorage.setItem(PREVIOUS_KEY, text);
-    localStorage.removeItem(AUTOSAVE_KEY);
-    statusEl.textContent = `Hoja nueva. Tu trabajo anterior (${pieces.length} piezas) sigue disponible: busca «recuperar» en el buscador de comandos`;
-  } catch {
-    // Una copia dañada o ilegible se ignora: se empieza con la escena vacía.
-  }
-}
-stashPreviousSession();
-
-/** Trae a la escena el trabajo de la sesión anterior (se puede deshacer). */
-function recoverPrevious(): void {
-  try {
-    const text = localStorage.getItem(PREVIOUS_KEY);
-    if (!text) {
-      statusEl.textContent = 'No hay un trabajo anterior que recuperar';
-      return;
-    }
-    if (dirty && !window.confirm('La hoja actual tiene cambios sin guardar. ¿Reemplazarla por el trabajo anterior? (Ctrl+Z lo deshace)')) return;
-    const project = parseProjectFull(text);
-    replaceProject(project, 'Sin título', null);
-    dirty = true;
-    syncFileName();
-    statusEl.textContent = `Recuperado el trabajo anterior (${project.pieces.length} piezas). Guárdalo en un archivo para no perderlo`;
-  } catch (error) {
-    fileProblem(`No se pudo recuperar: ${errorText(error)}`);
-  }
-}
+files.stashPreviousSession();
 
 function resize(): void {
   const { clientWidth: w, clientHeight: h } = container;
@@ -5031,18 +4040,12 @@ renderer.setAnimationLoop((now) => {
   const dt = Math.min((now - lastFrame) / 1000, 0.1);
   lastFrame = now;
   updatePan(dt);
-  if (animPlaying) {
-    animClock = (animClock + dt * animation.fps) % animation.frames;
-    animFrame = Math.floor(animClock);
-    animPlayer.show(visibleForAnimation(), animation, animClock);
-    animSlider.value = String(animFrame);
-    animEl('animFrameLabel').textContent = `${animFrame + 1} / ${animation.frames}`;
-  }
+  if (animationPanel.playing) animationPanel.tick(dt);
   // Con la inercia de la cámara activa, `update` dice si todavía se está moviendo.
   if (controls.update()) wakeRender();
   batches.flush();
   // Dibuja mientras haya actividad, se reproduzca la animación o cambie el modelo; y, por si algo cambia sin avisar (una imagen que termina de cargar), dos veces por segundo.
-  if (!animPlaying && now > renderUntil && model.serial === lastSerial && now - lastRendered < 500) return;
+  if (!animationPanel.playing && now > renderUntil && model.serial === lastSerial && now - lastRendered < 500) return;
   lastSerial = model.serial;
   lastRendered = now;
   renderer.render(scene3d, camera);

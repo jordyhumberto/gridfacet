@@ -1,4 +1,6 @@
+import { vertexKey } from './key';
 import { faceNormal, type Piece, type Vec3 } from './piece';
+import { boundsOf } from './transform';
 
 /** A qué distancia del cursor (en celdas) cuenta una cara como "la que apunta". */
 const PLANE_RANGE = 0.3;
@@ -32,7 +34,7 @@ const unit = (a: Vec3): Vec3 => {
   const length = Math.hypot(a[0], a[1], a[2]) || 1;
   return [a[0] / length, a[1] / length, a[2] / length];
 };
-const keyOf = (p: Vec3): string => p.map((v) => Math.round(v * 1e4)).join(',');
+const keyOf = vertexKey;
 
 interface PlaneFace {
   face: Vec3[];
@@ -78,10 +80,7 @@ function edgesOf(piece: Piece): Segment[] {
 function boxOf(piece: Piece): { min: Vec3; max: Vec3 } {
   let box = boxCache.get(piece);
   if (!box) {
-    const min: Vec3 = [Infinity, Infinity, Infinity];
-    const max: Vec3 = [-Infinity, -Infinity, -Infinity];
-    for (const face of piece.faces) for (const p of face) for (let i = 0; i < 3; i++) (min[i] = Math.min(min[i], p[i]), (max[i] = Math.max(max[i], p[i])));
-    box = { min, max };
+    box = boundsOf([piece])!;
     boxCache.set(piece, box);
   }
   return box;

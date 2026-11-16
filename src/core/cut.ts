@@ -70,7 +70,7 @@ export function projectToPlane(p: Vec3, plane: Plane): Vec3 {
 }
 
 /** Dos ejes ortogonales dentro del plano, para trabajar en 2D. */
-function planeBasis(n: Vec3): { u: Vec3; v: Vec3 } {
+export function planeBasis(n: Vec3): { u: Vec3; v: Vec3 } {
   const helper: Vec3 = Math.abs(n[1]) < 0.9 ? [0, 1, 0] : [1, 0, 0];
   const cu: Vec3 = [helper[1] * n[2] - helper[2] * n[1], helper[2] * n[0] - helper[0] * n[2], helper[0] * n[1] - helper[1] * n[0]];
   const lu = Math.hypot(cu[0], cu[1], cu[2]);

@@ -1,3 +1,4 @@
+import { vertexKey } from './key';
 import { splitConvex, triangulateFace } from './convex';
 import { FACE_DOUBLE, FACE_UNLIT, exportFlags, faceColorOf, hasExportFlags, type Piece, type Vec3 } from './piece';
 import { layerOf } from './layers';
@@ -16,9 +17,6 @@ export interface ExportMesh {
   flags?: number;
 }
 
-const KEY_PRECISION = 1e6;
-
-const vertexKey = (v: Vec3): string => v.map((x) => Math.round(x * KEY_PRECISION)).join(',');
 
 function weld(faces: Vec3[][]): { positions: number[]; indices: number[] } {
   const positions: number[] = [];
