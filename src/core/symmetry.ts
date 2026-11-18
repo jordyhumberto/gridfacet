@@ -1,5 +1,5 @@
 import { vertexKey } from './key';
-import { makePiece, type Piece, type Vec3 } from './piece';
+import { makePiece, mapSegments, type Piece, type Vec3 } from './piece';
 import { remapTexture } from './texture';
 import { uniqueVertices } from './vertices';
 
@@ -50,14 +50,17 @@ export function reflectPiece(piece: Piece, reflection: Reflection): Piece {
   });
   // Un reflejo con giro invierte el orden de los vértices: las texturas se remuestrean al marco nuevo.
   const textures = piece.faceTextures?.map((texture, i) => (texture ? remapTexture(texture, piece.faces[i], faces[i], reflection.point) : null));
-  return makePiece(faces, piece.color, piece.faceColors, textures, piece.faceFlags);
+  return makePiece(faces, piece.color, piece.faceColors, textures, piece.faceFlags, mapSegments(piece.segments, reflection.point));
 }
 
 /** Clave geométrica de una pieza: sus vértices ordenados, para reconocer piezas iguales. */
 export function pieceKey(piece: Piece): string {
   const set = new Set<string>();
   for (const face of piece.faces) for (const p of face) set.add(vertexKey(p));
-  return [...set].sort().join('|');
+  const segments = (piece.segments ?? []).map(([a, b]) => [vertexKey(a), vertexKey(b)].sort().join('~'));
+  for (const [a, b] of piece.segments ?? []) set.add(vertexKey(a)).add(vertexKey(b));
+  // Los segmentos cuentan: dos piezas con los mismos vértices pero distintos segmentos no son la misma.
+  return [...set].sort().join('|') + (segments.length > 0 ? `#${segments.sort().join('|')}` : '');
 }
 
 /** Los puntos dados más sus imágenes en espejo, sin repetir. */

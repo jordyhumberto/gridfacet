@@ -32,6 +32,12 @@ export function uniqueEdges(piece: Piece): Edge[] {
       if (!seen.has(key)) seen.set(key, { a, b });
     }
   }
+  // Los segmentos sueltos también son aristas a las que se puede enganchar.
+  for (const [a, b] of piece.segments ?? []) {
+    const [ka, kb] = [keyOf(a), keyOf(b)];
+    const key = ka < kb ? `${ka}|${kb}` : `${kb}|${ka}`;
+    if (ka !== kb && !seen.has(key)) seen.set(key, { a, b });
+  }
   return [...seen.values()];
 }
 
