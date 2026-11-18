@@ -136,7 +136,7 @@ export const GUIDE: Record<Mode, [string, string][]> = {
     ['Ver vértices de atrás (casilla)', 'marcada se ven y se pueden elegir todos los vértices; sin marcar, solo los que dan a la cámara'],
     ['+ Vértice (panel)', 'activa el modo añadir: clic en una arista (en cuartos; Ctrl: donde pulses) o dentro de una cara le pone un vértice nuevo, que queda elegido para moverlo. Arrastrar sigue girando la cámara'],
     ['Alt+clic en una arista', 'ponerle un vértice nuevo sin activar el modo (en cuartos; Ctrl: donde hagas clic)'],
-    ['Panel', 'Elegir y borrar: Elegir todos · Borrar vértices. Limpiar: Fusionar vértices (junta los elegidos en uno) · Vértices a la rejilla · Soldar cercanos'],
+    ['Panel', 'Elegir: Elegir todos. Vértices: Punta (saca una copia unida al original) · Fusionar vértices (junta los elegidos en uno) · Borrar vértices · Vértices a la rejilla · Soldar cercanos'],
     ['Soldar cercanos (botón)', 'junta los vértices que están a menos de la «Distancia» (por defecto 0,002 celdas) de otro, cada grupo en su punto medio, y quita las caras que se quedan sin superficie. Con vértices elegidos solo actúa sobre ellos; sin elegir ninguno, sobre todas las piezas que se ven. Con simetría el modelo sigue simétrico. Al abrir un proyecto la barra de estado avisa si hay pares así'],
     ['Panel (caras)', 'Crear cara con tres o más vértices · Borrar / Invertir / Extruir las caras cuyos vértices están todos elegidos'],
     ['Clic en una pieza', 'elegirla: solo se muestran sus vértices; en vacío suelta todo'],
