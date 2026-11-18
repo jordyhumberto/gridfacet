@@ -1,5 +1,5 @@
 import { vertexKey } from './key';
-import { faceNormal, type Piece, type Vec3 } from './piece';
+import { faceNormal, piecePoints, type Piece, type Vec3 } from './piece';
 import { boundsOf } from './transform';
 
 /** A qué distancia del cursor (en celdas) cuenta una cara como "la que apunta". */
@@ -231,7 +231,7 @@ function collect(group: PlaneGroup, near: Piece[], hit: Vec3, points: Map<string
   const all = [...edges, ...nearShadows];
   // Los vértices de verdad ya los ofrece quien llama: solo se devuelven los virtuales.
   const real = new Set<string>();
-  for (const piece of near) for (const face of piece.faces) for (const p of face) real.add(keyOf(p));
+  for (const piece of near) for (const p of piecePoints(piece)) real.add(keyOf(p));
   const add = (point: Vec3): void => {
     const key = keyOf(point);
     if (!real.has(key)) points.set(key, point);

@@ -1,7 +1,7 @@
 import { vertexKey } from '../core/key';
 import * as THREE from 'three';
 import { triangulateFace } from '../core/convex';
-import { FACE_BEHIND, FACE_DOUBLE, FACE_UNLIT, faceColorOf, type Piece } from '../core/piece';
+import { FACE_BEHIND, FACE_DOUBLE, FACE_UNLIT, faceColorOf, piecePoints, type Piece } from '../core/piece';
 import { allowUnlit, edgeKey, faceVertexNormals, smoothEdges } from './shading';
 import { wireColor } from './meshes';
 
@@ -179,6 +179,19 @@ export class PieceBatches {
           }
         }
       }
+      // Los segmentos sueltos son líneas del color del contorno de la pieza; no producen triángulos.
+      for (const [a, b] of piece.segments ?? []) {
+        linePositions.push(a[0], a[1], a[2], b[0], b[1], b[2]);
+        lineColors.push(edge.r, edge.g, edge.b, edge.r, edge.g, edge.b);
+        if (this.wireframe) {
+          for (const p of [a, b]) {
+            const key = vertexKey(p);
+            if (seen.has(key)) continue;
+            seen.add(key);
+            vertexPositions.push(p[0], p[1], p[2]);
+          }
+        }
+      }
     }
 
     chunk.owners = Int32Array.from(owners);
@@ -211,13 +224,11 @@ function chunkKey(piece: Piece): string {
   let y = 0;
   let z = 0;
   let count = 0;
-  for (const face of piece.faces) {
-    for (const p of face) {
-      x += p[0];
-      y += p[1];
-      z += p[2];
-      count++;
-    }
+  for (const p of piecePoints(piece)) {
+    x += p[0];
+    y += p[1];
+    z += p[2];
+    count++;
   }
   const c = (v: number) => Math.floor(v / count / CHUNK_SIZE);
   return `${c(x)},${c(y)},${c(z)}`;

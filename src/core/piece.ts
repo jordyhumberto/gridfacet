@@ -2,6 +2,9 @@ import { normalizeTextures, remapTexture, type FaceTexture } from './texture';
 
 export type Vec3 = [number, number, number];
 
+/** Un segmento suelto: sus dos extremos. */
+export type PieceSegment = [Vec3, Vec3];
+
 /** Poliedro convexo: cada cara es un polígono con vértices en sentido antihorario visto desde fuera. */
 export interface Piece {
   id: number;
@@ -13,6 +16,8 @@ export interface Piece {
   faceTextures?: (FaceTexture | null)[];
   /** Propiedades de cada cara (bits de `FACE_DOUBLE`, `FACE_UNLIT` y `FACE_BEHIND`); mismo orden que `faces`. Sin valor, todas normales. */
   faceFlags?: number[];
+  /** Segmentos sueltos: líneas entre dos puntos sin cara. Sus extremos son vértices como los de las caras (se ven, se eligen y se mueven igual). Una pieza puede tener solo segmentos. */
+  segments?: PieceSegment[];
   /** Número de grupo: las piezas con el mismo se eligen y mueven juntas. */
   group?: number;
   /** Nombre del grupo (el mismo en todas sus piezas); sirve para nombrar los objetos del GLB. */
@@ -43,7 +48,7 @@ export function reserveGroupIds(pieces: readonly { group?: number }[]): void {
 
 /** Copia de `piece` con otro grupo (o sin grupo si `group` es undefined) y un id nuevo. */
 export function withGroup(piece: Piece, group: number | undefined, groupName?: string): Piece {
-  const copy = makePiece(piece.faces, piece.color, piece.faceColors, piece.faceTextures, piece.faceFlags);
+  const copy = makePiece(piece.faces, piece.color, piece.faceColors, piece.faceTextures, piece.faceFlags, piece.segments);
   if (piece.layer !== undefined) copy.layer = piece.layer;
   if (group !== undefined) {
     copy.group = group;
@@ -62,10 +67,30 @@ export function keepGroup(to: Piece, from: Piece): Piece {
 
 /** Copia de la pieza en otra capa (la primera no se anota en la pieza), con el mismo grupo. */
 export function withLayer(piece: Piece, layer: number): Piece {
-  const copy = keepGroup(makePiece(piece.faces, piece.color, piece.faceColors, piece.faceTextures, piece.faceFlags), piece);
+  const copy = keepGroup(makePiece(piece.faces, piece.color, piece.faceColors, piece.faceTextures, piece.faceFlags, piece.segments), piece);
   if (layer === 1) delete copy.layer;
   else copy.layer = layer;
   return copy;
+}
+
+/** Los segmentos con `map` aplicado a cada extremo, sin los que quedan en un punto; undefined si no queda ninguno. */
+export function mapSegments(segments: readonly PieceSegment[] | undefined, map: (p: Vec3) => Vec3): PieceSegment[] | undefined {
+  if (!segments) return undefined;
+  const out: PieceSegment[] = [];
+  for (const [a, b] of segments) {
+    const p = map(a);
+    const q = map(b);
+    if (p[0] !== q[0] || p[1] !== q[1] || p[2] !== q[2]) out.push([p, q]);
+  }
+  return out.length > 0 ? out : undefined;
+}
+
+/** Todos los puntos de la pieza: las esquinas de sus caras y los extremos de sus segmentos. */
+export function piecePoints(piece: Piece): Vec3[] {
+  const out: Vec3[] = [];
+  for (const face of piece.faces) for (const p of face) out.push(p);
+  if (piece.segments) for (const [a, b] of piece.segments) out.push(a, b);
+  return out;
 }
 
 /** Color de una cara: el propio si está pintada, si no el de la pieza. */
@@ -89,8 +114,9 @@ const WELD = 1e-7;
 
 let nextId = 1;
 
-export function makePiece(faces: Vec3[][], color: number, faceColors?: number[], faceTextures?: (FaceTexture | null | undefined)[], faceFlags?: (number | undefined)[]): Piece {
+export function makePiece(faces: Vec3[][], color: number, faceColors?: number[], faceTextures?: (FaceTexture | null | undefined)[], faceFlags?: (number | undefined)[], segments?: PieceSegment[]): Piece {
   const piece: Piece = { id: nextId++, faces, color };
+  if (segments && segments.length > 0) piece.segments = segments;
   const painted = normalizeFaceColors(color, faceColors, faces.length);
   if (painted) piece.faceColors = painted;
   const textures = normalizeTextures(faceTextures);
@@ -200,6 +226,8 @@ export function clipPiece(piece: Piece, plane: Plane): Piece | null {
     }
   });
 
+  // Un segmento suelto se queda si sus dos extremos caen del lado que se conserva.
+  const segments = piece.segments?.filter(([a, b]) => side(a) <= EPS && side(b) <= EPS);
   const cap = buildCap(cut, n);
   if (cap) {
     faces.push(cap);
@@ -217,7 +245,7 @@ export function clipPiece(piece: Piece, plane: Plane): Piece | null {
       })
     : undefined;
   const flags = piece.faceFlags ? faces.map((_, i) => (sources[i] >= 0 ? piece.faceFlags![sources[i]] : 0)) : undefined;
-  const result = keepGroup(makePiece(faces, piece.color, colors, textures, flags), piece);
+  const result = keepGroup(makePiece(faces, piece.color, colors, textures, flags, segments), piece);
   return volume(result) > 1e-9 ? result : null;
 }
 

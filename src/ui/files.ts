@@ -185,7 +185,7 @@ export function createFiles(host: FilesHost): Files {
   /** Empieza de cero: lienzo en blanco sin piezas, capas, animación ni referencias, y sin archivo vinculado. No se puede deshacer. */
   function newProject(): void {
     if (!confirmDiscard('¿Empezar un proyecto nuevo de todas formas?')) return;
-    replaceProject({ pieces: [], marks: [], references: [], discarded: { pieces: 0, faces: 0 } }, 'Sin título', null);
+    replaceProject({ pieces: [], marks: [], references: [], discarded: { pieces: 0, faces: 0, segments: 0 } }, 'Sin título', null);
     statusEl.textContent = 'Proyecto nuevo en blanco';
   }
 

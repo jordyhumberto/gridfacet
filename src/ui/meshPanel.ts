@@ -63,6 +63,13 @@ export function createMeshPanel(host: MeshPanelHost): MeshPanel {
     meshTool.flattenOnRelease = meshAutoFlatEl.checked;
     statusEl.textContent = meshAutoFlatEl.checked ? 'Aplanar al soltar activado: al soltar un vértice, las caras que queden torcidas se aplanan solas' : 'Aplanar al soltar desactivado: las caras torcidas solo se marcan en naranja';
   });
+  const meshTipFacesEl = document.getElementById('meshTipFaces') as HTMLInputElement;
+  meshTipFacesEl.checked = meshPref.get('tipFaces') === '1';
+  meshTipFacesEl.addEventListener('change', () => {
+    meshPref.set('tipFaces', meshTipFacesEl.checked ? '1' : '0');
+    meshTool.tipFaces = meshTipFacesEl.checked;
+    statusEl.textContent = meshTipFacesEl.checked ? 'Punta con caras: la copia se une al original con caras nuevas' : 'Punta sin caras: la copia se une al original solo con un segmento; las caras las creas tú (Crear cara, F)';
+  });
   const meshUnlitEl = document.getElementById('meshUnlit') as HTMLInputElement;
   const meshBehindEl = document.getElementById('meshBehind') as HTMLInputElement;
   const meshTool = new MeshTool({
@@ -176,6 +183,7 @@ export function createMeshPanel(host: MeshPanelHost): MeshPanel {
   meshSeeBehindEl.checked = meshPref.get('seeBehind') !== '0';
   meshTool.setSeeBehind(meshSeeBehindEl.checked, false);
   meshTool.flattenOnRelease = meshAutoFlatEl.checked;
+  meshTool.tipFaces = meshTipFacesEl.checked;
   meshSeeBehindEl.addEventListener('change', () => {
     meshPref.set('seeBehind', meshSeeBehindEl.checked ? '1' : '0');
     meshTool.setSeeBehind(meshSeeBehindEl.checked);

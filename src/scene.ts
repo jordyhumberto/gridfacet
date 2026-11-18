@@ -10,6 +10,9 @@ function sameGeometry(a: Piece, b: Piece): boolean {
   if (a.id !== b.id || a.color !== b.color || a.faces.length !== b.faces.length || a.group !== b.group || a.layer !== b.layer) return false;
   if (a.faceTextures !== b.faceTextures && JSON.stringify(a.faceTextures?.map((t) => t !== null)) !== JSON.stringify(b.faceTextures?.map((t) => t !== null))) return false;
   if (JSON.stringify(a.faceColors) !== JSON.stringify(b.faceColors) || JSON.stringify(a.faceFlags) !== JSON.stringify(b.faceFlags)) return false;
+  const sa = a.segments ?? [];
+  const sb = b.segments ?? [];
+  if (sa.length !== sb.length || !sa.every(([p, q], i) => p.every((v, k) => v === sb[i][0][k]) && q.every((v, k) => v === sb[i][1][k]))) return false;
   return a.faces.every((face, i) => face.length === b.faces[i].length && face.every((p, k) => p[0] === b.faces[i][k][0] && p[1] === b.faces[i][k][1] && p[2] === b.faces[i][k][2]));
 }
 

@@ -50,6 +50,9 @@ function setup(options: { selected?: () => Piece[] } = {}) {
 function isSymmetric(pieces: Piece[]): boolean {
   const keys = new Set(pieces.flatMap((piece) => uniqueVertices(piece).map(vertexKey)));
   const mirrored = (p: Vec3) => vertexKey([-p[0], p[1], p[2]]);
+  // Cada segmento suelto tiene su imagen en espejo.
+  const segments = new Set(pieces.flatMap((piece) => (piece.segments ?? []).map(([a, b]) => [vertexKey(a), vertexKey(b)].sort().join('>'))));
+  if (!pieces.every((piece) => (piece.segments ?? []).every(([a, b]) => segments.has([mirrored(a), mirrored(b)].sort().join('>'))))) return false;
   if (!pieces.every((piece) => uniqueVertices(piece).every((p) => keys.has(mirrored(p))))) return false;
   const faces = new Set(pieces.flatMap((piece) => piece.faces.map((face) => face.map(vertexKey).sort().join('|'))));
   return pieces.every((piece) => piece.faces.every((face) => faces.has(face.map(mirrored).sort().join('|'))));
@@ -722,6 +725,7 @@ describe('Punta (tecla I)', () => {
 
   it('con vértices elegidos saca la copia, es un solo paso de deshacer y respeta la simetría', () => {
     const s = setup();
+    s.tool.tipFaces = true;
     s.choose((p) => p[0] === Math.max(...uniqueVertices(s.model.all()[0]).map((q) => q[0])) && p[1] === Math.max(...uniqueVertices(s.model.all()[0]).map((q) => q[1])));
     const depth = s.model.undoDepth;
     const faces = s.model.all()[0].faces.length;
@@ -755,6 +759,7 @@ describe('Punta con vértices sobre el plano de simetría', () => {
 
   it('un vértice del plano saca una sola punta, sin caras repetidas, y la punta queda en el plano', () => {
     const s = withPlaneVertex();
+    s.tool.tipFaces = true;
     s.choose((p) => Math.abs(p[0]) < 1e-9 && p[1] === s.top && p[2] === s.front);
     const before = s.model.all()[0];
     s.tool.tipSelected(0.5);
@@ -769,6 +774,7 @@ describe('Punta con vértices sobre el plano de simetría', () => {
 
   it('un vértice del plano junto con uno de un lado: simétrico y sin caras repetidas', () => {
     const s = withPlaneVertex();
+    s.tool.tipFaces = true;
     const right = Math.max(...uniqueVertices(s.model.all()[0]).map((p) => p[0]));
     s.choose((p) => p[1] === s.top && p[2] === s.front && (Math.abs(p[0]) < 1e-9 || p[0] === right));
     const before = s.model.all()[0];
@@ -779,6 +785,65 @@ describe('Punta con vértices sobre el plano de simetría', () => {
     // Tres puntas (plano, derecha e izquierda) y una cara por segmento: dos cuadriláteros hacia el del plano y dos triángulos por cada lado.
     expect(uniqueVertices(after).length).toBe(uniqueVertices(before).length + 3);
     expect(after.faces.length).toBe(before.faces.length + 6);
+  });
+});
+
+describe('Punta sin caras (solo un segmento suelto)', () => {
+  const cornerOf = (s: ReturnType<typeof setup>) => uniqueVertices(s.model.all()[0]).reduce((a, b) => (b[0] + b[1] + b[2] > a[0] + a[1] + a[2] ? b : a));
+
+  it('con simetría saca el vértice y su segmento en los dos lados, sin caras nuevas, en un solo paso de deshacer', () => {
+    const s = setup();
+    const corner = cornerOf(s);
+    s.choose((p) => vertexKey(p) === vertexKey(corner));
+    const before = s.model.all()[0];
+    const depth = s.model.undoDepth;
+    s.tool.tipSelected(0.5);
+    const after = s.model.all()[0];
+    expect(s.model.undoDepth).toBe(depth + 1);
+    expect(after.faces).toEqual(before.faces);
+    expect(after.segments).toHaveLength(2);
+    expect(uniqueVertices(after)).toHaveLength(uniqueVertices(before).length + 2);
+    expect(isSymmetric(s.model.all())).toBe(true);
+    expect(s.messages[s.messages.length - 1]).toContain('segmento');
+    s.model.undo();
+    expect(s.model.all()[0].segments).toBeUndefined();
+    expect(uniqueVertices(s.model.all()[0])).toHaveLength(uniqueVertices(before).length);
+  });
+
+  it('al jalar la copia, el segmento la sigue y la gemela se mueve en espejo', () => {
+    const s = setup();
+    const corner = cornerOf(s);
+    const before = s.model.all()[0];
+    s.choose((p) => vertexKey(p) === vertexKey(corner));
+    s.tool.tipSelected(0.5);
+    const [tip] = chosenPositions(s.model, s.tool);
+    dragChosen(s.tool, [0.25, 0.5, 0]);
+    const [moved] = chosenPositions(s.model, s.tool);
+    expect(moved[0]).toBeCloseTo(tip[0] + 0.25, 5);
+    const piece = s.model.all()[0];
+    // Un extremo del segmento sigue en el vértice original y el otro en la copia movida.
+    expect(piece.segments!.some(([a, b]) => vertexKey(a) === vertexKey(corner) && vertexKey(b) === vertexKey(moved))).toBe(true);
+    expect(piece.segments!.some(([a, b]) => vertexKey(a) === vertexKey([-corner[0], corner[1], corner[2]]) && vertexKey(b) === vertexKey([-moved[0], moved[1], moved[2]]))).toBe(true);
+    expect(isSymmetric(s.model.all())).toBe(true);
+    expect(piece.faces).toEqual(before.faces);
+  });
+
+  it('un vértice sobre el plano saca un solo segmento', () => {
+    const s = setup();
+    const piece = s.model.all()[0];
+    const vs = uniqueVertices(piece);
+    const top = Math.max(...vs.map((p) => p[1]));
+    const front = Math.max(...vs.map((p) => p[2]));
+    const [a, b] = vs.filter((p) => p[1] === top && p[2] === front);
+    const split = splitEdge(piece, a, b, 0.5)!;
+    s.model.apply({ added: [split.piece], removed: [piece] });
+    s.tool.refresh();
+    s.choose((p) => Math.abs(p[0]) < 1e-9 && p[1] === top && p[2] === front);
+    s.tool.tipSelected(0.5);
+    const after = s.model.all()[0];
+    expect(after.segments).toHaveLength(1);
+    expect(after.faces).toEqual(split.piece.faces);
+    expect(isSymmetric(s.model.all())).toBe(true);
   });
 });
 

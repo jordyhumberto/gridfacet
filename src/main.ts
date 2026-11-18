@@ -41,7 +41,7 @@ import { connectedPieces, sizeOf } from './core/connected';
 import { bevelChange, edgeBetween, nearestEdge, type PieceEdge } from './core/bevel';
 import { buildShape, MAX_RINGS, MAX_SIDES, MIN_RINGS, MIN_SIDES, SECTIONS, SHAPES, type ShapeKind, type ShapeSpec, type SphereSection } from './core/shapes';
 import { facesAt, paintChange, type FaceRef } from './core/paint';
-import { faceCentre, faceColorOf, newGroupId, reserveGroupIds, withGroup } from './core/piece';
+import { faceCentre, faceColorOf, newGroupId, piecePoints, reserveGroupIds, withGroup } from './core/piece';
 import { VertexTool } from './tools/vertexTool';
 import { AXIS_COLORS } from './tools/meshTool';
 import { isConvex } from './core/convex';
@@ -481,7 +481,7 @@ function screenVertex(event: PointerEvent): Vec3 | null {
   for (const p of model.points()) consider(p);
   for (const piece of model.all()) {
     if (hidden.has(piece.id)) continue;
-    for (const face of piece.faces) for (const p of face) consider(p);
+    for (const p of piecePoints(piece)) consider(p);
   }
   candidates.sort((a, b) => a.dist - b.dist);
   // El más cercano a la vista que no esté tapado (con "Solo visibles"); sin la casilla, el más cercano al cursor.
@@ -1017,7 +1017,7 @@ function finishMarquee(commit: boolean, event?: PointerEvent): void {
     if (hidden.has(piece.id)) continue;
     center.set(0, 0, 0);
     let count = 0;
-    for (const face of piece.faces) for (const p of face) {
+    for (const p of piecePoints(piece)) {
       center.x += p[0];
       center.y += p[1];
       center.z += p[2];
@@ -2673,7 +2673,7 @@ function setGridSize(requested: number): void {
   if (typeof syncSymmetry === 'function') syncSymmetry();
   sizeInput.value = String(gridSize);
   sizeLabel.textContent = `${gridSize} × ${gridSize} × ${gridSize} celdas (${gridSize * 3} placas de alto)`;
-  const outside = model.all().filter((piece) => piece.faces.some((face) => face.some((p) => Math.abs(p[0]) > gridSize / 2 || Math.abs(p[2]) > gridSize / 2 || p[1] > gridSize))).length;
+  const outside = model.all().filter((piece) => piecePoints(piece).some((p) => Math.abs(p[0]) > gridSize / 2 || Math.abs(p[2]) > gridSize / 2 || p[1] > gridSize)).length;
   // Cambiar el tamaño de la sala se guarda con el proyecto: cuenta como cambio sin guardar (al abrir un archivo se limpia después).
   if (gridSize !== before) {
     files.markDirty();

@@ -11,7 +11,9 @@ import {
   faceNormal,
   keepGroup,
   makePiece,
+  mapSegments,
   newGroupId,
+  piecePoints,
   volume,
   withGroup,
   type Piece,
@@ -39,7 +41,7 @@ const centroid = (points: Vec3[]): Vec3 => {
 
 const uniquePoints = (pieces: Piece[]): Vec3[] => {
   const seen = new Map<string, Vec3>();
-  for (const piece of pieces) for (const face of piece.faces) for (const p of face) seen.set(key(p), p);
+  for (const piece of pieces) for (const p of piecePoints(piece)) seen.set(key(p), p);
   return [...seen.values()];
 };
 
@@ -203,7 +205,7 @@ export function mergeChange(pieces: Piece[]): { change: Change } | { error: stri
     );
     return match ? match.color : merged.color;
   });
-  const result = makePiece(faces, merged.color, colors);
+  const result = makePiece(faces, merged.color, colors, undefined, undefined, pieces.flatMap((piece) => piece.segments ?? []));
   const groups = new Set(pieces.map((piece) => piece.group));
   if (groups.size === 1) keepGroup(result, pieces[0]);
   const layers = new Set(pieces.map((piece) => piece.layer));
@@ -221,7 +223,7 @@ export function joinChange(pieces: Piece[]): { change: Change } | { error: strin
   const colors = pieces.flatMap((piece) => piece.faces.map((_, i) => faceColorOf(piece, i)));
   const textures = pieces.flatMap((piece) => piece.faces.map((_, i) => piece.faceTextures?.[i] ?? null));
   const flags = pieces.flatMap((piece) => piece.faces.map((_, i) => piece.faceFlags?.[i] ?? 0));
-  const result = makePiece(faces, pieces[0].color, colors, textures, flags);
+  const result = makePiece(faces, pieces[0].color, colors, textures, flags, pieces.flatMap((piece) => piece.segments ?? []));
   if (new Set(pieces.map((piece) => piece.group)).size === 1) keepGroup(result, pieces[0]);
   if (new Set(pieces.map((piece) => piece.layer)).size === 1 && pieces[0].layer !== undefined) result.layer = pieces[0].layer;
   return { change: { added: [result], removed: pieces } };
@@ -264,7 +266,7 @@ export function repeatChange(pieces: Piece[], spec: RepeatSpec): Change {
     // Cada copia de un grupo forma su propio grupo, para no pegarse al original.
     const groups = new Map<number, number>();
     for (const piece of pieces) {
-      const copy = makePiece(piece.faces.map((face) => face.map(map)), piece.color, piece.faceColors, piece.faceTextures, piece.faceFlags);
+      const copy = makePiece(piece.faces.map((face) => face.map(map)), piece.color, piece.faceColors, piece.faceTextures, piece.faceFlags, mapSegments(piece.segments, map));
       if (piece.layer !== undefined) copy.layer = piece.layer;
       if (piece.group === undefined) {
         added.push(copy);

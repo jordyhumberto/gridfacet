@@ -1,7 +1,7 @@
 import { parseAnimation, type Animation } from './animation';
 import { isConvex } from './convex';
 import type { Layer } from './layers';
-import { makePiece, volume, type Piece, type Vec3 } from './piece';
+import { makePiece, volume, type Piece, type PieceSegment, type Vec3 } from './piece';
 import { parseReferences, type RefImage } from './references';
 import { canonPiece, cleanRepeats } from './vertices';
 import { packTexture, unpackTexture, type PackedTexture } from './texture';
@@ -20,7 +20,7 @@ const VERSION = 1;
 interface ProjectFile {
   format: typeof FORMAT;
   version: number;
-  pieces: { color: number; faces: Vec3[][]; faceColors?: number[]; faceTextures?: (PackedTexture | null)[]; faceFlags?: number[]; group?: number; groupName?: string; layer?: number }[];
+  pieces: { color: number; faces: Vec3[][]; faceColors?: number[]; faceTextures?: (PackedTexture | null)[]; faceFlags?: number[]; segments?: PieceSegment[]; group?: number; groupName?: string; layer?: number }[];
   /** Capas (opcional: los proyectos antiguos tienen solo la primera). */
   layers?: LayerState;
   /** Puntos de referencia (opcional: los proyectos antiguos no lo tienen). */
@@ -37,9 +37,10 @@ export function serializeProject(pieces: Piece[], marks: Vec3[] = [], gridSize?:
   const project: ProjectFile = {
     format: FORMAT,
     version: VERSION,
-    pieces: pieces.map(({ color, faces, faceColors, faceTextures, faceFlags, group, groupName, layer }) => ({
+    pieces: pieces.map(({ color, faces, faceColors, faceTextures, faceFlags, segments, group, groupName, layer }) => ({
       color,
       faces,
+      ...(segments && segments.length > 0 ? { segments } : {}),
       ...(faceColors ? { faceColors } : {}),
       ...(faceTextures ? { faceTextures: faceTextures.map((t) => (t ? packTexture(t) : null)) } : {}),
       ...(faceFlags ? { faceFlags } : {}),
@@ -63,13 +64,16 @@ const isVec3 = (v: unknown): v is Vec3 =>
 export interface Discarded {
   pieces: number;
   faces: number;
+  /** Segmentos sueltos dañados. */
+  segments: number;
 }
 
 /** Frase para la barra de estado con lo que se dejó fuera al abrir; vacía si no se descartó nada. */
-export function describeDiscarded({ pieces, faces }: Discarded): string {
+export function describeDiscarded({ pieces, faces, segments }: Discarded): string {
   const parts: string[] = [];
   if (pieces > 0) parts.push(`${pieces} ${pieces === 1 ? 'pieza dañada' : 'piezas dañadas'}`);
   if (faces > 0) parts.push(`${faces} ${faces === 1 ? 'cara dañada' : 'caras dañadas'}`);
+  if (segments > 0) parts.push(`${segments} ${segments === 1 ? 'segmento dañado' : 'segmentos dañados'}`);
   return parts.length > 0 ? `Se descartaron ${parts.join(' y ')} del archivo` : '';
 }
 
@@ -95,7 +99,7 @@ export function parseProjectFull(text: string): { pieces: Piece[]; marks: Vec3[]
   if (!Array.isArray(file.pieces)) throw new Error('El proyecto no contiene piezas');
 
   // Una pieza o una cara dañada no tira el archivo entero: se deja fuera, se cuenta y se carga el resto.
-  const discarded: Discarded = { pieces: 0, faces: 0 };
+  const discarded: Discarded = { pieces: 0, faces: 0, segments: 0 };
   const problems: string[] = [];
   const pieces: Piece[] = [];
   file.pieces.forEach((raw, i) => {
@@ -120,11 +124,15 @@ type RawPiece = Partial<ProjectFile['pieces'][number]> | null | undefined;
 /** Una pieza del archivo; lanza un Error con un mensaje legible si no se puede leer. Las caras dañadas se quitan (y se cuentan en `discarded`). */
 function parsePiece(raw: RawPiece, i: number, discarded: Discarded): Piece {
   const label = `Pieza ${i + 1}`;
-  const { color, faces: rawFaces, faceColors: rawColors, faceTextures: rawTextures, faceFlags: rawFlags, group, groupName, layer } = raw ?? {};
+  const { color, faces: faceList, faceColors: rawColors, faceTextures: rawTextures, faceFlags: rawFlags, segments: segmentList, group, groupName, layer } = raw ?? {};
   if (!Number.isInteger(color) || color! < 0 || color! > 0xffffff) throw new Error(`${label}: color no válido`);
-  if (!Array.isArray(rawFaces) || rawFaces.length < 1) throw new Error(`${label}: le faltan caras`);
+  // Una pieza puede tener solo segmentos sueltos: entonces no hacen falta caras.
+  const rawSegments: unknown[] = Array.isArray(segmentList) ? segmentList : [];
+  const segments = rawSegments.filter((s): s is PieceSegment => Array.isArray(s) && s.length === 2 && s.every(isVec3));
+  const rawFaces = Array.isArray(faceList) ? faceList : [];
+  if (rawFaces.length < 1 && segments.length < 1) throw new Error(`${label}: le faltan caras`);
   const good = rawFaces.map((f) => Array.isArray(f) && f.length >= 3 && f.every(isVec3));
-  if (!good.some(Boolean)) throw new Error(`${label}: tiene caras no válidas`);
+  if (rawFaces.length > 0 && !good.some(Boolean) && segments.length < 1) throw new Error(`${label}: tiene caras no válidas`);
   // Los datos por cara siguen en paralelo con las caras que se conservan.
   const keep = <T,>(list: unknown): T[] | undefined => (Array.isArray(list) && list.length === rawFaces.length ? (list.filter((_, k) => good[k]) as T[]) : undefined);
   const faces = rawFaces.filter((_, k) => good[k]) as Vec3[][];
@@ -137,7 +145,7 @@ function parsePiece(raw: RawPiece, i: number, discarded: Discarded): Piece {
   const textures = Array.isArray(faceTextures) && faceTextures.length === faces.length ? faceTextures.map((t) => unpackTexture(t)) : undefined;
   const flags = Array.isArray(faceFlags) && faceFlags.length === faces.length && faceFlags.every((f) => Number.isInteger(f) && f >= 0 && f <= 7) ? faceFlags : undefined;
   // Los proyectos guardados con vértices repetidos en una cara (ver cleanRepeats) se reparan al abrirlos.
-  const piece = canonPiece(cleanRepeats(makePiece(faces, color as number, painted, textures, flags)));
+  const piece = canonPiece(cleanRepeats(makePiece(faces, color as number, painted, textures, flags, segments)));
   if (Number.isInteger(group) && (group as number) > 0) {
     piece.group = group as number;
     if (typeof groupName === 'string' && groupName.trim()) piece.groupName = groupName.trim().slice(0, 60);
@@ -146,5 +154,6 @@ function parsePiece(raw: RawPiece, i: number, discarded: Discarded): Piece {
   // Un sólido cerrado y convexo tiene que encerrar volumen; las mallas libres (abiertas, de una cara o torcidas) no lo exigen.
   if (faces.length >= 4 && isConvex(piece) && !(volume(piece) > 1e-9)) throw new Error(`${label}: no encierra volumen`);
   discarded.faces += rawFaces.length - faces.length;
+  discarded.segments += rawSegments.length - segments.length;
   return piece;
 }

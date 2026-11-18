@@ -1,7 +1,7 @@
 import { vertexKey } from '../core/key';
 import * as THREE from 'three';
 import { triangulateFace } from '../core/convex';
-import { FACE_BEHIND, FACE_DOUBLE, FACE_UNLIT, faceColorOf, type Piece } from '../core/piece';
+import { FACE_BEHIND, FACE_DOUBLE, FACE_UNLIT, faceColorOf, piecePoints, type Piece } from '../core/piece';
 import { allowUnlit, edgeKey, faceVertexNormals, smoothEdges } from './shading';
 
 /** Geometría sin indexar con normales planas; cada cara se triangula (en abanico si es convexa). */
@@ -73,6 +73,8 @@ export function pieceOutline(piece: Piece, color = OUTLINE_COLOR): THREE.LineSeg
       points.push(a[0], a[1], a[2], b[0], b[1], b[2]);
     }
   }
+  // Los segmentos sueltos se dibujan como líneas, con el mismo color que el contorno (no producen triángulos).
+  for (const [a, b] of piece.segments ?? []) points.push(a[0], a[1], a[2], b[0], b[1], b[2]);
   const geometry = new THREE.BufferGeometry();
   geometry.setAttribute('position', new THREE.Float32BufferAttribute(points, 3));
   const lines = new THREE.LineSegments(geometry, new THREE.LineBasicMaterial({ color }));
@@ -84,13 +86,11 @@ export function pieceOutline(piece: Piece, color = OUTLINE_COLOR): THREE.LineSeg
 export function pieceVertices(piece: Piece): THREE.Points {
   const seen = new Set<string>();
   const positions: number[] = [];
-  for (const face of piece.faces) {
-    for (const p of face) {
-      const key = vertexKey(p);
-      if (seen.has(key)) continue;
-      seen.add(key);
-      positions.push(p[0], p[1], p[2]);
-    }
+  for (const p of piecePoints(piece)) {
+    const key = vertexKey(p);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    positions.push(p[0], p[1], p[2]);
   }
   const geometry = new THREE.BufferGeometry();
   geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));

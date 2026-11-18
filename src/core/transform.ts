@@ -1,5 +1,5 @@
 import type { Change } from './cut';
-import { keepGroup, makePiece, type Piece, type Vec3 } from './piece';
+import { keepGroup, makePiece, mapSegments, piecePoints, type Piece, type Vec3 } from './piece';
 import { remapTexture } from './texture';
 
 /** Paso más fino al mover, en horizontal y en vertical: un cuarto de celda. */
@@ -7,7 +7,7 @@ export const STEP_XZ = 0.25;
 export const STEP_Y = 0.25;
 
 function mapPiece(piece: Piece, map: (p: Vec3) => Vec3): Piece {
-  return keepGroup(makePiece(piece.faces.map((face) => face.map(map)), piece.color, piece.faceColors, piece.faceTextures, piece.faceFlags), piece);
+  return keepGroup(makePiece(piece.faces.map((face) => face.map(map)), piece.color, piece.faceColors, piece.faceTextures, piece.faceFlags, mapSegments(piece.segments, map)), piece);
 }
 
 export function translatePiece(piece: Piece, dx: number, dy: number, dz: number): Piece {
@@ -76,12 +76,10 @@ export function boundsOf(pieces: Piece[]): { min: Vec3; max: Vec3 } | null {
   const min: Vec3 = [Infinity, Infinity, Infinity];
   const max: Vec3 = [-Infinity, -Infinity, -Infinity];
   for (const piece of pieces) {
-    for (const face of piece.faces) {
-      for (const p of face) {
-        for (let i = 0; i < 3; i++) {
-          min[i] = Math.min(min[i], p[i]);
-          max[i] = Math.max(max[i], p[i]);
-        }
+    for (const p of piecePoints(piece)) {
+      for (let i = 0; i < 3; i++) {
+        min[i] = Math.min(min[i], p[i]);
+        max[i] = Math.max(max[i], p[i]);
       }
     }
   }
@@ -144,7 +142,7 @@ export function mirrorPiece(piece: Piece, axis: Axis, center: number): Piece {
   const faces = piece.faces.map((face) => face.map(flip).reverse());
   // El espejo invierte el orden de los vértices y con él el marco de cada cara: las texturas se remuestrean al marco nuevo (flip es su propia inversa).
   const textures = piece.faceTextures?.map((texture, i) => (texture ? remapTexture(texture, piece.faces[i], faces[i], flip) : null));
-  return keepGroup(makePiece(faces, piece.color, piece.faceColors, textures, piece.faceFlags), piece);
+  return keepGroup(makePiece(faces, piece.color, piece.faceColors, textures, piece.faceFlags, mapSegments(piece.segments, flip)), piece);
 }
 
 /**
