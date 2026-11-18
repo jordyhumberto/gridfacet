@@ -85,6 +85,8 @@ camera.position.set(8, 7, 10);
 const controls = new OrbitControls(camera, renderer.domElement);
 controls.target.set(0, 0.5, 0);
 controls.enableDamping = true;
+// Arrastrar con la rueda (botón del medio) desplaza la cámara en pantalla, igual que las flechas; el botón derecho también. La rueda sigue haciendo zoom.
+controls.mouseButtons = { LEFT: THREE.MOUSE.ROTATE, MIDDLE: THREE.MOUSE.PAN, RIGHT: THREE.MOUSE.PAN };
 
 // La sala: suelo y dos paredes de fondo (x y z mínimos), como en MagicaVoxel. Cada una tiene su cuadrícula visible
 // y una superficie invisible sobre la que también se puede colocar. Su tamaño (en celdas, siempre par) se puede cambiar.
