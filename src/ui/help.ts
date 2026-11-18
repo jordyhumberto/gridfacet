@@ -21,6 +21,7 @@ export const MODE_INFO: Record<Mode, { name: string; color: string }> = {
 /** Guía completa de cada herramienta: todo lo que se puede hacer con ratón y teclado estando en ella. */
 export const VIEW_GUIDE: [string, string][] = [
   ['Arrastrar en vacío', 'orbitar la vista'],
+  ['Arrastrar con la rueda', 'desplazar la cámara en pantalla, como las flechas (el botón derecho también); girar la rueda hace zoom'],
   ['Rueda', 'acercar / alejar'],
   ['Flechas', 'mover la cámara (Ctrl: más rápido)'],
   ['X / Y / Z', 'simetría en ese eje'],
