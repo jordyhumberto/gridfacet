@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { CATALOG, buildPiece } from '../core/catalog';
 import { makePiece, type Piece, type Vec3 } from '../core/piece';
 import { translatePiece } from '../core/transform';
@@ -878,5 +878,43 @@ describe('Punta: jalar la copia', () => {
     s.tool.tipSelected(0.5);
     expect(uniqueVertices(s.model.all()[0]).length).toBe(count + 2);
     expect(isSymmetric(s.model.all())).toBe(true);
+  });
+});
+
+describe('Clic sobre una cara en Malla', () => {
+  // `up` suelta la cámara con un `pointercancel` sintético; el entorno de pruebas no trae PointerEvent.
+  beforeEach(() => void vi.stubGlobal('PointerEvent', class { constructor(public type: string, public init?: unknown) {} }));
+  afterEach(() => void vi.unstubAllGlobals());
+  const click = (s: ReturnType<typeof setup>, x: number, y: number) => {
+    const event = { button: 0, shiftKey: false, altKey: false, ctrlKey: false, metaKey: false, clientX: x, clientY: y, pointerId: 1, stopImmediatePropagation() {}, preventDefault() {} };
+    for (const fn of s.handlers.get('pointerdown') ?? []) fn(event);
+    for (const fn of s.handlers.get('pointerup') ?? []) fn(event);
+  };
+  const lookAtCube = (s: ReturnType<typeof setup>) => {
+    s.camera.position.set(0, 0.5, 6);
+    s.camera.lookAt(0, 0.5, 0);
+    s.camera.updateMatrixWorld(true);
+    s.camera.updateProjectionMatrix();
+  };
+
+  it('elige solo los vértices de esa cara, avisa al anfitrión y no toca la pieza', () => {
+    const s = setup();
+    lookAtCube(s);
+    const piece = s.model.all()[0];
+    const depth = s.model.undoDepth;
+    click(s, 400, 300);
+    const chosen = chosenPositions(s.model, s.tool);
+    expect(chosen).toHaveLength(4);
+    expect(new Set(chosen.map((p) => p[2])).size).toBe(1);
+    expect(s.consumedCount()).toBeGreaterThan(0);
+    expect(s.model.undoDepth).toBe(depth);
+    expect(s.model.all()[0]).toBe(piece);
+  });
+
+  it('un clic en vacío no elige nada de la pieza', () => {
+    const s = setup();
+    lookAtCube(s);
+    click(s, 20, 20);
+    expect(chosenPositions(s.model, s.tool)).toHaveLength(0);
   });
 });

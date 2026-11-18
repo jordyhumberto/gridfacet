@@ -139,7 +139,7 @@ export const GUIDE: Record<Mode, [string, string][]> = {
     ['Panel', 'Elegir: Elegir todos. Vértices: Punta (saca una copia unida al original por un segmento; con la casilla «Punta con caras», también con caras) · Fusionar vértices (junta los elegidos en uno) · Borrar vértices · Vértices a la rejilla · Soldar cercanos'],
     ['Soldar cercanos (botón)', 'junta los vértices que están a menos de la «Distancia» (por defecto 0,002 celdas) de otro, cada grupo en su punto medio, y quita las caras que se quedan sin superficie. Con vértices elegidos solo actúa sobre ellos; sin elegir ninguno, sobre todas las piezas que se ven. Con simetría el modelo sigue simétrico. Al abrir un proyecto la barra de estado avisa si hay pares así'],
     ['Panel (caras)', 'Crear cara con tres o más vértices · Borrar / Invertir / Extruir las caras cuyos vértices están todos elegidos'],
-    ['Clic en una pieza', 'elegirla: solo se muestran sus vértices; en vacío suelta todo'],
+    ['Clic en una cara', 'elige solo los vértices de esa cara (Shift suma otra); en vacío suelta todo. Para elegir la pieza entera usa Elegir (S)'],
     ['Simetría', 'con sus casillas X / Y / Z activas (en el panel Simetría; en Malla las teclas X / Y / Z fijan el eje de movimiento) el movimiento se refleja en las piezas espejo'],
     ['Malla libre', 'una pieza con un vértice hundido deja de ser convexa: se puede mover, extruir y pintar, pero no cortar, restar ni unir'],
     ['Esc', 'volver a Colocar'],

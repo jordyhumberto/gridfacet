@@ -1077,7 +1077,8 @@ export class MeshTool {
       const { x, y } = this.pendingEdge;
       this.pendingEdge = null;
       // Un clic sin arrastrar sobre un segmento elige sus dos vértices; un doble clic sigue el segmento en línea recta.
-      if (Math.hypot(e.clientX - x, e.clientY - y) < DRAG_THRESHOLD && this.clickEdge(x, y)) {
+      // Si no hay segmento a mano, un clic sobre una cara elige los vértices de esa cara (y no la pieza entera, que para eso está Elegir).
+      if (Math.hypot(e.clientX - x, e.clientY - y) < DRAG_THRESHOLD && (this.clickEdge(x, y) || this.clickFace(x, y))) {
         this.consume(e);
         // Como al añadir un vértice: la cámara recibió el pulsar pero no recibirá el soltar, y el clic no debe cambiar la pieza elegida.
         this.host.domElement.dispatchEvent(new PointerEvent('pointercancel', { pointerId: e.pointerId, bubbles: true }));
@@ -2176,6 +2177,18 @@ export class MeshTool {
     this.paint();
     this.host.onSelectionChange();
     this.host.status(again ? `Segmento seguido en línea recta: ${keys.size} vértices elegidos` : 'Segmento elegido (doble clic: seguirlo en línea recta)');
+    return true;
+  }
+
+  /** Clic sobre una cara: deja elegidos solo los vértices de esa cara. Devuelve false si el clic no cayó en ninguna. */
+  private clickFace(x: number, y: number): boolean {
+    const face = this.faceAt(x, y);
+    if (!face) return false;
+    const keys = new Set(face.piece.faces[face.index].map(vertexKey));
+    this.selection = new Map([[face.piece.id, keys]]);
+    this.paint();
+    this.host.onSelectionChange();
+    this.host.status(`Cara elegida: ${keys.size} vértices (Shift+clic en otra cara suma sus vértices)`);
     return true;
   }
 
