@@ -73,7 +73,9 @@ class FaceBuckets {
  * `perPiece`: una malla por pieza, tal como están en la escena.
  * `perLayer`: como `merged` pero por separado en cada capa, con el nombre de la capa en cada malla.
  */
-export function buildExportMeshes(pieces: Piece[], mode: ExportMode, layerName: (layer: number) => string = (layer) => `Capa_${layer}`): ExportMesh[] {
+export function buildExportMeshes(allPieces: Piece[], mode: ExportMode, layerName: (layer: number) => string = (layer) => `Capa_${layer}`): ExportMesh[] {
+  // Los segmentos sueltos no se exportan: una pieza sin caras no da ninguna malla.
+  const pieces = allPieces.filter((piece) => piece.faces.length > 0);
   if (mode === 'perPiece') {
     return pieces.flatMap((piece) => {
       // Un grupo con nombre da nombre a sus objetos: útil para reconocer las partes al hacer el rigging en Blender.

@@ -102,7 +102,7 @@ describe('archivos dañados', () => {
     const loaded = parseProjectFull(text);
     expect(loaded.pieces).toHaveLength(1);
     expect(loaded.pieces[0].faces).toHaveLength(5);
-    expect(loaded.discarded).toEqual({ pieces: 0, faces: 1 });
+    expect(loaded.discarded).toEqual({ pieces: 0, faces: 1, segments: 0 });
   });
 
   it('al descartar una cara, los colores por cara siguen en paralelo', () => {
@@ -135,7 +135,7 @@ describe('archivos dañados', () => {
 describe('describeDiscarded', () => {
   it('dice qué se dejó fuera y calla si no hubo nada', async () => {
     const { describeDiscarded } = await import('./project');
-    expect(describeDiscarded({ pieces: 0, faces: 0 })).toBe('');
-    expect(describeDiscarded({ pieces: 1, faces: 3 })).toBe('Se descartaron 1 pieza dañada y 3 caras dañadas del archivo');
+    expect(describeDiscarded({ pieces: 0, faces: 0, segments: 0 })).toBe('');
+    expect(describeDiscarded({ pieces: 1, faces: 3, segments: 0 })).toBe('Se descartaron 1 pieza dañada y 3 caras dañadas del archivo');
   });
 });

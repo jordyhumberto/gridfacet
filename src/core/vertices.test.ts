@@ -1000,7 +1000,7 @@ describe('tipVertices (Punta)', () => {
   it('deja el vértice original donde estaba y saca una copia unida a él con caras nuevas', () => {
     const cube = buildPiece(CATALOG[0], 0, 0, 0, 0, 0x336699);
     const corner = uniqueVertices(cube).reduce((a, b) => (b[0] + b[1] + b[2] > a[0] + a[1] + a[2] ? b : a));
-    const result = tipVertices(cube, new Set([vertexKey(corner)]), 0.5)!;
+    const result = tipVertices(cube, new Set([vertexKey(corner)]), 0.5, { withFaces: true })!;
     expect(result).not.toBeNull();
     // Las caras del cubo siguen igual y se suman tres (una por cada arista que sale de la esquina).
     expect(result.piece.faces.slice(0, cube.faces.length)).toEqual(cube.faces);
@@ -1019,9 +1019,27 @@ describe('tipVertices (Punta)', () => {
   it('con dos vértices unidos por una arista forma un cuadrilátero entre ellos', () => {
     const cube = buildPiece(CATALOG[0], 0, 0, 0, 0, 0x336699);
     const [a, b] = uniqueVertices(cube).filter((p) => p[1] === Math.max(...uniqueVertices(cube).map((q) => q[1])) && p[2] === Math.max(...uniqueVertices(cube).map((q) => q[2])));
-    const result = tipVertices(cube, new Set([vertexKey(a), vertexKey(b)]), 0.5)!;
+    const result = tipVertices(cube, new Set([vertexKey(a), vertexKey(b)]), 0.5, { withFaces: true })!;
     expect(result.keys.size).toBe(2);
     expect(result.piece.faces.some((f) => f.length === 4 && f.some((p) => result.keys.has(vertexKey(p))) && f.some((p) => vertexKey(p) === vertexKey(a)) && f.some((p) => vertexKey(p) === vertexKey(b)))).toBe(true);
+  });
+
+  it('por defecto no añade caras: solo un segmento suelto del original a la copia por cada vértice elegido', () => {
+    const cube = buildPiece(CATALOG[0], 0, 0, 0, 0, 0x336699);
+    const [a, b] = uniqueVertices(cube).filter((p) => p[1] === Math.max(...uniqueVertices(cube).map((q) => q[1])) && p[2] === Math.max(...uniqueVertices(cube).map((q) => q[2])));
+    const result = tipVertices(cube, new Set([vertexKey(a), vertexKey(b)]), 0.5)!;
+    expect(result.faces).toBe(0);
+    expect(result.segments).toBe(2);
+    expect(result.piece.faces).toEqual(cube.faces);
+    expect(result.piece.segments).toHaveLength(2);
+    expect(result.keys.size).toBe(2);
+    for (const [from, to] of result.piece.segments!) {
+      expect([vertexKey(a), vertexKey(b)]).toContain(vertexKey(from));
+      expect(result.keys.has(vertexKey(to))).toBe(true);
+      expect(Math.hypot(to[0] - from[0], to[1] - from[1], to[2] - from[2])).toBeCloseTo(0.5, 5);
+    }
+    // Los vértices nuevos cuentan como vértices de la pieza.
+    expect(uniqueVertices(result.piece)).toHaveLength(10);
   });
 
   it('devuelve null sin vértices elegidos o con distancia cero', () => {

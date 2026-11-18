@@ -4,7 +4,7 @@ import { faceNormal, type Piece, type Vec3 } from '../core/piece';
 import { MIRROR_TOLERANCE, pieceKey, reflectPiece, reflections, symmetrize, type Reflection, type Symmetry } from '../core/symmetry';
 import { triangulateFace } from '../core/convex';
 import { collapses } from '../core/selfIntersect';
-import { ringCut, bevelEdge, triangulateFaces, edgeLoop, pieceEdges, fillHoles, connectVertices, dissolveEdge, slideSegment, straightenVertices, flattenVertices, flattenWarped, warpedFaces, finFaces, flagFins, splitFacesAtCenter, addFace, deleteFaces, deleteVertices, extrudeEdge, extrudeFaces, tipVertices, vertexNormal, facesWithin, flipFaces, mergeVertices, weldVertices, placeVertices, rotateAbout, scaleAbout, setFaceFlags, splitEdge, addMirrorPairOnFace, addVertexOnFace, taperPoint, twistPoint, bendPoint, uniqueVertices, vertexKey } from '../core/vertices';
+import { ringCut, bevelEdge, triangulateFaces, edgeLoop, pieceEdges, fillHoles, connectVertices, addSegment, dissolveEdge, slideSegment, straightenVertices, flattenVertices, flattenWarped, warpedFaces, finFaces, flagFins, splitFacesAtCenter, addFace, deleteFaces, deleteVertices, extrudeEdge, extrudeFaces, tipVertices, vertexNormal, facesWithin, flipFaces, mergeVertices, weldVertices, placeVertices, rotateAbout, scaleAbout, setFaceFlags, splitEdge, addMirrorPairOnFace, addVertexOnFace, taperPoint, twistPoint, bendPoint, uniqueVertices, vertexKey } from '../core/vertices';
 import type { ModelScene } from '../scene';
 
 /** Paso de la rejilla de imán, en celdas. */
@@ -263,6 +263,8 @@ export class MeshTool {
 
   /** Cuánto crecen «Cara desde segmento» y «Extruir cara» (en unidades del modelo); se cambia desde el panel. */
   growDistance = EXTRUDE_DISTANCE;
+  /** «Punta» saca además caras nuevas entre el vértice y su copia; sin esto solo saca la copia y un segmento suelto que la une al original. */
+  tipFaces = false;
   /** Cuánto se corta la esquina al hacer el chaflán de una arista (en celdas, sobre los segmentos vecinos); es el mismo tamaño que el de la herramienta Chaflán. */
   bevelSize = 0.25;
   /** Distancia bajo la que «Soldar cercanos» junta dos vértices (en celdas); se cambia desde el panel. */
@@ -1854,8 +1856,8 @@ export class MeshTool {
   }
 
   /**
-   * Punta: saca una copia de cada vértice elegido y la une al original con caras nuevas; el original se queda donde estaba. Las copias quedan
-   * elegidas (solo las del lado de quien eligió) para jalarlas con el ratón. Con simetría, el espejo saca la suya a la vez.
+   * Punta: saca una copia de cada vértice elegido y la une al original con un segmento suelto (con `tipFaces`, con caras nuevas); el original se queda
+   * donde estaba. Las copias quedan elegidas (solo las del lado de quien eligió) para jalarlas con el ratón. Con simetría, el espejo saca la suya a la vez.
    */
   tipSelected(distance = this.growDistance): void {
     let tips = 0;
@@ -1892,7 +1894,7 @@ export class MeshTool {
           tipAt.set(key, source ? mirror(tipAt.get(vertexKey(source))!) : natural(p));
         }
       }
-      const result = tipVertices(piece, new Set(tipAt.keys()), (p) => tipAt.get(vertexKey(p))!);
+      const result = tipVertices(piece, new Set(tipAt.keys()), (p) => tipAt.get(vertexKey(p))!, { withFaces: this.tipFaces });
       if (!result) return null;
       faces += result.faces;
       const select = new Set([...own].filter((key) => tipAt.has(key)).map((key) => vertexKey(tipAt.get(key)!)).filter((key) => result.keys.has(key)));
@@ -1901,8 +1903,10 @@ export class MeshTool {
     });
     this.host.status(
       tips > 0
-        ? `Punta: ${tips} copia(s) sacadas ${+distance.toFixed(3)} (${faces} caras nuevas); las copias quedan elegidas: jálalas con el ratón`
-        : 'Punta (I): elige vértices que tengan caras para sacar la copia',
+        ? `Punta: ${tips} copia(s) sacadas ${+distance.toFixed(3)} (${this.tipFaces ? `${faces} caras nuevas` : 'unidas por un segmento'}); las copias quedan elegidas: jálalas con el ratón`
+        : this.tipFaces
+          ? 'Punta (I): elige vértices que tengan caras para sacar la copia'
+          : 'Punta (I): elige los vértices de los que quieres sacar una copia',
     );
   }
 
@@ -1931,6 +1935,7 @@ export class MeshTool {
   /** Con dos vértices elegidos de una misma cara, traza el segmento entre ellos: la cara se parte en dos. Los vértices siguen elegidos. */
   connectSelected(): void {
     let split = 0;
+    let loose = 0;
     // Con simetría, `keys` trae los elegidos y también sus imágenes en el espejo (cuatro vértices en una misma cara no se pueden unir de dos en dos
     // sin saber cuáles): cada grupo se une por separado, con sus propios vértices, y la cara se vuelve a mirar tras cada corte.
     this.change((piece, _keys, _dirAt, parts) => {
@@ -1938,7 +1943,16 @@ export class MeshTool {
       let here = 0;
       for (const part of parts) {
         const result = connectVertices(current, part.full);
-        if (!result) continue;
+        if (!result) {
+          // Dos vértices que no comparten cara: se traza un segmento suelto entre ellos.
+          const line = addSegment(current, part.full);
+          if (line) {
+            current = line;
+            here++;
+            loose++;
+          }
+          continue;
+        }
         current = result.piece;
         here += result.split;
       }
@@ -1947,17 +1961,20 @@ export class MeshTool {
       return { piece: sameId(current, piece), select: ownKeys(parts) };
     });
     this.host.status(
-      split > 0
+      loose > 0
+        ? `Segmento trazado: ${loose} segmento(s) sueltos entre vértices que no comparten cara`
+        : split > 0
         ? split > 1
           ? `Segmento trazado: ${split} caras partidas (la del espejo también)`
           : 'Segmento trazado: la cara quedó partida en dos'
-        : 'No se trazó nada: elige dos vértices de una misma cara que no estén ya unidos por una arista y con el camino libre entre ellos',
+        : 'No se trazó nada: elige dos vértices que no estén ya unidos (de una misma cara, con el camino libre entre ellos; o de dos caras distintas, para un segmento suelto)',
     );
   }
 
   /** Con dos vértices elegidos que forman un segmento entre dos caras del mismo plano, quita el segmento: las dos caras pasan a ser una. */
   dissolveSelected(): void {
     let joined = 0;
+    let loose = 0;
     this.change((piece, _keys, _dirAt, parts) => {
       let current = piece;
       let here = 0;
@@ -1965,6 +1982,8 @@ export class MeshTool {
       for (const part of parts) {
         const result = dissolveEdge(current, part.full);
         if (!result) continue;
+        // Si las caras no cambiaron, lo que se quitó fue un segmento suelto.
+        if (result.faces.length === current.faces.length) loose++;
         current = result;
         here++;
       }
@@ -1973,11 +1992,13 @@ export class MeshTool {
       return { piece: sameId(current, piece), select: ownKeys(parts) };
     });
     this.host.status(
-      joined > 0
+      loose > 0 && loose === joined
+        ? `Segmento quitado: ${loose} segmento(s) sueltos (los vértices se quedan)`
+        : joined > 0
         ? joined > 1
           ? `Segmento quitado: ${joined} pares de caras juntados (el espejo también)`
           : 'Segmento quitado: las dos caras pasan a ser una'
-        : 'No se quitó nada: elige los dos vértices de un segmento que separe dos caras del mismo plano (no un borde de la pieza ni un ángulo)',
+        : 'No se quitó nada: elige los dos vértices de un segmento suelto o de uno que separe dos caras del mismo plano (no un borde de la pieza ni un ángulo)',
     );
   }
 
