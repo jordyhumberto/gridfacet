@@ -994,3 +994,58 @@ describe('Clic sobre una cara en Malla', () => {
     expect(chosenPositions(s.model, s.tool)).toHaveLength(0);
   });
 });
+
+describe('Shift+clic sobre un segmento en Malla', () => {
+  beforeEach(() => void vi.stubGlobal('PointerEvent', class { constructor(public type: string, public init?: unknown) {} }));
+  afterEach(() => void vi.unstubAllGlobals());
+
+  const shiftClick = (s: ReturnType<typeof setup>, x: number, y: number) => {
+    const event = { button: 0, shiftKey: true, altKey: false, ctrlKey: false, metaKey: false, clientX: x, clientY: y, pointerId: 1, stopImmediatePropagation() {}, preventDefault() {} };
+    for (const fn of s.handlers.get('pointerdown') ?? []) fn(event);
+    for (const fn of s.handlers.get('pointerup') ?? []) fn(event);
+  };
+  /** Cámara de frente al cubo y el punto de pantalla en mitad de una arista de la cara de delante (la de arriba), con sus dos extremos. */
+  const topEdge = (s: ReturnType<typeof setup>) => {
+    s.camera.position.set(0, 0.5, 6);
+    s.camera.lookAt(0, 0.5, 0);
+    s.camera.updateMatrixWorld(true);
+    s.camera.updateProjectionMatrix();
+    const vs = uniqueVertices(s.model.all()[0]);
+    const top = Math.max(...vs.map((p) => p[1]));
+    const front = Math.max(...vs.map((p) => p[2]));
+    const [a, b] = vs.filter((p) => p[1] === top && p[2] === front);
+    const screen = (s.tool as unknown as { screenOf: (p: Vec3) => { x: number; y: number } });
+    const pa = screen.screenOf(a);
+    const pb = screen.screenOf(b);
+    return { a, b, x: (pa.x + pb.x) / 2, y: (pa.y + pb.y) / 2 };
+  };
+
+  it('suma los dos vértices del segmento a la elección que ya había', () => {
+    const s = setup();
+    const { a, b, x, y } = topEdge(s);
+    const vs = uniqueVertices(s.model.all()[0]);
+    const other = vs.find((p) => vertexKey(p) !== vertexKey(a) && vertexKey(p) !== vertexKey(b) && p[1] < a[1] && p[2] < a[2])!;
+    s.choose((p) => vertexKey(p) === vertexKey(other));
+    shiftClick(s, x, y);
+    const keys = new Set(chosenPositions(s.model, s.tool).map(vertexKey));
+    expect(keys).toEqual(new Set([vertexKey(other), vertexKey(a), vertexKey(b)]));
+  });
+
+  it('sin nada elegido empieza la elección con los dos vértices del segmento', () => {
+    const s = setup();
+    const { a, b, x, y } = topEdge(s);
+    shiftClick(s, x, y);
+    expect(new Set(chosenPositions(s.model, s.tool).map(vertexKey))).toEqual(new Set([vertexKey(a), vertexKey(b)]));
+  });
+
+  it('otro Shift+clic en el mismo segmento quita sus dos vértices y deja el resto', () => {
+    const s = setup();
+    const { a, b, x, y } = topEdge(s);
+    const vs = uniqueVertices(s.model.all()[0]);
+    const other = vs.find((p) => vertexKey(p) !== vertexKey(a) && vertexKey(p) !== vertexKey(b) && p[1] < a[1] && p[2] < a[2])!;
+    s.choose((p) => vertexKey(p) === vertexKey(other));
+    shiftClick(s, x, y);
+    shiftClick(s, x, y);
+    expect(new Set(chosenPositions(s.model, s.tool).map(vertexKey))).toEqual(new Set([vertexKey(other)]));
+  });
+});

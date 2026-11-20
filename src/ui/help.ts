@@ -116,6 +116,7 @@ export const GUIDE: Record<Mode, [string, string][]> = {
     ['Panel (deformar)', 'Afinar, Torcer o Curvar los vértices elegidos a lo largo de un eje (Y por defecto): mueve el ratón a los lados, 1/2/3 cambia el eje X/Y/Z, clic confirma'],
     ['R / T', 'girar / escalar los vértices elegidos alrededor de su centro: mueve el ratón, 1/2/3 fija el eje X/Y/Z, clic confirma, Esc cancela (Ctrl: sin imán)'],
     ['Shift+clic en una cara', 'elegir todos sus vértices (se suman a los elegidos)'],
+    ['Shift+clic en un segmento', 'suma sus dos vértices a los elegidos; si ya estaban los dos, los quita. Se puede empezar por un vértice, un segmento o una cara y seguir sumando de cualquiera de los tres'],
     ['Doble cara · Sin sombra · Al fondo', 'casillas del panel: afectan a las caras cuyos vértices están todos elegidos'],
     ['A', 'enciende y apaga el modo añadir vértice (lo mismo que el botón «+ Vértice»; en Malla sustituye a la A que oculta esta ayuda)'],
     ['U', 'trazar segmento: con dos vértices elegidos de una misma cara traza el segmento entre ellos y parte la cara; con dos que no comparten cara, deja un segmento suelto entre ellos (lo mismo que el botón; con vértices elegidos sustituye a la U que refleja piezas en Y)'],
