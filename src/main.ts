@@ -2949,7 +2949,14 @@ const keyActions: KeyActions = {
   hideSelected: () => hideSelected(),
   isolateSelected: () => isolateSelected(),
   toggleHint: () => setHintHidden(!hintHidden),
-  toggleSymmetry: (e) => toggleSymmetry(e.key.toLowerCase() as 'x' | 'y' | 'z'),
+  // X, Y y Z cambian la simetría en todas las herramientas; con un arrastre, recuadro o crecimiento a medias se ignoran (sus objetivos ya están calculados con la simetría de antes).
+  toggleSymmetry: (e) => {
+    if (drag || growDrag || marquee || meshTool.busy) {
+      statusEl.textContent = 'Termina o cancela (Esc) lo que tienes a medias antes de cambiar la simetría';
+      return;
+    }
+    toggleSymmetry(e.key.toLowerCase() as 'x' | 'y' | 'z');
+  },
   mirrorX: () => mirrorSelected('x'),
   mirrorZ: () => mirrorSelected('z'),
   mirrorY: () => mirrorSelected('y'),

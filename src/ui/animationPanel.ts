@@ -203,7 +203,7 @@ export function createAnimationPanel(host: AnimationHost): AnimationPanel {
 
   /**
    * Posar con el ratón: mover, girar o escalar el grupo elegido en el fotograma actual moviendo el ratón sin pulsar.
-   * Clic o Intro confirman (y ponen la clave), Esc o clic derecho cancelan, X/Y/Z fijan el eje y Ctrl quita el imán.
+   * Clic o Intro confirman (y ponen la clave), Esc o clic derecho cancelan, 1/2/3 fijan el eje X/Y/Z y Ctrl quita el imán (X, Y y Z son de la simetría y aquí no hacen nada).
    */
   const POSE_MOVE_STEP = 0.25;
   const POSE_ROTATE_STEP = 5;
@@ -238,7 +238,7 @@ export function createAnimationPanel(host: AnimationHost): AnimationPanel {
       result: null,
     };
     controls.enabled = false;
-    statusEl.textContent = `${{ move: 'Mover', rotate: 'Girar', scale: 'Escalar' }[kind]} el grupo: mueve el ratón${kind === 'scale' ? '' : ' · X/Y/Z fija el eje'} · Ctrl sin imán · clic o Intro confirma · Esc cancela`;
+    statusEl.textContent = `${{ move: 'Mover', rotate: 'Girar', scale: 'Escalar' }[kind]} el grupo: mueve el ratón${kind === 'scale' ? '' : ' · 1/2/3 fija el eje X/Y/Z'} · Ctrl sin imán · clic o Intro confirma · Esc cancela`;
   }
 
   function updatePoseDrag(): void {
@@ -337,8 +337,9 @@ export function createAnimationPanel(host: AnimationHost): AnimationPanel {
   function poseKey(e: KeyboardEvent): boolean {
     if (!poseDrag) return false;
     const key = e.key.toLowerCase();
-    if (key === 'x' || key === 'y' || key === 'z') {
-      const axis = 'xyz'.indexOf(key);
+    // 1 / 2 / 3 de la fila de arriba (por `code`: el teclado numérico son las vistas). X, Y y Z son de la simetría: aquí se consumen sin cambiarla a mitad del posado.
+    if (/^Digit[123]$/.test(e.code) && !e.ctrlKey && !e.metaKey && !e.altKey) {
+      const axis = Number(e.code.slice(5)) - 1;
       poseDrag.axis = poseDrag.axis === axis ? null : axis;
       updatePoseDrag();
     } else if (key === 'escape') finishPoseDrag(false);
