@@ -118,7 +118,7 @@ const actionsOf = (e: KeyLike, mode: KeyMode): string[] => matchShortcuts(e, mod
 describe('la tabla ejecuta las acciones', () => {
   it('toda fila de la aplicación apunta a una acción y las de Malla no', () => {
     for (const s of SHORTCUTS) {
-      if (s.by === 'mesh') expect(s.action, `${s.key} (Malla)`).toBeUndefined();
+      if (s.by === 'mesh' || s.by === 'pose') expect(s.action, `${s.key} (${s.by})`).toBeUndefined();
       else expect(ACTIONS, `${s.key}: ${s.description}`).toContain(s.action);
     }
   });
@@ -174,7 +174,7 @@ describe('la tabla ejecuta las acciones', () => {
   });
 
   it('las teclas de MeshTool no salen como acción de la aplicación en Malla', () => {
-    expect(actionsOf(ev('x'), 'mesh')).toEqual([]);
+    expect(actionsOf(ev('1'), 'mesh')).toEqual(['selectPiece']);
     expect(actionsOf(ev('f'), 'mesh')).toEqual([]);
     expect(actionsOf(ev('Delete'), 'mesh')).toEqual([]);
     expect(actionsOf(ev('Delete'), 'place')).toEqual(['deleteSelection']);
@@ -226,6 +226,38 @@ describe('la tabla ejecuta las acciones', () => {
         expect(bare.length, `${key} en ${mode}`).toBeLessThanOrEqual(1);
       }
     }
+  });
+});
+
+describe('X, Y y Z son siempre de la simetría', () => {
+  it('cambian la simetría en todas las herramientas, Malla incluida', () => {
+    for (const mode of ALL_MODES) {
+      for (const key of ['x', 'y', 'z']) expect(actionsOf(ev(key), mode), `${key} en ${mode}`).toEqual(['toggleSymmetry']);
+    }
+  });
+
+  it('ninguna otra fila usa x, y o z sin modificadores', () => {
+    const others = SHORTCUTS.filter((s) => ['x', 'y', 'z'].includes(s.key) && !(s.mods ?? ''));
+    expect(others.every((s) => s.action === 'toggleSymmetry' && s.modes === 'all' && !s.except)).toBe(true);
+    expect(others.map((s) => s.key).sort()).toEqual(['x', 'y', 'z']);
+    // Deshacer y rehacer siguen siendo Ctrl+Z, Ctrl+Y y Ctrl+Mayús+Z.
+    expect(actionsOf(ev('z', { ctrlKey: true }), 'mesh')).toEqual(['undo']);
+    expect(actionsOf(ev('z', { ctrlKey: true, shiftKey: true }), 'mesh')).toEqual(['redo', 'undo']);
+    expect(actionsOf(ev('y', { ctrlKey: true }), 'mesh')).toEqual(['redo']);
+  });
+
+  it('los ejes de Malla y del posado son los dígitos 1, 2 y 3, con condición', () => {
+    for (const key of ['1', '2', '3']) {
+      const rows = shortcutsFor('mesh').filter((s) => s.key === key && s.by === 'mesh');
+      expect(rows.length, key).toBe(2);
+      expect(rows.every((s) => !!s.when), key).toBe(true);
+      expect(SHORTCUTS.some((s) => s.by === 'pose' && s.key === key && s.when), key).toBe(true);
+    }
+    expect(SHORTCUTS.filter((s) => s.by === 'mesh' || s.by === 'pose').every((s) => !['x', 'y', 'z'].includes(s.key) || !!s.mods)).toBe(true);
+  });
+
+  it('las filas de eje no mencionan X, Y o Z como teclas', () => {
+    for (const s of SHORTCUTS.filter((x) => /eje/.test(x.description) && x.by)) expect(s.description, s.description).not.toMatch(/tecla [XYZ]/);
   });
 });
 

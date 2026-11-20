@@ -404,7 +404,7 @@ export class MeshTool {
     return this.axisLock;
   }
 
-  /** Limita el movimiento a un eje (o lo suelta con `null`); lo usan los botones del panel y las teclas X/Y/Z. */
+  /** Limita el movimiento a un eje (o lo suelta con `null`); lo usan los botones del panel y las teclas 1/2/3. */
   setAxis(axis: AxisLock): void {
     this.axisLock = axis;
     if (this.drag?.moved) this.showGuide([this.drag.anchor[0] + this.drag.delta[0], this.drag.anchor[1] + this.drag.delta[1], this.drag.anchor[2] + this.drag.delta[2]]);
@@ -567,7 +567,7 @@ export class MeshTool {
     if (this.busy) return;
     const sym = this.host.symmetry();
     if (reflections(sym).length === 0) {
-      this.host.status('Simetrizar: activa antes la simetría en algún eje (X, Y o Z)');
+      this.host.status('Simetrizar: activa antes la simetría en algún eje (casillas X, Y o Z, o esas teclas)');
       return;
     }
     const pieces = [...new Map(this.shown.map(({ piece }) => [piece.id, piece])).values()];
@@ -1212,9 +1212,11 @@ export class MeshTool {
   handleKey(e: KeyboardEvent): boolean {
     if (!this.active) return false;
     const key = e.key.toLowerCase();
+    // Los ejes son los dígitos 1, 2 y 3 de la fila de arriba (por `code`: el teclado numérico son las vistas); X, Y y Z son siempre de la simetría.
+    const digitAxis = /^Digit[123]$/.test(e.code ?? '') && !e.ctrlKey && !e.metaKey && !e.altKey ? Number(e.code.slice(5)) - 1 : -1;
     if (this.modal) {
-      if (key === 'x' || key === 'y' || key === 'z') {
-        const axis = 'xyz'.indexOf(key);
+      if (digitAxis >= 0) {
+        const axis = digitAxis;
         this.modal.axis = this.modal.axis === axis ? null : axis;
         this.updateModal();
       } else if (key === 'escape') this.finishModal(false);
@@ -1237,9 +1239,14 @@ export class MeshTool {
       this.setRemoveMode(!this.removing);
       return true;
     }
-    // En Malla, X / Y / Z fijan el eje (como los botones «Mover en») y no tocan la simetría, que se cambia con sus casillas.
-    if (!e.ctrlKey && !e.metaKey && !e.altKey && (key === 'x' || key === 'y' || key === 'z')) {
-      const axis = 'xyz'.indexOf(key);
+    // X, Y y Z son de la simetría: aquí no se toman (llegan a la aplicación), salvo con algo a medias, que se consumen para no cambiar la simetría a mitad de la operación.
+    if (this.busy && !e.ctrlKey && !e.metaKey && !e.altKey && (key === 'x' || key === 'y' || key === 'z')) {
+      this.host.status('Termina o cancela (Esc) lo que tienes a medias antes de cambiar la simetría');
+      return true;
+    }
+    // Con vértices elegidos (o un arrastre en marcha), 1 / 2 / 3 fijan el eje (como los botones «Mover en»); sin vértices siguen eligiendo pieza del catálogo.
+    if (digitAxis >= 0 && (this.count > 0 || this.drag)) {
+      const axis = digitAxis;
       // Con Mayús se fija el plano que deja fuera ese eje (Mayús+Z = XY), como en Blender.
       const lock = e.shiftKey ? [PLANE_YZ, PLANE_XZ, PLANE_XY][axis] : axis;
       this.setAxis(this.axisLock === lock ? null : lock);
@@ -1358,7 +1365,7 @@ export class MeshTool {
     this.modal = { kind, targets, pivot, half, normal, axis: this.axisLock !== null && this.axisLock < 3 ? this.axisLock : null, start: null, last: null, value: kind === 'scale' ? 1 : 0, valid: kind === 'scale' ? 1 : 0, moved: false };
     this.host.setOrbit(false);
     const name = { rotate: 'Girar', scale: 'Escalar', taper: 'Afinar', twist: 'Torcer', bend: 'Curvar', push: 'Empujar cara' }[kind];
-    const hint = kind === 'push' ? 'mueve el ratón en la dirección de la flecha de la cara (adelante empuja, atrás jala)' : kind === 'taper' || kind === 'twist' || kind === 'bend' ? 'mueve el ratón a los lados · X/Y/Z cambia el eje (por defecto Y)' : 'mueve el ratón · X/Y/Z fija el eje';
+    const hint = kind === 'push' ? 'mueve el ratón en la dirección de la flecha de la cara (adelante empuja, atrás jala)' : kind === 'taper' || kind === 'twist' || kind === 'bend' ? 'mueve el ratón a los lados · 1/2/3 cambia el eje X/Y/Z (por defecto Y)' : 'mueve el ratón · 1/2/3 fija el eje X/Y/Z';
     this.host.status(`${name}: ${hint} · Ctrl invierte el imán · clic o Intro confirma · Esc cancela`);
     // Afinar, Torcer y Curvar trabajan a lo largo de un eje: si la selección es plana en el eje por defecto, se dice ya, con los ejes que sí sirven.
     if (kind === 'taper' || kind === 'twist' || kind === 'bend') {
@@ -1414,7 +1421,7 @@ export class MeshTool {
       const axis = modal.axis ?? 1;
       const half = modal.half[axis];
       if (half < 1e-6) {
-        this.host.status(`No hay largo a lo largo de ${'XYZ'[axis]}: prueba con otro eje (X/Y/Z)`);
+        this.host.status(`No hay largo a lo largo de ${'XYZ'[axis]}: prueba con otro eje (1/2/3)`);
         return;
       }
       let amount = (x - modal.start.x) / DEFORM_PIXELS;

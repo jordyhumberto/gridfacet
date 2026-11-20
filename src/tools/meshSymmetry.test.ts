@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { CATALOG, buildPiece } from '../core/catalog';
 import { makePiece, type Piece, type Vec3 } from '../core/piece';
+import { PLANE_XY, PLANE_XZ, PLANE_YZ } from '../core/axisLock';
 import { translatePiece } from '../core/transform';
 import { moveVertices, scaleAbout, splitEdge, uniqueVertices, vertexKey } from '../core/vertices';
 import { ModelScene } from '../scene';
@@ -346,6 +347,81 @@ describe('Biselar con simetría es todo o nada', () => {
     tool.bevelSelected();
     expect(model.all()[0].faces).toHaveLength(8);
     expect(isSymmetric(model.all())).toBe(true);
+  });
+});
+
+describe('ejes con las teclas 1, 2 y 3 (X, Y y Z son de la simetría)', () => {
+  const key = (name: string, code = '', shift = false) => ({ key: name, code, ctrlKey: false, metaKey: false, altKey: false, shiftKey: shift }) as KeyboardEvent;
+  const digit = (n: number, shift = false) => key(shift ? ['!', '@', '#'][n - 1] : String(n), `Digit${n}`, shift);
+  it('con vértices elegidos, Digit1/2/3 fijan el eje X/Y/Z y volver a pulsar lo suelta', () => {
+    const s = setup();
+    s.choose((p) => p[0] > 0);
+    expect(s.tool.handleKey(digit(1))).toBe(true);
+    expect(s.tool.axis).toBe(0);
+    expect(s.tool.handleKey(digit(2))).toBe(true);
+    expect(s.tool.axis).toBe(1);
+    expect(s.tool.handleKey(digit(3))).toBe(true);
+    expect(s.tool.axis).toBe(2);
+    expect(s.tool.handleKey(digit(3))).toBe(true);
+    expect(s.tool.axis).toBeNull();
+  });
+
+  it('Mayús+dígito fija el plano que deja fuera ese eje', () => {
+    const s = setup();
+    s.choose((p) => p[0] > 0);
+    s.tool.handleKey(digit(1, true));
+    expect(s.tool.axis).toBe(PLANE_YZ);
+    s.tool.handleKey(digit(2, true));
+    expect(s.tool.axis).toBe(PLANE_XZ);
+    s.tool.handleKey(digit(3, true));
+    expect(s.tool.axis).toBe(PLANE_XY);
+  });
+
+  it('x, y y z no las toma Malla (devuelve false: llegan a la simetría) y no tocan el eje', () => {
+    const s = setup();
+    s.choose((p) => p[0] > 0);
+    for (const name of ['x', 'y', 'z', 'X']) expect(s.tool.handleKey(key(name, `Key${name.toUpperCase()}`)), name).toBe(false);
+    expect(s.tool.axis).toBeNull();
+  });
+
+  it('el teclado numérico no fija el eje (son las vistas de cámara)', () => {
+    const s = setup();
+    s.choose((p) => p[0] > 0);
+    expect(s.tool.handleKey(key('1', 'Numpad1'))).toBe(false);
+    expect(s.tool.axis).toBeNull();
+  });
+
+  it('sin vértices elegidos Digit1 devuelve false (sigue cambiando de herramienta)', () => {
+    const s = setup();
+    expect(s.tool.handleKey(digit(1))).toBe(false);
+    expect(s.tool.axis).toBeNull();
+  });
+
+  it('en un modal, los dígitos limitan el eje y x, y, z se consumen sin hacer nada', () => {
+    const s = setup();
+    s.choose(() => true);
+    s.tool.beginTransform('rotate');
+    const modal = () => (s.tool as unknown as { modal: { axis: number | null } }).modal;
+    expect(s.tool.handleKey(digit(3))).toBe(true);
+    expect(modal().axis).toBe(2);
+    expect(s.tool.handleKey(digit(1))).toBe(true);
+    expect(modal().axis).toBe(0);
+    expect(s.tool.handleKey(digit(1))).toBe(true);
+    expect(modal().axis).toBeNull();
+    for (const name of ['x', 'y', 'z']) expect(s.tool.handleKey(key(name, `Key${name.toUpperCase()}`)), name).toBe(true);
+    expect(modal().axis).toBeNull();
+    s.tool.handleKey(key('Escape'));
+  });
+
+  it('en un arrastre en marcha, x, y y z se consumen (no cambian la simetría) y los dígitos fijan el eje', () => {
+    const s = setup();
+    s.choose((p) => p[0] > 0);
+    const inner = s.tool as unknown as { buildTargets: () => unknown[]; drag: unknown; preview: (d: Vec3) => void };
+    inner.drag = { targets: inner.buildTargets(), anchor: [0, 0, 0], plane: null, grab: null, startX: 0, startY: 0, moved: true, delta: [0.1, 0, 0] };
+    inner.preview([0.1, 0, 0]);
+    for (const name of ['x', 'y', 'z']) expect(s.tool.handleKey(key(name, `Key${name.toUpperCase()}`)), name).toBe(true);
+    expect(s.tool.handleKey(digit(2))).toBe(true);
+    expect(s.tool.axis).toBe(1);
   });
 });
 

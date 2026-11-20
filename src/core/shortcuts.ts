@@ -77,8 +77,8 @@ export interface Shortcut {
   except?: readonly KeyMode[];
   /** Condición que no depende de la herramienta. Dos atajos pueden compartir tecla y herramienta solo si los dos traen una condición. La comprueba la acción (devuelve `false` si no se cumple). */
   when?: string;
-  /** Quién la toma: el teclado de la aplicación o `MeshTool.handleKey`. */
-  by?: 'app' | 'mesh';
+  /** Quién la toma: el teclado de la aplicación, `MeshTool.handleKey` o el posado con el ratón (`animationPanel.poseKey`). Las dos últimas se detectan por `e.code` si la tecla es un dígito. */
+  by?: 'app' | 'mesh' | 'pose';
   /** Qué hace, para la ayuda. */
   description: string;
   /** Si es una tecla que enciende y apaga una herramienta, cuál. */
@@ -96,6 +96,7 @@ export interface Shortcut {
 const arrows = ['arrowup', 'arrowdown', 'arrowleft', 'arrowright'];
 /** Herramientas donde las flechas mueven la cámara aunque haya piezas elegidas. */
 const PAN_MODES: readonly KeyMode[] = ['cut', 'fill', 'outline', 'vertex', 'mesh'];
+/** Herramientas donde M, N, U y K (reflejar y sumar conectadas) no actúan; X, Y y Z son de la simetría en todas. */
 const MIRROR_EXCEPT: readonly KeyMode[] = ['cut', 'fill', 'vertex', 'outline', 'mesh'];
 export const isPanMode = (mode: string): boolean => (PAN_MODES as readonly string[]).includes(mode);
 
@@ -167,11 +168,12 @@ export const SHORTCUTS: readonly Shortcut[] = [
   row('escape', ['place', 'select'], 'quitar la selección', { when: 'sin arrastre en curso', action: 'clearSelection' }),
   row('escape', ESC_TO_PLACE_MODES, 'volver a Colocar', { when: 'sin arrastre ni giro en curso', action: 'leaveTool' }),
   row('escape', ['cut', 'fill', 'outline'], 'cancelar lo que se tiene a medias', { when: 'sin arrastre en curso', action: 'cancelTool' }),
-  row('enter', ['cut', 'fill', 'outline'], 'aplicar', { action: 'applyTool' }),
+  row('enter', ['cut', 'fill', 'outline'], 'aplicar', { when: 'sin posado en curso', action: 'applyTool' }),
   row('o', 'all', 'ocultar las piezas elegidas', { except: ['mesh'], action: 'hideSelected' }),
   row('i', 'all', 'aislar las piezas elegidas', { except: ['mesh'], action: 'isolateSelected' }),
   row('a', 'all', 'mostrar u ocultar la barra de ayuda', { except: ['mesh'], action: 'toggleHint' }),
-  ...['x', 'y', 'z'].map((key) => row(key, 'all', `simetría en ${key.toUpperCase()}`, { except: ['mesh'], action: 'toggleSymmetry' })),
+  // X, Y y Z son siempre de la simetría, en todas las herramientas; los ejes de movimiento, giro y posado usan los dígitos 1, 2 y 3.
+  ...['x', 'y', 'z'].map((key) => row(key, 'all', `simetría en ${key.toUpperCase()} (no cambia durante un arrastre, un giro o escala de Malla ni un posado)`, { action: 'toggleSymmetry' })),
   row('m', 'all', 'reflejar la selección en X', { except: MIRROR_EXCEPT, action: 'mirrorX' }),
   row('n', 'all', 'reflejar la selección en Z', { except: MIRROR_EXCEPT, action: 'mirrorZ' }),
   row('u', 'all', 'reflejar la selección en Y', { except: MIRROR_EXCEPT, action: 'mirrorY' }),
@@ -179,8 +181,8 @@ export const SHORTCUTS: readonly Shortcut[] = [
   row('delete', 'all', 'borrar la selección', { except: ['mesh'], action: 'deleteSelection' }),
   row('backspace', 'all', 'borrar la selección', { except: ['mesh', 'cut', 'fill', 'outline'], action: 'deleteSelection' }),
   // Malla: las toma MeshTool.handleKey antes que la aplicación
-  ...['x', 'y', 'z'].map((key) => row(key, ['mesh'], `fijar el eje ${key.toUpperCase()} del movimiento (Mayús: el plano que lo deja fuera)`, { by: 'mesh', when: 'sin giro ni escala en curso' })),
-  ...['x', 'y', 'z'].map((key) => row(key, ['mesh'], `limitar el giro o la escala al eje ${key.toUpperCase()}`, { by: 'mesh', when: 'giro o escala en curso' })),
+  ...['1', '2', '3'].map((key, i) => row(key, ['mesh'], `fijar el eje ${'XYZ'[i]} del movimiento (Mayús: el plano que lo deja fuera)`, { by: 'mesh', when: 'hay vértices elegidos o un arrastre en curso, sin giro ni escala en curso' })),
+  ...['1', '2', '3'].map((key, i) => row(key, ['mesh'], `limitar el giro, la escala o la deformación al eje ${'XYZ'[i]}`, { by: 'mesh', when: 'giro, escala o deformación en curso' })),
   row('escape', ['mesh'], 'cancelar el giro o la escala', { by: 'mesh', when: 'giro o escala en curso' }),
   row('enter', ['mesh'], 'confirmar el giro o la escala', { by: 'mesh', when: 'giro o escala en curso' }),
   row('escape', ['mesh'], 'cancelar el arrastre', { by: 'mesh', when: 'hay un arrastre en curso' }),
@@ -201,6 +203,10 @@ export const SHORTCUTS: readonly Shortcut[] = [
   row('m', ['mesh'], 'extruir las caras cuyos vértices están todos elegidos', { by: 'mesh', mesh: 'extrude' }),
   row('delete', ['mesh'], 'borrar los vértices elegidos', { by: 'mesh' }),
   row('backspace', ['mesh'], 'borrar los vértices elegidos', { by: 'mesh' }),
+  // Posado de animación con el ratón: las toma `animationPanel.poseKey` antes que todo lo demás (cualquier otra tecla se consume sin hacer nada).
+  ...['1', '2', '3'].map((key, i) => row(key, 'all', `posando: limitar el movimiento o el giro al eje ${'XYZ'[i]}`, { by: 'pose', when: 'posando un grupo con el ratón' })),
+  row('enter', 'all', 'posando: confirmar y poner la clave', { by: 'pose', when: 'posando un grupo con el ratón' }),
+  row('escape', 'all', 'posando: cancelar', { by: 'pose', when: 'posando un grupo con el ratón' }),
 ];
 
 const hasMod = (s: Shortcut, mod: 'ctrl' | 'alt' | 'shift'): boolean => (s.mods ?? '').split('+').includes(mod);
@@ -270,7 +276,7 @@ export function matchShortcuts(e: KeyLike, mode: KeyMode): Shortcut[] {
   const arrowLike = /^(arrow|page)/.test(key);
   const altOk = key === 'r' || key === 'o' || key.startsWith('arrow');
   const rows = SHORTCUTS.filter((s) => {
-    if (s.by === 'mesh' || !s.action || s.key !== key || !appliesIn(s, mode)) return false;
+    if (s.by === 'mesh' || s.by === 'pose' || !s.action || s.key !== key || !appliesIn(s, mode)) return false;
     // La ayuda se abre con «?» y F1 sea cual sea el modificador (en algunos teclados «?» sale con AltGr).
     if (s.action === 'help') return true;
     const needsCtrl = hasMod(s, 'ctrl');

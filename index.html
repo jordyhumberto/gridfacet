@@ -368,11 +368,11 @@
           </div>
           <div class="row" id="axisRow" hidden title="Un solo control para Elegir y para Malla: con Elegir limita el arrastre de las piezas elegidas; en Malla, el de los vértices">
             <div class="axisGroup">
-              <span title="Limita el movimiento a un eje o a un plano. Se mantiene hasta que lo cambies. En Malla, mientras arrastras también sirven las teclas X, Y, Z">Mover en</span>
+              <span title="Limita el movimiento a un eje o a un plano. Se mantiene hasta que lo cambies. En Malla, con vértices elegidos (o arrastrando), también sirven las teclas 1, 2 y 3 de la fila de arriba. X, Y y Z son siempre de la simetría">Mover en</span>
               <button data-axis="free" title="Sin límite (con Elegir: por el suelo, o en vertical con Alt)">Libre</button>
-              <button data-axis="0" title="Solo en el eje X (en Malla, tecla X)">X</button>
-              <button data-axis="1" title="Solo en el eje Y, el vertical (en Malla, tecla Y)">Y</button>
-              <button data-axis="2" title="Solo en el eje Z (en Malla, tecla Z)">Z</button>
+              <button data-axis="0" title="Solo en el eje X (en Malla, tecla 1)">X</button>
+              <button data-axis="1" title="Solo en el eje Y, el vertical (en Malla, tecla 2)">Y</button>
+              <button data-axis="2" title="Solo en el eje Z (en Malla, tecla 3)">Z</button>
             </div>
             <div class="axisGroup">
               <span title="Mezcla dos ejes y deja el tercero fijo">Plano</span>
@@ -405,8 +405,8 @@
             </div>
             <div class="meshGroup">
               <span class="groupTitle">Transformar</span>
-            <button data-mesh="rotate" data-shortcut="mesh:rotate" title="Gira los vértices elegidos alrededor de su centro moviendo el ratón ({key}). X/Y/Z fija el eje, clic confirma">Girar</button>
-            <button data-mesh="scale" data-shortcut="mesh:scale" title="Escala los vértices elegidos desde su centro moviendo el ratón ({key}). X/Y/Z escala solo en ese eje, clic confirma">Escalar</button>
+            <button data-mesh="rotate" data-shortcut="mesh:rotate" title="Gira los vértices elegidos alrededor de su centro moviendo el ratón ({key}). 1/2/3 fija el eje X/Y/Z, clic confirma">Girar</button>
+            <button data-mesh="scale" data-shortcut="mesh:scale" title="Escala los vértices elegidos desde su centro moviendo el ratón ({key}). 1/2/3 escala solo en el eje X/Y/Z, clic confirma">Escalar</button>
             <button data-mesh="taper" title="Estrecha o ensancha los extremos de los vértices elegidos a lo largo de un eje (por defecto Y): mueve el ratón a los lados, clic confirma">Afinar</button>
             <button data-mesh="twist" title="Tuerce los vértices elegidos a lo largo de un eje (por defecto Y): cada altura gira un poco más. Mueve el ratón a los lados, clic confirma">Torcer</button>
             <button data-mesh="bend" title="Curva los vértices elegidos a lo largo de un eje (por defecto Y) hacia el eje siguiente (Y→Z, X→Y, Z→X): mueve el ratón a los lados, clic confirma">Curvar</button>
@@ -445,7 +445,7 @@
             <label title="Las caras cuyos vértices están todos elegidos se dibujan siempre por debajo de todo lo demás (huellas, sombras pintadas, fondos). Solo se ve así en el editor: el GLB no guarda el orden de dibujo"><input type="checkbox" id="meshBehind" /> Al fondo</label>
             </div>
             <small id="meshInfo"></small>
-            <small>R: girar · T: escalar (mueve el ratón, clic confirma) · M: extruir cara · Clic en un segmento: elige sus dos vértices (doble clic: lo sigue recto) · Shift+clic en una cara: elige sus vértices · Alt+clic en una arista: vértice nuevo · Arrastra un vértice · X/Y/Z fija el eje · Ctrl+arrastrar en vacío: recuadro · Ctrl al arrastrar: sin imán</small>
+            <small>R: girar · T: escalar (mueve el ratón, clic confirma) · M: extruir cara · Clic en un segmento: elige sus dos vértices (doble clic: lo sigue recto) · Shift+clic en una cara: elige sus vértices · Alt+clic en una arista: vértice nuevo · Arrastra un vértice · 1/2/3 fija el eje X/Y/Z · Ctrl+arrastrar en vacío: recuadro · Ctrl al arrastrar: sin imán</small>
           </div>
           <div class="row" id="bevelActions" hidden>
             <label title="Distancia de la arista a cada lado del chaflán, en celdas. Es el mismo tamaño que el de «Chaflán» en Malla">Tamaño <input type="number" id="bevelSize" min="0.02" step="0.05" value="0.25" /></label>
@@ -604,8 +604,8 @@
             <label title="Escala del grupo (1 = tamaño normal)">Escala <input type="number" data-anim="s" step="0.1" min="0.05" /></label>
           </div>
           <div class="row" id="animMouseRow" hidden>
-            <button data-animpose="move" title="Mueve el grupo con el ratón en este fotograma: X/Y/Z fija el eje, Ctrl sin imán, clic confirma y pone la clave">Mover</button>
-            <button data-animpose="rotate" title="Gira el grupo con el ratón alrededor de su centro: X/Y/Z fija el eje, Ctrl sin imán, clic confirma y pone la clave">Girar</button>
+            <button data-animpose="move" title="Mueve el grupo con el ratón en este fotograma: 1/2/3 fija el eje X/Y/Z, Ctrl sin imán, clic confirma y pone la clave">Mover</button>
+            <button data-animpose="rotate" title="Gira el grupo con el ratón alrededor de su centro: 1/2/3 fija el eje X/Y/Z, Ctrl sin imán, clic confirma y pone la clave">Girar</button>
             <button data-animpose="scale" title="Escala el grupo con el ratón desde su centro: Ctrl sin imán, clic confirma y pone la clave">Escalar</button>
           </div>
           <div class="row" id="animKeyRow" hidden>
@@ -794,7 +794,7 @@
         <h3>Malla: editar vértices</h3>
         <dl>
           <dt><kbd>E</kbd> Malla</dt><dd>Entra y sale del modo Malla. Clic en una cara elige sus vértices; clic en un vértice lo elige (<kbd>Shift</kbd> suma) y arrastrarlo lo mueve con imán a un cuarto de celda (<kbd>Ctrl</kbd> lo suelta). <kbd>Ctrl</kbd>+arrastrar en vacío dibuja un recuadro que elige los vértices de dentro. Un clic en un segmento elige sus dos vértices; <kbd>Shift</kbd>+clic en una cara, todos los suyos.</dd>
-          <dt>Mover en</dt><dd>Es un solo control, el mismo con Elegir (piezas) que en Malla (vértices): Libre, X, Y o Z (botones del panel o teclas <kbd>X</kbd> / <kbd>Y</kbd> / <kbd>Z</kbd>): limitan el movimiento a un eje. En Malla las flechas mueven la cámara, no los vértices.</dd>
+          <dt>Mover en</dt><dd>Es un solo control, el mismo con Elegir (piezas) que en Malla (vértices): Libre, X, Y o Z (botones del panel o, en Malla con vértices elegidos, teclas <kbd>1</kbd> / <kbd>2</kbd> / <kbd>3</kbd>; con <kbd>Mayús</kbd>, el plano que deja fuera ese eje): limitan el movimiento a un eje. En Malla las flechas mueven la cámara, no los vértices.</dd>
           <dt><kbd>R</kbd> / <kbd>T</kbd></dt><dd>Giran o escalan los vértices elegidos alrededor de su centro: mueve el ratón, clic confirma, <kbd>Esc</kbd> cancela. Afinar, Torcer y Curvar (panel) deforman a lo largo de un eje.</dd>
           <dt><kbd>Supr</kbd></dt><dd>Quita los vértices elegidos. Sin vértices elegidos no borra nada: en Malla ninguna tecla borra piezas enteras.</dd>
           <dt>Otras acciones</dt><dd>En «Vértices», Punta saca una copia de cada vértice elegido unida al original por un segmento (con la casilla «Punta con caras», también con caras), y Fusionar vértices, Vértices a la rejilla y Soldar cercanos limpian vértices repetidos o casi encima de otro; Crear cara, Trazar segmento, Quitar segmento, Triangular, Chaflán, Corte en anillo, Extruir y Empujar cara modelan la superficie. Un botón apagado dice en su título qué necesita para encenderse. La lista completa de teclas está en la guía de la barra inferior.</dd>
@@ -809,7 +809,7 @@
         </dl>
         <h3>Simetría</h3>
         <dl>
-          <dt>Casillas X / Y / Z</dt><dd>Con un eje activo, todo lo que colocas, borras, haces crecer, rellenas o cortas se repite reflejado al otro lado del plano de ese eje. Con varios ejes activos salen todas las combinaciones (X y Z: 4 copias; X, Y y Z: 8).</dd>
+          <dt>Casillas X / Y / Z</dt><dd>Las teclas <kbd>X</kbd>, <kbd>Y</kbd> y <kbd>Z</kbd> encienden y apagan la simetría en ese eje en todas las herramientas, también en Malla (no durante un arrastre, un giro o escala de Malla ni un posado). Con un eje activo, todo lo que colocas, borras, haces crecer, rellenas o cortas se repite reflejado al otro lado del plano de ese eje. Con varios ejes activos salen todas las combinaciones (X y Z: 4 copias; X, Y y Z: 8).</dd>
           <dt><kbd>X</kbd> / <kbd>Y</kbd> / <kbd>Z</kbd></dt><dd>Activan o desactivan cada eje desde el teclado.</dd>
           <dt>Números junto a cada eje</dt><dd>Posición del plano de simetría (0 en X y Z es el centro del suelo; en Y es la altura). Cada plano activo se ve como un velo de color.</dd>
           <dt>Qué no refleja</dt><dd>Mover, rotar, pegar y los botones de reflejar (<kbd>M</kbd> <kbd>N</kbd> <kbd>U</kbd>) actúan solo sobre lo elegido. Al cortar con selección, solo se cortan las piezas elegidas.</dd>
