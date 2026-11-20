@@ -777,6 +777,30 @@ export class MeshTool {
       this.pendingAdd = { x: e.clientX, y: e.clientY, ctrl: e.ctrlKey || e.metaKey };
     }
     this.pendingEdge = !hit && !this.adding && !this.removing && !(e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey ? { x: e.clientX, y: e.clientY } : null;
+    if (!hit && e.shiftKey && !(e.ctrlKey || e.metaKey) && !e.altKey && !this.adding && !this.removing) {
+      // Shift+clic sobre un segmento suma sus dos vértices a la elección; si ya estaban los dos, los quita (como Shift+clic en un vértice elegido).
+      const edge = this.edgeAt(e.clientX, e.clientY);
+      if (edge) {
+        this.consume(e);
+        const a = vertexKey(edge.a);
+        const b = vertexKey(edge.b);
+        const keys = this.selection.get(edge.piece.id) ?? new Set<string>();
+        const both = keys.has(a) && keys.has(b);
+        if (both) {
+          keys.delete(a);
+          keys.delete(b);
+        } else {
+          keys.add(a);
+          keys.add(b);
+        }
+        if (keys.size > 0) this.selection.set(edge.piece.id, keys);
+        else this.selection.delete(edge.piece.id);
+        this.paint();
+        this.host.onSelectionChange();
+        this.host.status(both ? `Segmento quitado de la elección (${this.count} vértices elegidos)` : `Segmento sumado a la elección (${this.count} vértices elegidos)`);
+        return;
+      }
+    }
     if (!hit && e.shiftKey && !(e.ctrlKey || e.metaKey)) {
       // Shift+clic sobre una cara elige todos sus vértices (se suman a los que ya había).
       const face = this.faceAt(e.clientX, e.clientY);
