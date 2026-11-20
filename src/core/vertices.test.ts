@@ -4,7 +4,7 @@ import { isConvex } from './convex';
 import { collapses } from './selfIntersect';
 import { floodFill, textureOfFace, withFaceTexture } from './pixels';
 import { FACE_DOUBLE, FACE_UNLIT, faceNormal, makePiece, volume, type Vec3 } from './piece';import { sampleTexture, pointOf, uvOf } from './texture';
-import { addMirrorPairOnFace, connectVertices, dissolveEdge, slideSegment, straightenVertices, flattenVertices, fitPlane, faceWarp, warpedFaces, flattenWarped, WARP_TOLERANCE, extrudeEdge, tipVertices, finFaces, flagFins, splitFacesAtCenter, addFace, deleteFaces, deleteVertices, extrudeFaces, facesWithin, flipFaces, mergeVertices, moveVertices, placeVertices, rotateAbout, scaleAbout, setFaceFlags, splitEdge, addVertexOnFace, taperPoint, twistPoint, bendPoint, uniqueVertices, vertexKey } from './vertices';
+import { addMirrorPairOnFace, connectVertices, dissolveEdge, slideSegment, straightenVertices, alignVertices, flattenVertices, fitPlane, faceWarp, warpedFaces, flattenWarped, WARP_TOLERANCE, extrudeEdge, tipVertices, finFaces, flagFins, splitFacesAtCenter, addFace, deleteFaces, deleteVertices, extrudeFaces, facesWithin, flipFaces, mergeVertices, moveVertices, placeVertices, rotateAbout, scaleAbout, setFaceFlags, splitEdge, addVertexOnFace, taperPoint, twistPoint, bendPoint, uniqueVertices, vertexKey } from './vertices';
 
 const cube = () => buildPiece(CATALOG[0], 0, 0, 0, 0, 0x336699);
 const topCorner = (piece = cube()): Vec3 => {
@@ -1046,5 +1046,29 @@ describe('tipVertices (Punta)', () => {
     const cube = buildPiece(CATALOG[0], 0, 0, 0, 0, 0x336699);
     expect(tipVertices(cube, new Set(), 0.5)).toBeNull();
     expect(tipVertices(cube, new Set([vertexKey(uniqueVertices(cube)[0])]), 0)).toBeNull();
+  });
+});
+
+describe('alignVertices', () => {
+  it('mueve el vértice solo en el eje elegido', () => {
+    const piece = makePiece([], 0x336699);
+    const withSegments = { ...piece, segments: [[[0, 0, 0], [1, 0, 0]], [[3, 2, 1], [5, 4, 3]]] as [Vec3, Vec3][] };
+    const v = vertexKey([1, 0, 0]);
+    const x = alignVertices(withSegments, new Set([v]), 0, 5)!;
+    expect(x.landed.get(v)).toEqual([5, 0, 0]);
+    expect(x.piece.segments![0]).toEqual([[0, 0, 0], [5, 0, 0]]);
+    expect(x.piece.segments![1]).toEqual([[3, 2, 1], [5, 4, 3]]);
+    const z = alignVertices(withSegments, new Set([v]), 2, 3)!;
+    expect(z.piece.segments![0]).toEqual([[0, 0, 0], [1, 0, 3]]);
+  });
+  it('devuelve null si ya tiene esa coordenada', () => {
+    const piece = { ...makePiece([], 0x336699), segments: [[[0, 0, 0], [1, 0, 0]]] as [Vec3, Vec3][] };
+    expect(alignVertices(piece, new Set([vertexKey([1, 0, 0])]), 1, 0)).toBeNull();
+  });
+  it('en un cubo mueve solo el vértice pedido en el eje pedido', () => {
+    const c = cube();
+    const p = topCorner(c);
+    const result = alignVertices(c, new Set([vertexKey(p)]), 0, p[0] + 0.5)!;
+    expect(result.landed.get(vertexKey(p))).toEqual([p[0] + 0.5, p[1], p[2]]);
   });
 });

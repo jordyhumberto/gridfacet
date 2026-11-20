@@ -133,6 +133,7 @@ export const GUIDE: Record<Mode, [string, string][]> = {
     ['M', 'extruir cara: saca las caras cuyos vértices están todos elegidos y deja elegidos los de arriba para moverlos (lo mismo que el botón «Extruir cara»; en Malla sustituye a la M que refleja piezas en X)'],
     ['K', 'tapar hueco: con un vértice elegido del borde abierto de una pieza, cierra ese contorno con una cara que mira hacia el mismo lado que sus vecinas'],
     ['P', 'aplanar en plano: lleva los vértices elegidos (tres o más, por ejemplo los de una cara chueca) al plano que mejor se ajusta a todos; con vértices elegidos sustituye a la P que abre el modo Pintar'],
+    ['Igualar X · Y · Z', 'botones de Ordenar: el último vértice que elijas es la referencia y los demás toman su misma X, Y o Z (las otras dos coordenadas no cambian); sirve entre dos segmentos, también con simetría'],
     ['Simetrizar (botón)', 'con la simetría activa, deja exactamente iguales los dos lados de las piezas elegidas (o de todas): promedia cada vértice con el espejo de su gemelo y pega al plano los que están casi sobre él. Los vértices sin gemelo se ven en rosa'],
     ['D', 'quitar vértice: enciende y apaga el modo (botón «− Vértice»); con él, un clic en un vértice lo quita (con el espejo activo, también el de enfrente). En Malla sustituye a la D que hunde las piezas'],
     ['Ver vértices de atrás (casilla)', 'marcada se ven y se pueden elegir todos los vértices; sin marcar, solo los que dan a la cámara'],

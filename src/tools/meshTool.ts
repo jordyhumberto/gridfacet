@@ -4,7 +4,7 @@ import { faceNormal, type Piece, type Vec3 } from '../core/piece';
 import { MIRROR_TOLERANCE, pieceKey, reflectPiece, reflections, symmetrize, type Reflection, type Symmetry } from '../core/symmetry';
 import { triangulateFace } from '../core/convex';
 import { collapses } from '../core/selfIntersect';
-import { ringCut, bevelEdge, triangulateFaces, edgeLoop, pieceEdges, fillHoles, connectVertices, addSegment, dissolveEdge, slideSegment, straightenVertices, flattenVertices, flattenWarped, warpedFaces, finFaces, flagFins, splitFacesAtCenter, addFace, deleteFaces, deleteVertices, extrudeEdge, extrudeFaces, tipVertices, vertexNormal, facesWithin, flipFaces, mergeVertices, weldVertices, placeVertices, rotateAbout, scaleAbout, setFaceFlags, splitEdge, addMirrorPairOnFace, addVertexOnFace, taperPoint, twistPoint, bendPoint, uniqueVertices, vertexKey } from '../core/vertices';
+import { ringCut, bevelEdge, triangulateFaces, edgeLoop, pieceEdges, fillHoles, connectVertices, addSegment, dissolveEdge, slideSegment, straightenVertices, alignVertices, flattenVertices, flattenWarped, warpedFaces, finFaces, flagFins, splitFacesAtCenter, addFace, deleteFaces, deleteVertices, extrudeEdge, extrudeFaces, tipVertices, vertexNormal, facesWithin, flipFaces, mergeVertices, weldVertices, placeVertices, rotateAbout, scaleAbout, setFaceFlags, splitEdge, addMirrorPairOnFace, addVertexOnFace, taperPoint, twistPoint, bendPoint, uniqueVertices, vertexKey } from '../core/vertices';
 import type { ModelScene } from '../scene';
 
 /** Paso de la rejilla de imán, en celdas. */
@@ -2094,6 +2094,63 @@ export class MeshTool {
         : flattened
           ? 'No se alineó: la línea dejaría la pieza aplastada o atravesada'
           : 'Ya estaban alineados (o no hay vértices de en medio que mover)',
+    );
+  }
+
+  /**
+   * Iguala una coordenada: el último vértice que elegiste es la referencia y todos los demás pasan a tener su misma X, Y o Z (según `axis`);
+   * las otras dos coordenadas no cambian. Con simetría, el espejo se mueve en reflejo.
+   */
+  alignToLast(axis: 0 | 1 | 2): void {
+    const order: Vec3[] = [];
+    for (const [id, keys] of this.selection) {
+      const piece = this.host.model.get(id);
+      if (!piece) continue;
+      const positions = new Map(uniqueVertices(piece).map((p) => [vertexKey(p), p] as const));
+      for (const key of keys) {
+        const p = positions.get(key);
+        if (p) order.push(p);
+      }
+    }
+    const name = 'XYZ'[axis];
+    if (order.length < 2) {
+      this.host.status(`Elige al menos dos vértices: el último que elijas es la referencia y los demás se alinean con él en ${name}`);
+      return;
+    }
+    const ref = order[order.length - 1];
+    let moved = 0;
+    let crushed = false;
+    this.change((piece, _keys, _dirAt, parts) => {
+      let current = piece;
+      const landing = new Map<string, Vec3>();
+      for (const part of parts) {
+        const target = part.mirror ? part.mirror(ref) : ref;
+        const moving = new Set(part.full);
+        moving.delete(vertexKey(target));
+        const result = alignVertices(current, moving, axis, target[axis]);
+        if (!result) continue;
+        if (!collapses(piece) && collapses(result.piece)) {
+          crushed = true;
+          continue;
+        }
+        current = result.piece;
+        for (const [key, to] of result.landed) landing.set(key, to);
+      }
+      if (landing.size === 0) return null;
+      moved += landing.size;
+      const select = new Set<string>();
+      for (const key of ownKeys(parts)) {
+        const to = landing.get(key);
+        select.add(to ? vertexKey(to) : key);
+      }
+      return { piece: sameId(current, piece), select };
+    });
+    this.host.status(
+      moved > 0
+        ? `Alineados en ${name}: ${moved} vértice(s) con la misma ${name} que el último elegido`
+        : crushed
+          ? `No se alineó: dejaría la pieza aplastada o atravesada`
+          : `Ya estaban alineados en ${name}`,
     );
   }
 
