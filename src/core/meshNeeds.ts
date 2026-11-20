@@ -58,6 +58,8 @@ const WHAT: Record<string, string> = {
 export function meshNeedReason(action: string, situation: MeshSituation): string | null {
   if (action === 'all') return null;
   if (action === 'symmetrize') return situation.symmetric ? null : 'necesita la simetría activa (casillas X, Y o Z de «Simetría»)';
+  // Alinear con el último: sirven dos vértices elegidos, aunque estén en piezas distintas (dos segmentos sueltos).
+  if (action.startsWith('align')) return situation.count >= 2 ? null : `necesita elegir 2 o más vértices: el último es la referencia (${situation.count === 0 ? 'no hay ninguno elegido' : `hay ${situation.count} elegido(s)`})`;
   const need = MESH_NEEDS[action];
   if (need === 'face') return situation.fullFaces > 0 ? null : 'necesita una cara con todos sus vértices elegidos';
   const least = need ?? 1;

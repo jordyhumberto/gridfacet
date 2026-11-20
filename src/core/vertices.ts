@@ -548,6 +548,24 @@ export function straightenVertices(piece: Piece, keys: ReadonlySet<string>, a: V
   return result && { piece: result, landed };
 }
 
+/**
+ * Iguala una coordenada: lleva cada vértice de `keys` a `value` en el eje `axis` (0 = X, 1 = Y, 2 = Z) y deja las otras dos como están.
+ * Devuelve la pieza nueva y a dónde fue cada vértice movido, o null si ninguno cambia.
+ */
+export function alignVertices(piece: Piece, keys: ReadonlySet<string>, axis: 0 | 1 | 2, value: number): { piece: Piece; landed: Map<string, Vec3> } | null {
+  const landed = new Map<string, Vec3>();
+  for (const p of uniqueVertices(piece)) {
+    const key = vertexKey(p);
+    if (!keys.has(key)) continue;
+    const to: Vec3 = [p[0], p[1], p[2]];
+    to[axis] = value;
+    if (vertexKey(to) !== key) landed.set(key, to);
+  }
+  if (landed.size === 0) return null;
+  const result = placeVertices(piece, new Set(landed.keys()), (p) => landed.get(vertexKey(p)) ?? p);
+  return result && { piece: result, landed };
+}
+
 /** El plano que mejor se ajusta a los puntos (mínimos cuadrados): un punto y la normal unitaria. Null con menos de tres puntos o si están en una línea. */
 export function fitPlane(points: Vec3[]): { point: Vec3; normal: Vec3 } | null {
   if (points.length < 3) return null;

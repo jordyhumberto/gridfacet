@@ -224,6 +224,9 @@ export function createMeshPanel(host: MeshPanelHost): MeshPanel {
       else if (action === 'dissolve') meshTool.dissolveSelected();
       else if (action === 'straighten') meshTool.straightenSelected();
       else if (action === 'flatten') meshTool.flattenSelected();
+      else if (action === 'alignX') meshTool.alignToLast(0);
+      else if (action === 'alignY') meshTool.alignToLast(1);
+      else if (action === 'alignZ') meshTool.alignToLast(2);
       else if (action === 'symmetrize') meshTool.symmetrizeAll();
     }),
   );
