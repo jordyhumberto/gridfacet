@@ -7,6 +7,7 @@ import { reflections, type Symmetry } from '../core/symmetry';
 import { pointOf, type FaceTexture } from '../core/texture';
 import type { ModelScene } from '../scene';
 import { FaceEditor } from '../tools/faceEditor';
+import { iconSvg } from './paintIcons';
 
 /** La cara de una pieza bajo el puntero. */
 export interface PixelFaceHit {
@@ -79,10 +80,44 @@ export function createPixelPanel(host: PixelHost): PixelPanel {
   const pixelPainting = (): boolean => host.mode() === 'paint' && pixelModeEl.checked;
   /** Última cara tocada en modo píxeles: la que abre el botón "Plano". */
   let lastPixelFace: { piece: Piece; faceIndex: number } | null = null;
+  // Los botones con icono mandan sobre los controles ocultos (casilla de píxeles, herramienta y forma) y marcan el que está puesto.
+  for (const el of pixelActionsEl.querySelectorAll<HTMLElement>('[data-icon]')) el.innerHTML = iconSvg(el.dataset.icon!);
+  const wholeButton = document.getElementById('pixelWhole') as HTMLButtonElement;
+  const toolButtons = [...pixelActionsEl.querySelectorAll<HTMLButtonElement>('button[data-pixeltool]')];
+  const shapeButtons = [...pixelActionsEl.querySelectorAll<HTMLButtonElement>('button[data-brushshape]')];
+  function syncButtons(): void {
+    wholeButton.classList.toggle('active', !pixelModeEl.checked);
+    for (const b of toolButtons) b.classList.toggle('active', pixelModeEl.checked && b.dataset.pixeltool === pixelToolEl.value);
+    for (const b of shapeButtons) b.classList.toggle('active', b.dataset.brushshape === pixelShapeEl.value);
+  }
+  function setPixelMode(on: boolean): void {
+    pixelModeEl.checked = on;
+    pixelModeEl.dispatchEvent(new Event('change'));
+  }
   pixelModeEl.addEventListener('change', () => {
     (document.activeElement as HTMLElement | null)?.blur();
     host.clearFaceHover();
+    syncButtons();
   });
+  wholeButton.addEventListener('click', () => {
+    wholeButton.blur();
+    setPixelMode(false);
+  });
+  for (const button of toolButtons) {
+    button.addEventListener('click', () => {
+      button.blur();
+      pixelToolEl.value = button.dataset.pixeltool!;
+      setPixelMode(true);
+    });
+  }
+  for (const button of shapeButtons) {
+    button.addEventListener('click', () => {
+      button.blur();
+      pixelShapeEl.value = button.dataset.brushshape!;
+      syncButtons();
+    });
+  }
+  syncButtons();
 
   /** Una cara que recibe el trazo: la pulsada o su reflejo con simetría (`reflect` lleva el punto pintado hasta ella). */
   interface StrokeTarget {
@@ -317,6 +352,8 @@ export function createPixelPanel(host: PixelHost): PixelPanel {
     faceEditor.open(target, lastPixelFace.faceIndex);
   }
   document.getElementById('pixelFlat')!.addEventListener('click', openFaceEditor);
+  document.getElementById('pixelCopy')!.addEventListener('click', copyPixels);
+  document.getElementById('pixelPaste')!.addEventListener('click', pastePixels);
   document.getElementById('faceEditorClose')!.addEventListener('click', () => faceEditor.close());
   renderer.domElement.addEventListener('dblclick', (e) => {
     if (!pixelPainting()) return;
@@ -378,14 +415,10 @@ export function createPixelPanel(host: PixelHost): PixelPanel {
       pixelActionsEl.hidden = host.mode() !== 'paint';
     },
     useTool: (tool) => {
-      pixelModeEl.checked = true;
       pixelToolEl.value = tool;
-      pixelModeEl.dispatchEvent(new Event('change'));
+      setPixelMode(true);
     },
-    wholeFaces: () => {
-      pixelModeEl.checked = false;
-      pixelModeEl.dispatchEvent(new Event('change'));
-    },
+    wholeFaces: () => setPixelMode(false),
     openFaceEditor,
     get editorOpen() {
       return faceEditor.isOpen;

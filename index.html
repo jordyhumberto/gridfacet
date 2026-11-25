@@ -23,6 +23,9 @@
       #hud .meshGroup > .groupTitle { flex: 1 1 100%; font-size: 0.8em; opacity: 0.65; text-transform: uppercase; letter-spacing: 0.04em; }
       #hud button, #hud select { background: #2a2f3a; color: inherit; border: 1px solid #3d4452; border-radius: 6px; padding: 4px 8px; font-size: 12px; cursor: pointer; }
       #hud button.active { background: #3b6fd4; border-color: #6c98ee; }
+      #hud button.iconBtn { display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 30px; padding: 0; }
+      #hud .iconToggle { display: inline-flex; align-items: center; gap: 2px; cursor: pointer; }
+      #hud .iconToggle > span { display: inline-flex; }
       #hud input[type="color"] { width: 28px; height: 24px; padding: 0; border: 1px solid #3d4452; border-radius: 6px; background: none; cursor: pointer; }
       #hud small { color: #9aa1b2; line-height: 1.5; }
       #marquee { position: fixed; display: none; pointer-events: none; border: 1px solid #6c98ee; background: rgba(108, 152, 238, 0.18); z-index: 5; }
@@ -325,45 +328,51 @@
             </div>
           </div>
           <div class="row" id="pixelActions" hidden>
-            <label title="Pintar píxeles sueltos de la cara en vez de toda la cara"><input type="checkbox" id="pixelMode" /> Píxeles</label>
-            <select id="pixelTool" title="Herramienta de píxeles">
-              <option value="pencil">Lápiz</option>
-              <option value="eraser">Borrador</option>
-              <option value="fill">Relleno</option>
-              <option value="line">Línea</option>
-              <option value="rect">Rectángulo</option>
-              <option value="rectfill">Rectángulo lleno</option>
-              <option value="ellipse">Elipse</option>
-              <option value="ellipsefill">Elipse llena</option>
-              <option value="replace">Reemplazar color</option>
-              <option value="dither">Tramado</option>
-              <option value="select">Elegir (Ctrl+C / Ctrl+V copian)</option>
-              <option value="move">Mover (la selección o toda la cara)</option>
-            </select>
-            <select id="pixelSize" title="Lado del pincel, en píxeles">
-              <option value="1">1 px</option>
-              <option value="2">2 px</option>
-              <option value="3">3 px</option>
-              <option value="4">4 px</option>
-              <option value="8">8 px</option>
-              <option value="12">12 px</option>
-              <option value="16">16 px</option>
-            </select>
-            <select id="pixelShape" title="Forma del pincel">
-              <option value="square">Cuadrado</option>
-              <option value="round">Redondo</option>
-            </select>
-            <label title="Simetría dentro de la cara: lo que pintas se repite reflejado de izquierda a derecha"><input type="checkbox" id="pixelMirrorX" /> Simetría ↔</label>
-            <label title="Simetría dentro de la cara: lo que pintas se repite reflejado de arriba abajo"><input type="checkbox" id="pixelMirrorY" /> Simetría ↕</label>
-            <span id="pixelEdits" title="Actúan sobre la selección o, si no hay, sobre toda la cara">
-              <button data-pixeledit="flipH" title="Voltear de izquierda a derecha">↔ Voltear</button>
-              <button data-pixeledit="flipV" title="Voltear de arriba abajo">↕ Voltear</button>
-              <button data-pixeledit="rotate" title="Girar un cuarto de vuelta (la región debe ser cuadrada)">⟳ Girar</button>
-              <button data-pixeledit="outline" title="Borde de un píxel con el color elegido alrededor de lo pintado">Contorno</button>
-              <button data-pixeledit="lighten" title="Aclarar un paso lo pintado">Aclarar</button>
-              <button data-pixeledit="darken" title="Oscurecer un paso lo pintado">Oscurecer</button>
-            </span>
-            <button id="pixelFlat" title="Abre la última cara que tocaste en plano, ampliada (también con doble clic sobre una cara)">Plano</button>
+            <input type="checkbox" id="pixelMode" hidden />
+            <select id="pixelTool" hidden><option value="pencil">Lápiz</option><option value="eraser">Borrador</option><option value="fill">Relleno</option><option value="line">Línea</option><option value="rect">Rectángulo</option><option value="rectfill">Rectángulo lleno</option><option value="ellipse">Elipse</option><option value="ellipsefill">Elipse llena</option><option value="replace">Reemplazar color</option><option value="dither">Tramado</option><option value="select">Elegir</option><option value="move">Mover</option></select>
+            <select id="pixelShape" hidden><option value="square">Cuadrado</option><option value="round">Redondo</option></select>
+            <div class="meshGroup">
+              <span class="groupTitle">Caras enteras</span>
+              <button type="button" class="iconBtn" id="pixelWhole" data-icon="whole" title="Cara entera: clic pinta la cara, Ctrl+clic toda la pieza, Alt+clic toma su color" aria-label="Cara entera"></button>
+            </div>
+            <div class="meshGroup">
+              <span class="groupTitle">Dibujar píxeles</span>
+              <button type="button" class="iconBtn" data-pixeltool="pencil" data-icon="pencil" title="Lápiz: pinta casilla a casilla" aria-label="Lápiz"></button>
+              <button type="button" class="iconBtn" data-pixeltool="eraser" data-icon="eraser" title="Borrador: deja ver el color de la cara" aria-label="Borrador"></button>
+              <button type="button" class="iconBtn" data-pixeltool="fill" data-icon="fill" title="Relleno: llena la zona del mismo color" aria-label="Relleno"></button>
+              <button type="button" class="iconBtn" data-pixeltool="replace" data-icon="replace" title="Reemplazar color: cambia en la cara todas las casillas de ese color" aria-label="Reemplazar color"></button>
+              <button type="button" class="iconBtn" data-pixeltool="dither" data-icon="dither" title="Tramado: pinta en damero" aria-label="Tramado"></button>
+            </div>
+            <div class="meshGroup">
+              <span class="groupTitle">Formas</span>
+              <button type="button" class="iconBtn" data-pixeltool="line" data-icon="line" title="Línea" aria-label="Línea"></button>
+              <button type="button" class="iconBtn" data-pixeltool="rect" data-icon="rect" title="Rectángulo" aria-label="Rectángulo"></button>
+              <button type="button" class="iconBtn" data-pixeltool="rectfill" data-icon="rectfill" title="Rectángulo lleno" aria-label="Rectángulo lleno"></button>
+              <button type="button" class="iconBtn" data-pixeltool="ellipse" data-icon="ellipse" title="Elipse" aria-label="Elipse"></button>
+              <button type="button" class="iconBtn" data-pixeltool="ellipsefill" data-icon="ellipsefill" title="Elipse llena" aria-label="Elipse llena"></button>
+            </div>
+            <div class="meshGroup">
+              <span class="groupTitle">Selección y cambios</span>
+              <button type="button" class="iconBtn" data-pixeltool="select" data-icon="select" title="Elegir región: Ctrl+C y Ctrl+V la copian y pegan" aria-label="Elegir región"></button>
+              <button type="button" class="iconBtn" data-pixeltool="move" data-icon="move" title="Mover: la selección o toda la cara" aria-label="Mover"></button>
+              <button type="button" class="iconBtn" id="pixelCopy" data-icon="copy" title="Copiar: la selección o toda la cara (Ctrl+C)" aria-label="Copiar"></button>
+              <button type="button" class="iconBtn" id="pixelPaste" data-icon="paste" title="Pegar (Ctrl+V)" aria-label="Pegar (Ctrl+V)"></button>
+              <button type="button" class="iconBtn" data-pixeledit="flipH" data-icon="flipH" title="Voltear de izquierda a derecha" aria-label="Voltear de izquierda a derecha"></button>
+              <button type="button" class="iconBtn" data-pixeledit="flipV" data-icon="flipV" title="Voltear de arriba abajo" aria-label="Voltear de arriba abajo"></button>
+              <button type="button" class="iconBtn" data-pixeledit="rotate" data-icon="rotate" title="Girar un cuarto de vuelta: la región debe ser cuadrada" aria-label="Girar un cuarto de vuelta"></button>
+              <button type="button" class="iconBtn" data-pixeledit="outline" data-icon="outline" title="Contorno: borde de un píxel con el color elegido alrededor de lo pintado" aria-label="Contorno"></button>
+              <button type="button" class="iconBtn" data-pixeledit="lighten" data-icon="lighten" title="Aclarar un paso lo pintado" aria-label="Aclarar un paso lo pintado"></button>
+              <button type="button" class="iconBtn" data-pixeledit="darken" data-icon="darken" title="Oscurecer un paso lo pintado" aria-label="Oscurecer un paso lo pintado"></button>
+            </div>
+            <div class="meshGroup">
+              <span class="groupTitle">Pincel</span>
+              <select id="pixelSize" title="Lado del pincel, en píxeles"><option value="1">1 px</option><option value="2">2 px</option><option value="3">3 px</option><option value="4">4 px</option><option value="8">8 px</option><option value="12">12 px</option><option value="16">16 px</option></select>
+              <button type="button" class="iconBtn" data-brushshape="square" data-icon="square" title="Pincel cuadrado" aria-label="Pincel cuadrado"></button>
+              <button type="button" class="iconBtn" data-brushshape="round" data-icon="round" title="Pincel redondo" aria-label="Pincel redondo"></button>
+              <label class="iconToggle" title="Simetría dentro de la cara: lo que pintas se repite reflejado de izquierda a derecha"><input type="checkbox" id="pixelMirrorX" aria-label="Simetría horizontal" /><span data-icon="mirrorX"></span></label>
+              <label class="iconToggle" title="Simetría dentro de la cara: lo que pintas se repite reflejado de arriba abajo"><input type="checkbox" id="pixelMirrorY" aria-label="Simetría vertical" /><span data-icon="mirrorY"></span></label>
+              <button type="button" class="iconBtn" id="pixelFlat" data-icon="flat" title="Plano: abre la última cara que tocaste ampliada (también con doble clic sobre una cara)" aria-label="Plano"></button>
+            </div>
             <small>Arrastra para pintar · Alt: tomar el color · Ctrl+Z deshace el trazo</small>
           </div>
           <div class="row" id="axisRow" hidden title="Un solo control para Elegir y para Malla: con Elegir limita el arrastre de las piezas elegidas; en Malla, el de los vértices">
@@ -757,7 +766,7 @@
           <dt>Copia automática</dt><dd>La escena se copia sola en el navegador. Al abrir la página siempre empiezas con una hoja en blanco; si no guardaste el trabajo anterior, búscalo con el comando «Recuperar el trabajo anterior». Guarda en un archivo para conservarlo de verdad.</dd>
           <dt>Exportar con texturas</dt><dd>Los píxeles pintados salen en los sprites PNG, en el GLB (mallas aparte pegadas a su cara, con textura de vecino más cercano y recorte por transparencia) y en “Exportar OBJ”, que baja tres archivos: .obj, .mtl y un PNG con todas las texturas. Guárdalos juntos y, en Blender, pon la interpolación de la textura en “Closest”.</dd>
           <dt>Exportar sprites</dt><dd>En Archivo: elige cámara (isométrica, lateral o cenital), 1, 4, 8 o 16 vistas alrededor del modelo, tamaño de 16 a 256 px, sombreado plano o con luz, y contorno. Se dibuja sin suavizado y con fondo transparente. Con “Hoja” sale un solo PNG con las vistas por filas; sin ella, un PNG por vista. Todas las vistas comparten escala.</dd>
-          <dt>Pintar píxeles</dt><dd>En Pintar, la casilla “Píxeles” cambia el pincel: en vez de teñir la cara entera se pinta casilla a casilla (16 por celda), arrastrando, con lápiz (1, 2, 3, 4 u 8 px), borrador (deja ver el color de la cara) o relleno. <kbd>Alt</kbd>+clic toma el color del píxel. Un trazo se deshace de una vez, y el trazo se queda en la cara donde empezó. Las texturas se guardan con el proyecto y se conservan al mover, girar, espejar, repetir, cortar y hundir; al crecer una cara, la de arriba del cuerpo nuevo hereda sus píxeles y las caras nuevas de un corte nacen sin pintar. Salen en los sprites, en el GLB y en el OBJ.</dd>
+          <dt>Pintar píxeles</dt><dd>En Pintar, elegir una herramienta de píxeles (botones con icono; el nombre sale al pasar el ratón) cambia el pincel: en vez de teñir la cara entera se pinta casilla a casilla (16 por celda), arrastrando, con lápiz (1, 2, 3, 4 u 8 px), borrador (deja ver el color de la cara) o relleno. <kbd>Alt</kbd>+clic toma el color del píxel. Un trazo se deshace de una vez, y el trazo se queda en la cara donde empezó. Las texturas se guardan con el proyecto y se conservan al mover, girar, espejar, repetir, cortar y hundir; al crecer una cara, la de arriba del cuerpo nuevo hereda sus píxeles y las caras nuevas de un corte nacen sin pintar. Salen en los sprites, en el GLB y en el OBJ.</dd>
           <dt>Paletas de colores</dt><dd>Debajo de los colores recientes: “Guardar” convierte los últimos colores en una paleta con nombre; “Importar” abre un archivo .hex (un color por línea, como los de Lospec); “Exportar” la guarda como .hex. El selector alterna entre los recientes y tus paletas.</dd>
           <dt>Limpiar astillas</dt><dd>En la sección “Selección” y en Comandos (<kbd>Ctrl</kbd>+<kbd>K</kbd>): quita las piezas diminutas que dejan los cortes muy seguidos (menos de un cuarto de cuarto de cuarto de celda cúbica). Actúa sobre la selección o, sin ella, sobre todo; se deshace con <kbd>Ctrl</kbd>+<kbd>Z</kbd>.</dd>
           <dt>GLB por capas</dt><dd>En Archivo, “Una unión por capa” exporta cada capa como sus propias mallas, con el nombre de la capa. Mover piezas a otra capa ahora se puede deshacer.</dd>
