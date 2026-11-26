@@ -4,7 +4,8 @@ import { ICON_NAMES } from './paintIcons';
 
 describe('iconos de Pintar', () => {
   it('cada data-icon del panel tiene su dibujo', () => {
-    const used = [...html.matchAll(/data-icon="([^"]+)"/g)].map((m) => m[1]);
+    const panel = html.slice(html.indexOf('id="pixelActions"'), html.indexOf('id="axisRow"'));
+    const used = [...panel.matchAll(/data-icon="([^"]+)"/g)].map((m) => m[1]);
     expect(used.length).toBeGreaterThan(20);
     expect(used.filter((name) => !ICON_NAMES.has(name))).toEqual([]);
   });

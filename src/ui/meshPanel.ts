@@ -4,6 +4,7 @@ import { FACE_BEHIND, FACE_DOUBLE, FACE_UNLIT, type Piece } from '../core/piece'
 import type { Symmetry } from '../core/symmetry';
 import type { ModelScene } from '../scene';
 import { MeshTool } from '../tools/meshTool';
+import { meshIconSvg } from './meshIcons';
 
 /** Lo que el panel de Malla necesita de la aplicación. */
 export interface MeshPanelHost {
@@ -38,6 +39,8 @@ export function createMeshPanel(host: MeshPanelHost): MeshPanel {
   const { statusEl } = host;
   const meshActionsEl = document.getElementById('meshActions')!;
   const meshInfoEl = document.getElementById('meshInfo')!;
+  // El icono va delante de la letra del atajo (que ya está escrita en el botón).
+  for (const el of meshActionsEl.querySelectorAll<HTMLElement>('[data-icon]')) el.insertAdjacentHTML('afterbegin', meshIconSvg(el.dataset.icon!));
   const meshDoubleEl = document.getElementById('meshDouble') as HTMLInputElement;
   /** Lo que se deja elegido en el panel de Malla se recuerda entre sesiones (sin fallar si el navegador no deja guardar). */
   const meshPref = {
