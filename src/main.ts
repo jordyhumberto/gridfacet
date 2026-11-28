@@ -2507,7 +2507,7 @@ const commands: Command[] = [
   { name: 'Paleta: guardar colores recientes', keywords: 'colores', run: () => document.getElementById('paletteSave')!.click() },
   { name: 'Paleta: importar .hex', keywords: 'colores lospec abrir', run: () => document.getElementById('paletteImport')!.click() },
   { name: 'Paleta: exportar .hex', keywords: 'colores lospec descargar', run: () => document.getElementById('paletteExport')!.click() },
-  ...([['pencil', 'Lápiz'], ['eraser', 'Borrador'], ['fill', 'Relleno'], ['line', 'Línea'], ['rect', 'Rectángulo'], ['rectfill', 'Rectángulo lleno'], ['ellipse', 'Elipse'], ['ellipsefill', 'Elipse llena'], ['replace', 'Reemplazar color'], ['dither', 'Tramado'], ['select', 'Seleccionar'], ['move', 'Mover']] as const).map(([tool, label]): Command => ({
+  ...([['pencil', 'Lápiz'], ['eraser', 'Borrador'], ['fill', 'Relleno'], ['line', 'Línea'], ['rect', 'Rectángulo'], ['rectfill', 'Rectángulo lleno'], ['ellipse', 'Elipse'], ['ellipsefill', 'Elipse llena'], ['replace', 'Reemplazar color'], ['dither', 'Tramado'], ['spray', 'Espray'], ['shadeup', 'Pincel aclarar'], ['shadedown', 'Pincel oscurecer'], ['stamp', 'Sello'], ['hlines', 'Líneas horizontales'], ['vlines', 'Líneas verticales'], ['diag', 'Diagonales'], ['lattice', 'Entramado'], ['dots', 'Puntos'], ['bricks', 'Ladrillos'], ['select', 'Seleccionar'], ['move', 'Mover']] as const).map(([tool, label]): Command => ({
     name: `Píxeles: ${label}`,
     keywords: 'pintar textura cara',
     run: () => {

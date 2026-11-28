@@ -332,7 +332,7 @@
           </div>
           <div class="row" id="pixelActions" hidden>
             <input type="checkbox" id="pixelMode" hidden />
-            <select id="pixelTool" hidden><option value="pencil">Lápiz</option><option value="eraser">Borrador</option><option value="fill">Relleno</option><option value="line">Línea</option><option value="rect">Rectángulo</option><option value="rectfill">Rectángulo lleno</option><option value="ellipse">Elipse</option><option value="ellipsefill">Elipse llena</option><option value="replace">Reemplazar color</option><option value="dither">Tramado</option><option value="select">Elegir</option><option value="move">Mover</option></select>
+            <select id="pixelTool" hidden><option value="pencil">Lápiz</option><option value="eraser">Borrador</option><option value="fill">Relleno</option><option value="line">Línea</option><option value="rect">Rectángulo</option><option value="rectfill">Rectángulo lleno</option><option value="ellipse">Elipse</option><option value="ellipsefill">Elipse llena</option><option value="replace">Reemplazar color</option><option value="dither">Tramado</option><option value="select">Elegir</option><option value="move">Mover</option><option value="spray">Espray</option><option value="shadeup">Pincel aclarar</option><option value="shadedown">Pincel oscurecer</option><option value="stamp">Sello</option><option value="hlines">Líneas horizontales</option><option value="vlines">Líneas verticales</option><option value="diag">Diagonales</option><option value="lattice">Entramado</option><option value="dots">Puntos</option><option value="bricks">Ladrillos</option></select>
             <select id="pixelShape" hidden><option value="square">Cuadrado</option><option value="round">Redondo</option></select>
             <div class="meshGroup">
               <span class="groupTitle">Caras enteras</span>
@@ -344,7 +344,20 @@
               <button type="button" class="iconBtn" data-pixeltool="eraser" data-icon="eraser" title="Borrador: deja ver el color de la cara" aria-label="Borrador"></button>
               <button type="button" class="iconBtn" data-pixeltool="fill" data-icon="fill" title="Relleno: llena la zona del mismo color" aria-label="Relleno"></button>
               <button type="button" class="iconBtn" data-pixeltool="replace" data-icon="replace" title="Reemplazar color: cambia en la cara todas las casillas de ese color" aria-label="Reemplazar color"></button>
+              <button type="button" class="iconBtn" data-pixeltool="spray" data-icon="spray" title="Espray: salpica píxeles sueltos al arrastrar (más amplio cuanto mayor el pincel)" aria-label="Espray"></button>
+              <button type="button" class="iconBtn" data-pixeltool="shadeup" data-icon="shadeup" title="Pincel aclarar: aclara un paso por donde pasas (una vez por trazo)" aria-label="Pincel aclarar"></button>
+              <button type="button" class="iconBtn" data-pixeltool="shadedown" data-icon="shadedown" title="Pincel oscurecer: oscurece un paso por donde pasas (una vez por trazo)" aria-label="Pincel oscurecer"></button>
+              <button type="button" class="iconBtn" data-pixeltool="stamp" data-icon="stamp" title="Sello: pinta con lo copiado (Elegir una región, Copiar y luego este botón)" aria-label="Sello"></button>
+            </div>
+            <div class="meshGroup">
+              <span class="groupTitle">Patrones</span>
               <button type="button" class="iconBtn" data-pixeltool="dither" data-icon="dither" title="Tramado: pinta en damero" aria-label="Tramado"></button>
+              <button type="button" class="iconBtn" data-pixeltool="hlines" data-icon="hlines" title="Líneas horizontales" aria-label="Líneas horizontales"></button>
+              <button type="button" class="iconBtn" data-pixeltool="vlines" data-icon="vlines" title="Líneas verticales" aria-label="Líneas verticales"></button>
+              <button type="button" class="iconBtn" data-pixeltool="diag" data-icon="diag" title="Diagonales" aria-label="Diagonales"></button>
+              <button type="button" class="iconBtn" data-pixeltool="lattice" data-icon="lattice" title="Entramado: rejilla de líneas cruzadas" aria-label="Entramado"></button>
+              <button type="button" class="iconBtn" data-pixeltool="dots" data-icon="dots" title="Puntos" aria-label="Puntos"></button>
+              <button type="button" class="iconBtn" data-pixeltool="bricks" data-icon="bricks" title="Ladrillos" aria-label="Ladrillos"></button>
             </div>
             <div class="meshGroup">
               <span class="groupTitle">Formas</span>

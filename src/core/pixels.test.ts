@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { CATALOG, buildPiece } from './catalog';
-import { editRegion, shadeColor, copyRegion, drawShape, roundMask, moveRegion, pasteRegion, paintCell, rectBetween, replaceColor, floodFill, stamp, stampLine, texelAt, textureOfFace, visibleColor, withFaceTexture } from './pixels';
+import { PATTERNS, pixelClipboard, editRegion, shadeColor, copyRegion, drawShape, roundMask, moveRegion, pasteRegion, paintCell, rectBetween, replaceColor, floodFill, stamp, stampLine, texelAt, textureOfFace, visibleColor, withFaceTexture } from './pixels';
 import { CLEAR, blankTexture, pointOf } from './texture';
 
 const cube = () => buildPiece(CATALOG[0], 0, 0, 0, 0, 0x336699);
@@ -329,5 +329,57 @@ describe('casos degenerados', () => {
     texture.pixels[0] = 0xff0000;
     expect(editRegion(texture, { x0: 10, y0: 10, x1: 12, y1: 12 }, 'flipH', 0)).toBeNull();
     expect(editRegion(texture, { x0: 0, y0: 0, x1: 2, y1: 1 }, 'rotate', 0)).toBeNull();
+  });
+});
+
+describe('pinceles nuevos', () => {
+  const blank = (side = 16) => ({ w: side, h: side, pixels: new Array<number>(side * side).fill(-1) });
+  const fresh = () => ({ start: null, last: null, base: null });
+  const painted = (t: { pixels: number[] }) => t.pixels.filter((p) => p !== -1).length;
+
+  it('cada patrón pinta una parte del pincel, no todo', () => {
+    for (const name of Object.keys(PATTERNS)) {
+      const t = blank();
+      paintCell(t, fresh(), name, { x: 8, y: 8 }, 8, 5);
+      expect(painted(t), name).toBeGreaterThan(0);
+      expect(painted(t), name).toBeLessThan(64);
+    }
+  });
+
+  it('el espray salpica algunas casillas y se repite igual en otra cara', () => {
+    const a = blank();
+    const b = blank();
+    paintCell(a, fresh(), 'spray', { x: 8, y: 8 }, 4, 5);
+    paintCell(b, fresh(), 'spray', { x: 8, y: 8 }, 4, 5);
+    expect(painted(a)).toBeGreaterThan(0);
+    expect(a.pixels).toEqual(b.pixels);
+  });
+
+  it('aclarar con el pincel cambia un solo paso por trazo, también sobre lo sin pintar', () => {
+    const t = blank(4);
+    const state = fresh();
+    paintCell(t, state, 'shadeup', { x: 1, y: 1 }, 1, 0, { faceColor: 0x404040 });
+    paintCell(t, state, 'shadeup', { x: 1, y: 1 }, 1, 0, { faceColor: 0x404040 });
+    expect(t.pixels[5]).toBe(shadeColor(0x404040, true));
+    expect(painted(t)).toBe(1);
+  });
+
+  it('el sello estampa lo copiado y al arrastrar lo repite sin montarlo', () => {
+    pixelClipboard.value = { w: 2, h: 2, pixels: [1, 2, 3, 4] };
+    const t = blank(8);
+    const state = fresh();
+    paintCell(t, state, 'stamp', { x: 1, y: 1 }, 1, 0);
+    paintCell(t, state, 'stamp', { x: 3, y: 1 }, 1, 0);
+    expect(t.pixels.slice(8, 14)).toEqual([-1, 1, 2, 1, 2, -1]);
+    pixelClipboard.value = null;
+    expect(paintCell(blank(), fresh(), 'stamp', { x: 1, y: 1 }, 1, 0)).toBe(0);
+  });
+
+  it('con espejo, el sello sale reflejado', () => {
+    pixelClipboard.value = { w: 2, h: 1, pixels: [1, 2] };
+    const t = blank(8);
+    paintCell(t, fresh(), 'stamp', { x: 1, y: 0 }, 1, 0, { mirrorX: true });
+    expect(t.pixels.slice(0, 8)).toEqual([-1, 1, 2, -1, -1, 2, 1, -1]);
+    pixelClipboard.value = null;
   });
 });

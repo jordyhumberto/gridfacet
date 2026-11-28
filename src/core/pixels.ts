@@ -103,6 +103,24 @@ export function stampLine(texture: FaceTexture, x0: number, y0: number, x1: numb
 /** Casillas alternas como un tablero de ajedrez: el tramado (dither) que da la ilusión de un tono intermedio con solo dos colores. */
 export const checker: BrushMask = (i, j) => (i + j) % 2 === 0;
 
+/** Patrones del pincel: qué casillas pinta cada uno. Van sobre las coordenadas de la cara, así los trazos que se juntan casan entre sí. */
+export const PATTERNS: Record<string, BrushMask> = {
+  dither: checker,
+  hlines: (_, j) => j % 2 === 0,
+  vlines: (i) => i % 2 === 0,
+  diag: (i, j) => (i + j) % 3 === 0,
+  lattice: (i, j) => i % 3 === 0 || j % 3 === 0,
+  dots: (i, j) => i % 2 === 0 && j % 2 === 0,
+  // Ladrillos de 8 × 4 casillas, cada hilada corrida medio ladrillo.
+  bricks: (i, j) => j % 4 === 0 || (i + (Math.floor(j / 4) % 2) * 4) % 8 === 0,
+};
+
+/** Número «al azar» entre 0 y 1 que depende solo de sus datos: las caras reflejadas del espray reciben las mismas salpicaduras. */
+const noise = (a: number, b: number): number => {
+  const v = Math.sin(a * 127.1 + b * 311.7) * 43758.5453;
+  return v - Math.floor(v);
+};
+
 /** Pincel redondo de lado `size`: recorta las esquinas del cuadrado (con 1 o 2 px no hay nada que redondear). */
 export function roundMask(size: number): BrushMask | undefined {
   if (size <= 2) return undefined;
@@ -123,6 +141,8 @@ export interface BrushOptions {
   round?: boolean;
   mirrorX?: boolean;
   mirrorY?: boolean;
+  /** Color de la cara: lo que se ve en las casillas sin pintar (para aclarar u oscurecer con el pincel). */
+  faceColor?: number;
 }
 
 /** Herramientas que se arrastran de un punto a otro y se previsualizan hasta soltar. */
@@ -249,6 +269,10 @@ export interface StrokeState {
   shift?: Cell;
   /** Estados de los trazos reflejados (espejo en la cara): uno por reflejo, en el orden de `mirrorsOf`. */
   mirrors?: StrokeState[];
+  /** Casillas ya aclaradas u oscurecidas en este trazo (cada una cambia un solo paso); la comparten los reflejos. */
+  visited?: Set<number>;
+  /** Cuántas veces ha rociado el espray en este trazo. */
+  step?: number;
 }
 
 /** Aplica la herramienta elegida a la casilla bajo el puntero, dentro de un trazo. Devuelve cuántas casillas cambiaron. */
@@ -257,15 +281,75 @@ export function paintCell(texture: FaceTexture, state: StrokeState, tool: string
   if (!(options.mirrorX || options.mirrorY) || !freehand) return paintOne(texture, state, tool, cell, size, color, options);
   // Trazo a mano con espejo: el mismo trazo se repite reflejado, cada reflejo con su propio recorrido.
   const [, ...others] = mirrorsOf(options);
-  state.mirrors ??= others.map(() => ({ start: null, last: null, base: null }));
+  state.visited ??= new Set();
+  state.mirrors ??= others.map(() => ({ start: null, last: null, base: null, visited: state.visited }));
   let changed = paintOne(texture, state, tool, cell, size, color, options);
   others.forEach(([mx, my], k) => {
-    changed += paintOne(texture, state.mirrors![k], tool, mirrored(cell, texture, mx, my), size, color, options);
+    changed += paintOne(texture, state.mirrors![k], tool, mirrored(cell, texture, mx, my), size, color, options, mx, my);
   });
   return changed;
 }
 
-function paintOne(texture: FaceTexture, state: StrokeState, tool: string, cell: Cell, size: number, color: number, options: BrushOptions): number {
+/** Espray: salpica casillas sueltas alrededor del puntero (al menos en un círculo de 4 px, más cuanto mayor el pincel). */
+function spray(texture: FaceTexture, state: StrokeState, cell: Cell, size: number, color: number, flipX: boolean, flipY: boolean): number {
+  const radius = Math.max(2, size);
+  const step = (state.step = (state.step ?? 0) + 1);
+  let changed = 0;
+  for (let k = 0; k < Math.max(2, radius); k++) {
+    const angle = noise(step, k) * Math.PI * 2;
+    const reach = noise(k + 1, step) * radius;
+    const dx = Math.round(Math.cos(angle) * reach);
+    const dy = Math.round(Math.sin(angle) * reach);
+    changed += stamp(texture, cell.x + (flipX ? -dx : dx), cell.y + (flipY ? -dy : dy), 1, color);
+  }
+  return changed;
+}
+
+/** Aclara u oscurece un paso las casillas por las que pasa el pincel, una sola vez por trazo. */
+function shadeBrush(texture: FaceTexture, state: StrokeState, from: Cell, to: Cell, size: number, lighter: boolean, faceColor: number, round: BrushMask | undefined): number {
+  const path: FaceTexture = { w: texture.w, h: texture.h, pixels: new Array<number>(texture.pixels.length).fill(0) };
+  stampLine(path, from.x, from.y, to.x, to.y, size, 1, round);
+  const visited = (state.visited ??= new Set());
+  let changed = 0;
+  path.pixels.forEach((touched, at) => {
+    if (!touched || visited.has(at)) return;
+    visited.add(at);
+    const before = texture.pixels[at];
+    const next = shadeColor(before === CLEAR ? faceColor : before, lighter);
+    if (next === (before === CLEAR ? faceColor : before)) return;
+    texture.pixels[at] = next;
+    changed++;
+  });
+  return changed;
+}
+
+/** Sello: estampa lo copiado centrado en el puntero; al arrastrar lo repite en mosaico, sin montar una copia sobre otra. */
+function stampClip(texture: FaceTexture, state: StrokeState, cell: Cell, flipX: boolean, flipY: boolean): number {
+  const clip = pixelClipboard.value;
+  if (!clip || clip.w === 0 || clip.h === 0) return 0;
+  state.start ??= cell;
+  // En un reflejo la rejilla del mosaico crece hacia el otro lado.
+  const sx = flipX ? -1 : 1;
+  const sy = flipY ? -1 : 1;
+  const column = Math.round((sx * (cell.x - state.start.x)) / clip.w);
+  const row = Math.round((sy * (cell.y - state.start.y)) / clip.h);
+  const image: FaceTexture = { w: clip.w, h: clip.h, pixels: clip.pixels.map((_, at) => {
+    const x = at % clip.w;
+    const y = Math.floor(at / clip.w);
+    return clip.pixels[(flipY ? clip.h - 1 - y : y) * clip.w + (flipX ? clip.w - 1 - x : x)];
+  }) };
+  const half = (side: number, flip: boolean): number => (flip ? side - 1 - Math.floor((side - 1) / 2) : Math.floor((side - 1) / 2));
+  const next = pasteRegion(texture, image, state.start.x + sx * column * clip.w - half(clip.w, flipX), state.start.y + sy * row * clip.h - half(clip.h, flipY)).texture;
+  let changed = 0;
+  next.pixels.forEach((value, at) => {
+    if (texture.pixels[at] === value) return;
+    texture.pixels[at] = value;
+    changed++;
+  });
+  return changed;
+}
+
+function paintOne(texture: FaceTexture, state: StrokeState, tool: string, cell: Cell, size: number, color: number, options: BrushOptions, flipX = false, flipY = false): number {
   const round = options.round ? roundMask(size) : undefined;
   const from = state.last ?? cell;
   const first = state.last === null;
@@ -293,7 +377,10 @@ function paintOne(texture: FaceTexture, state: StrokeState, tool: string, cell: 
     return 1;
   }
   if (tool === 'select') return 0;
-  if (tool === 'dither') return stampLine(texture, from.x, from.y, cell.x, cell.y, size, color, both(checker, round));
+  if (tool === 'spray') return spray(texture, state, cell, size, color, flipX, flipY);
+  if (tool === 'shadeup' || tool === 'shadedown') return shadeBrush(texture, state, from, cell, size, tool === 'shadeup', options.faceColor ?? color, round);
+  if (tool === 'stamp') return stampClip(texture, state, cell, flipX, flipY);
+  if (tool in PATTERNS) return stampLine(texture, from.x, from.y, cell.x, cell.y, size, color, both(PATTERNS[tool], round));
   return stampLine(texture, from.x, from.y, cell.x, cell.y, size, tool === 'eraser' ? CLEAR : color, round);
 }
 

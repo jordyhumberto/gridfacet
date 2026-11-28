@@ -154,7 +154,7 @@ export function createPixelPanel(host: PixelHost): PixelPanel {
       const cell = texelAt(target.piece.faces[target.faceIndex], target.texture, target.reflect ? target.reflect(point) : point);
       if (!cell) continue;
       // Entre dos movimientos se pinta la recta de casillas, para que un arrastre rápido no deje huecos.
-      changed += paintCell(target.texture, target, tool, cell, size, host.color(), brushOptions());
+      changed += paintCell(target.texture, target, tool, cell, size, host.color(), { ...brushOptions(), faceColor: faceColorOf(target.piece, target.faceIndex) });
     }
     if (changed === 0) return;
     stroke.changed = true;
@@ -263,6 +263,9 @@ export function createPixelPanel(host: PixelHost): PixelPanel {
       const cell = texelAt(found.face, texture, [found.point.x, found.point.y, found.point.z]);
       if (cell) host.setColor(visibleColor(texture, cell.x, cell.y, faceColorOf(found.piece, faceIndex)));
       return;
+    }
+    if (pixelToolEl.value === 'stamp' && !pixelClipboard.value) {
+      statusEl.textContent = 'El sello está vacío: elige una región (Elegir), cópiala (Copiar o Ctrl+C) y vuelve al sello';
     }
     controls.enabled = false;
     try {
