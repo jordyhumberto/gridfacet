@@ -207,7 +207,7 @@ export class FaceEditor {
       this.draw(stroke.texture);
       return;
     }
-    const changed = paintCell(stroke.texture, stroke.state, tool, { x, y }, this.host.size(), this.host.color(), this.host.brush());
+    const changed = paintCell(stroke.texture, stroke.state, tool, { x, y }, this.host.size(), this.host.color(), { ...this.host.brush(), faceColor: faceColorOf(this.piece, this.faceIndex) });
     if (changed === 0) return;
     stroke.changed = true;
     this.draw(stroke.texture);
